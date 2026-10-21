@@ -16,9 +16,9 @@ for test_file in ui_contract ui-wheel ui-footer ui-footer-activity ui-footer-com
 done
 python3 mods/sessionstats/tools/build.py --python27 "$PYTHON27"
 python3 source/build_wotmod.py
+manifest="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sessionstats-reproducibility.XXXXXX")"
+python3 scripts/sessionstats/artifacts.py snapshot "$manifest"
+python3 mods/sessionstats/tools/build.py --python27 "$PYTHON27"
+python3 scripts/sessionstats/artifacts.py verify "$manifest"
 python3 scripts/sessionstats/integration.py
 python3 scripts/sessionstats/privacy.py --python27 "$PYTHON27" --scan-dist
-manifest="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sessionstats-reproducibility.txt"
-sha256sum mods/sessionstats/dist/*.wotmod mods/sessionstats/dist/*.zip > "$manifest"
-python3 mods/sessionstats/tools/build.py --python27 "$PYTHON27"
-sha256sum --check "$manifest"

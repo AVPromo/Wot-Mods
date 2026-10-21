@@ -17,7 +17,7 @@ base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
 PATTERNS = dict(base.PATTERNS)
 PATTERNS['build_workspace'] = re.compile('/work' + r'space/scratch/[^\s\x00]+')
-FORBIDDEN = {'.log', '.dmp', '.mdmp', '.sqlite', '.db', '.pfx', '.pem', '.key', '.token'}
+FORBIDDEN = {'.log', '.dmp', '.mdmp', '.sqlite', '.db', '.p12', '.pfx', '.pem', '.key', '.token'}
 SKIP = {'.git', '__pycache__', 'node_modules', 'dist', '.pytest_cache'}
 
 
@@ -25,9 +25,10 @@ def scan_bytes(name, data, python27, depth=0):
     if depth > 5:
         return [(name, ['archive_depth'])]
     path = Path(name)
-    if path.suffix in FORBIDDEN:
+    suffix = path.suffix.lower()
+    if suffix in FORBIDDEN:
         return [(name, ['forbidden_resource'])]
-    if path.suffix in ('.zip', '.wotmod'):
+    if suffix in ('.zip', '.wotmod'):
         problems = []
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             if archive.testzip() is not None:
@@ -36,7 +37,7 @@ def scan_bytes(name, data, python27, depth=0):
                 if not item.is_dir():
                     problems.extend(scan_bytes(name+':'+item.filename, archive.read(item), python27, depth+1))
         return problems
-    if path.suffix == '.pyc':
+    if suffix == '.pyc':
         if not python27:
             raise ValueError('Bytecode scan requires --python27')
         with tempfile.TemporaryDirectory(prefix='sessionstats-audit-') as directory:

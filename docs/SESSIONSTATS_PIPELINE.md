@@ -4,6 +4,9 @@ Infrastruktura CI jest osobnym PR od importu źródeł. Kolejność merge:
 **pipeline → aktualizacja gałęzi importu z `main` → pełne CI → źródła statystyk**.
 Przed importem źródeł infrastruktura wykonuje swoje testy, a kroki kompilacji
 i wydawania statystyk raportują oczekiwanie. Nie oznacza to przetestowania moda.
+Ten wyjątek działa tylko, gdy katalog źródeł nie istnieje ani w checkout,
+ani w jego pełnej historii Git. Usunięcie lub zmiana nazwy pliku startowego
+po imporcie kończy błędem zarówno walidację PR, jak i build wydania.
 Po połączeniu źródeł z `main` uruchomi się pierwsze automatyczne wydanie.
 Samo utworzenie obu PR nie publikuje Release i nie łączy ich automatycznie.
 
@@ -41,6 +44,10 @@ Walidacja obejmuje testy Pythona 3 i 2.7, sześć zestawów testów Chromium,
 powtórne budowanie z porównaniem SHA-256, prywatność źródeł i archiwów
 oraz rekursywną kontrolę stałych/ścieżek bajtkodu. Materiały QA są syntetyczne.
 To testy z atrapami klienta; nie zastępują uruchomienia gry.
+Porównanie dwóch buildów obejmuje wszystkie sześć publikowanych plików,
+łącznie z JSON-em konfiguracji, raportem i manifestem sum. Skan prywatności
+oraz kontrola integracji badają ostateczny wynik drugiego buildu.
+Skaner odrzuca także binarne `.p12`/`.P12` wewnątrz zagnieżdżonych archiwów.
 
 Build ma `contents: read`; osobny job publikacji dostaje `contents: write`
 i tylko jego krok publikujący otrzymuje `GH_TOKEN`. Bez PAT, sekretów użytkownika,

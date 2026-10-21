@@ -4,6 +4,8 @@ import io
 import json
 from pathlib import Path
 import sys
+import shutil
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -23,6 +25,9 @@ def load(name, filename):
 
 release = load('sessionstats_release', 'release.py')
 privacy = load('sessionstats_privacy', 'privacy.py')
+source_state = load('sessionstats_source_state', 'source_state.py')
+sys.path.insert(0, str(ROOT/'scripts/sessionstats'))
+artifacts = load('sessionstats_artifacts', 'artifacts.py')
 
 
 class SessionStatsPipelineTests(unittest.TestCase):
@@ -93,8 +98,88 @@ class SessionStatsPipelineTests(unittest.TestCase):
         self.assertIn('github_classic_token', issues[0][1])
 
     def test_private_history_and_logs_are_rejected(self):
-        for filename in ('player.db', 'session-stats.log', 'crash.dmp'):
+        for filename in ('player.db', 'session-stats.log', 'crash.dmp', 'credential.p12', 'credential.P12'):
             self.assertEqual(privacy.scan_bytes(filename,b'',None)[0][1], ['forbidden_resource'])
+
+    def test_nested_binary_pkcs12_is_rejected_without_textual_secret(self):
+        inner = io.BytesIO()
+        with zipfile.ZipFile(inner, 'w') as z: z.writestr('certificate.P12', b'\x30\x82\x00\xff\x01')
+        outer = io.BytesIO()
+        with zipfile.ZipFile(outer, 'w') as z: z.writestr('dependency.wotmod', inner.getvalue())
+        self.assertEqual(privacy.scan_bytes('release.zip', outer.getvalue(), None),
+                         [('release.zip:dependency.wotmod:certificate.P12', ['forbidden_resource'])])
+
+    def test_reproducibility_snapshot_covers_all_six_published_files(self):
+        expected = artifacts.snapshot(self.folder)
+        self.assertEqual(set(expected), set(release.inputs(self.folder, self.version)))
+        self.assertEqual(len(expected), 6)
+        artifacts.verify(self.folder, expected)
+
+    def test_mutating_any_asset_and_regenerating_checksums_still_fails_reproducibility(self):
+        original = {p.name:p.read_bytes() for p in self.folder.iterdir()}
+        expected = artifacts.snapshot(self.folder)
+        for name in sorted(original):
+            with self.subTest(asset=name):
+                for saved, value in original.items(): (self.folder/saved).write_bytes(value)
+                if name == 'BUILD.json':
+                    report = json.loads(original[name]); report['extra'] = 'changed by rebuild'
+                    (self.folder/name).write_text(json.dumps(report))
+                elif name == 'SHA256SUMS.txt':
+                    lines = original[name].decode('ascii').splitlines()
+                    (self.folder/name).write_text('\n'.join(reversed(lines))+'\n')
+                else:
+                    (self.folder/name).write_bytes(original[name] + b'changed by rebuild')
+                if name != 'SHA256SUMS.txt': self.checksums()
+                with self.assertRaises(shared.PublicationError): artifacts.verify(self.folder, expected)
+
+
+class SourceStateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.folder = Path(self.temp.name)/'repo'
+        self.folder.mkdir()
+        self.git('init', '-q', '-b', 'main')
+        self.git('config', 'user.name', 'Synthetic fixture')
+        self.git('config', 'user.email', 'fixture.invalid')
+        self.git('commit', '--allow-empty', '-qm', 'Infrastructure before import')
+
+    def git(self, *args):
+        return subprocess.check_output(['git','-C',str(self.folder),*args], text=True, stderr=subprocess.STDOUT)
+
+    def import_source(self):
+        entry = self.folder/source_state.ENTRY
+        entry.parent.mkdir(parents=True)
+        entry.write_text('# synthetic fixture\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Import source')
+        return entry
+
+    def test_absent_source_is_allowed_before_any_import(self):
+        self.assertFalse(source_state.source_enabled(self.folder))
+
+    def test_present_entrypoint_enables_source_validation(self):
+        self.import_source()
+        self.assertTrue(source_state.source_enabled(self.folder))
+
+    def test_misnamed_entrypoint_fails_instead_of_skipping(self):
+        entry = self.import_source()
+        entry.rename(entry.with_name('misnamed.py'))
+        with self.assertRaises(RuntimeError): source_state.source_enabled(self.folder)
+
+    def test_deleting_entire_source_directory_fails_from_history(self):
+        self.import_source()
+        shutil.rmtree(self.folder/source_state.SOURCE)
+        self.git('add', '-u'); self.git('commit', '-qm', 'Remove all source')
+        with self.assertRaises(RuntimeError): source_state.source_enabled(self.folder)
+
+    def test_shallow_history_cannot_authorize_skipping(self):
+        self.import_source()
+        shutil.rmtree(self.folder/source_state.SOURCE)
+        self.git('add', '-u'); self.git('commit', '-qm', 'Remove all source')
+        clone = self.folder.parent/'shallow'
+        subprocess.check_output(['git','clone','-q','--depth','1',self.folder.as_uri(),str(clone)], stderr=subprocess.STDOUT)
+        with self.assertRaises(RuntimeError): source_state.source_enabled(clone)
 
 
 if __name__ == '__main__': unittest.main()
