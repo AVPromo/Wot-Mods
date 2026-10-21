@@ -107,6 +107,7 @@ async function nativeHost(browser, options) {
     window.viewEnv={addDataChangedCallback:function(){
       const count=++window.__grzHelperCalls.callback;
       if(options.callback==='throw' || (options.callback==='throw-once' && count===1)) throw new Error('Optional model registration unavailable');
+      if(options.callback==='synchronous' && count===1) window.__grzEvents['viewEnv.onDataChanged']();
       return 71;
     },removeDataChangedCallback:function(id){window.__grzRemovedCallbacks.push(id);}};
     if(options.drag==='supported' || options.drag==='throw') {
@@ -484,6 +485,10 @@ async function nativeHost(browser, options) {
       __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
     await degraded.close();
   }
+  const synchronous=await nativeHost(browser,{callback:'synchronous'});
+  check('Synchronous model delivery during registration cannot register a second callback',await synchronous.evaluate(()=>
+    __grzHelperCalls.callback===1 && __grzEngineOn.length===2 && GRZSessionStats.getState().nativeBound));
+  await synchronous.close();
   for(const helpers of ['absent','throw']) {
     const degraded=await nativeHost(browser,{helpers,noFocus:true,drag:helpers});
     check('Python resize is still sent when native helpers are '+helpers,await degraded.evaluate(()=>__grzCommands.some(x=>x.action==='resize' && x.width==='700' && x.height==='620')));

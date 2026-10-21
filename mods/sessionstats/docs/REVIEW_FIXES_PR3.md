@@ -20,7 +20,8 @@
 
 Weryfikacja: 291 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
 z czterema pominiętymi testami narzędzia pakującego wymagającego Pythona 3.
-84 kontrole panelu obejmują trwały i przejściowy błąd rejestracji callbacku.
+85 kontroli panelu obejmuje trwały i przejściowy błąd rejestracji callbacku,
+synchroniczne wywołanie podczas rejestracji oraz spóźnione zdarzenia po zamknięciu.
 Sprawdzono wydanie 0.2.8, rzeczywistą weryfikację sum po rozpakowaniu ZIP-a
 oraz identyczny ZIP po ponownym zbudowaniu z zawartych w nim źródeł.
 Testy z atrapami klienta nie zastępują uruchomienia WoT.

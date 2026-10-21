@@ -5,7 +5,7 @@
     if (!root) { return; }
 
     var state = { scope: 'launch', group: 'vehicles', xp: 'base', payload: null,
-        dialog: false, bound: false, connecting: false, callbackId: null, actionError: null,
+        dialog: false, bound: false, connecting: false, callbackId: null, callbackRegistering: false, actionError: null,
         nativeWidth: 0, nativeHeight: 0, nativeScale: 1, diagnostics: {}, dragging: false,
         scrollSpeed: 1, appearanceNode: null, appearanceCSS: '', destroyed: false,
         list: [], loadedCount: 40, renderedCount: 0 };
@@ -523,11 +523,13 @@
         if (state.destroyed || !state.bound) { return; }
         // Optional Gameface registration can fail during readiness. Keep the
         // engine listener and initial model usable; retry on the next update.
-        if (state.callbackId === null && window.viewEnv && typeof window.viewEnv.addDataChangedCallback === 'function') {
+        if (!state.callbackRegistering && state.callbackId === null && window.viewEnv && typeof window.viewEnv.addDataChangedCallback === 'function') {
+            state.callbackRegistering = true;
             try {
                 var callbackId = window.viewEnv.addDataChangedCallback('model', 0, true);
                 if (callbackId !== undefined && callbackId !== null) { state.callbackId = callbackId; }
             } catch (error) { /* A later model event or readiness pass can retry. */ }
+            finally { state.callbackRegistering = false; }
         }
         var model = window.model;
         if (model && model.payload !== undefined) { update(model.payload); }
