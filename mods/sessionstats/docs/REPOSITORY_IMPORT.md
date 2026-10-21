@@ -6,7 +6,7 @@ opisuje `REVIEW_FIXES_PR3.md`; schemat zapisu i domyślny JSON pozostają bez zm
 Builder otrzymał numerowanie wydań, pełny manifest assetów i filtrowanie
 wygenerowanych raportów testowych. Test obrazu zachowuje dokładne porównanie
 stylów/geometrii; raster dopuszcza najwyżej 16 pikseli krawędzi z różnicą
-do 4/255 na kanał, aby uniknąć różnic zaokrąglenia renderera Chromium.
+do 6/255 na kanał, aby uniknąć różnic zaokrąglenia renderera Chromium.
 
 Pierwotna weryfikacja lokalna importu (przed poprawkami po review):
 

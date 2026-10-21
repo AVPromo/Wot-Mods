@@ -24,3 +24,8 @@ z czterema pominiętymi testami narzędzia pakującego wymagającego Pythona 3.
 Sprawdzono wydanie 0.2.8, rzeczywistą weryfikację sum po rozpakowaniu ZIP-a
 oraz identyczny ZIP po ponownym zbudowaniu z zawartych w nim źródeł.
 Testy z atrapami klienta nie zastępują uruchomienia WoT.
+
+Porównanie rastra zachowuje limit 16 zmienionych pikseli; tolerancja kanału 6/255
+obejmuje zaobserwowane na Chromium 151 zaokrąglenie 10 pikseli z różnicą 5/255.
+Style i geometria nadal są porównywane dokładnie. Dodatkowa kontrola negatywna
+potwierdza odrzucenie rzeczywistej zmiany kolorów, promieni i przezroczystości.
