@@ -1,0 +1,34 @@
+# Generated distributions, test outputs, caches
+/dist/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.log
+*.tmp
+*.bak
+*.old
+/coverage/
+.coverage
+
+# Keep authentication materials and user-specific files out of git
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.token
+*.credentials
+*.dmp
+*.mdmp
+*.wer
+*.wotmod
+!tests/fixtures/*.wotmod
+
+# Never commit a local installation, local crash reports or player screenshots
+/res_mods/
+/mods/
+/Reports/
+/screenshots/
+/player_data/
