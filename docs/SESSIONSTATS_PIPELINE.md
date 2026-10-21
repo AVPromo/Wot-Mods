@@ -1,7 +1,7 @@
 # Wspólne repozytorium, niezależne wydania
 
 Infrastruktura CI jest osobnym PR od importu źródeł. Kolejność merge:
-**pipeline → źródła statystyk → walidacja importu na zaakceptowanym pipeline**.
+**pipeline → aktualizacja gałęzi importu z `main` → pełne CI → źródła statystyk**.
 Przed importem źródeł infrastruktura wykonuje swoje testy, a kroki kompilacji
 i wydawania statystyk raportują oczekiwanie. Nie oznacza to przetestowania moda.
 Po połączeniu źródeł z `main` uruchomi się pierwsze automatyczne wydanie.
