@@ -1,0 +1,1035 @@
+# -*- coding: utf-8 -*-
+"""Small version-sensitive bridge to WoT 2.4.1, isolated from the stats engine.
+
+References (read 2026-10-20):
+  izeberg/wot-src @ .version_name=2.4.1.5493:
+    sources/res/scripts/client/PlayerEvents.py
+    sources/res/scripts/client/gui/InputHandler.py
+    sources/res/scripts/client/gui/battle_results/service.py
+    sources/res/scripts/client/gui/battle_results/stats_ctrl.py
+  wotstat/wotstat-analytics:
+    WOTSTAT/res/scripts/client/gui/mods/wot_stat/logger/loggers/onBattleResultLogger.py
+    (battle_result_cache_checker): result-cache callback code > 0.
+No game networking, account mutation, automatic input or executable download.
+"""
+from __future__ import absolute_import, unicode_literals
+
+import io
+import json
+import logging
+import os
+import sys
+import time
+import uuid
+
+from . import VERSION
+from .normalize import arena_start, normalize_result, _number, _integer, text_type
+from .monitor import ResultMonitor
+
+LOG = logging.getLogger('grz.sessionstats')
+LAUNCH_ID = uuid.uuid4().hex
+LAUNCH_STARTED_AT = time.time()
+TICK_SECONDS = 5.0
+MAX_EXPECTED_BYTES = 8 * 1024 * 1024
+
+
+def _filesystem_text(value):
+    # WoT uses Python 2.7: environment values can be filesystem-encoded bytes.
+    # Decode before joining with Unicode paths (e.g. a Polish Windows profile).
+    if isinstance(value, bytes) and not isinstance(value, text_type):
+        return value.decode(sys.getfilesystemencoding() or 'utf-8')
+    return value
+
+
+def resolve_data_dir(bigworld=None, environ=None):
+    """Version-independent local data only; never touch the client's preferences."""
+    environ = os.environ if environ is None else environ
+    base = environ.get('APPDATA') or environ.get('LOCALAPPDATA')
+    if base:
+        return os.path.join(os.path.normpath(_filesystem_text(base)), 'grz_wot_session_stats')
+    if bigworld is not None:
+        getter = getattr(bigworld, 'wg_getPreferencesFilePath', None)
+        if callable(getter):
+            path = _filesystem_text(getter())
+            if path and os.path.isabs(path):
+                return os.path.join(os.path.dirname(path), 'grz_session_stats')
+    base = environ.get('USERPROFILE')
+    if base:
+        return os.path.join(_filesystem_text(base), 'AppData', 'Roaming', 'grz_wot_session_stats')
+    raise RuntimeError('Nie znaleziono lokalnego katalogu danych użytkownika.')
+
+
+def _load_json_file(path):
+    if os.path.getsize(path) > MAX_EXPECTED_BYTES:
+        raise ValueError('JSON file exceeds size limit')
+    with io.open(path, 'r', encoding='utf-8-sig') as handle:
+        return json.load(handle)
+
+
+def _looks_like_expected(table):
+    if not isinstance(table, dict):
+        return False
+    rows = table.get('data')
+    if not isinstance(rows, list) or not rows:
+        return False
+    needed = ('IDNum', 'expDamage', 'expFrag', 'expSpot', 'expDef', 'expWinRate')
+    try:
+        return all(isinstance(row, dict) and all(key in row for key in needed)
+                   and _integer(row['IDNum']) is not None
+                   and all(_number(row[key]) is not None and row[key] > 0
+                           for key in needed[1:]) for row in rows)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+class GameAPI(object):
+    """All imports with patch-sensitive paths live here and in views/footer."""
+
+    def __init__(self):
+        import BigWorld
+        import BattleReplay
+        from constants import ARENA_BONUS_TYPE, AUTH_REALM
+        self.bw = BigWorld
+        self.replays = BattleReplay
+        self.events = None
+        self.random_bonus_type = ARENA_BONUS_TYPE.REGULAR
+        self.region = str(AUTH_REALM)
+        self.keys = None
+        self.input = None
+        self.results_service = None
+        self.event_bus = None
+        self.bonus_event = None
+        try:
+            from PlayerEvents import g_playerEvents
+            self.events = g_playerEvents
+        except Exception:
+            LOG.warning('Player events unavailable; result cache polling remains enabled.')
+        # Keyboard/UI adapters are optional. Their removal must not disable
+        # account identity, replay exclusion or the result collector.
+        try:
+            import Keys
+            self.keys = Keys
+        except Exception:
+            LOG.warning('Keyboard constants unavailable; statistics collection remains enabled.')
+        try:
+            from gui import InputHandler
+            self.input = InputHandler.g_instance
+        except Exception:
+            LOG.warning('Keyboard events unavailable; statistics collection remains enabled.')
+        try:
+            from helpers import dependency
+            from skeletons.gui.battle_results import IBattleResultsService
+            self.results_service = dependency.instance(IBattleResultsService)
+        except Exception:
+            LOG.warning('Posted-results integration unavailable; raw result events remain enabled.')
+        try:
+            from gui.shared import g_eventBus, events
+            self.event_bus = g_eventBus
+            self.bonus_event = events.LobbySimpleEvent.PREMIUM_XP_BONUS_CHANGED
+        except Exception:
+            LOG.warning('Post-battle XP bonus event unavailable; use Refresh after a bonus.')
+
+    def player(self):
+        return self.bw.player()
+
+    def is_replay(self):
+        return bool(self.replays.isPlaying())
+
+    def in_battle(self):
+        player = self.player()
+        return player is not None and getattr(player, 'arena', None) is not None
+
+    def account_dbid(self):
+        player = self.player()
+        if player is None:
+            return None
+        value = getattr(player, 'databaseID', None)
+        if value:
+            return int(value)
+        try:
+            from account_helpers import getAccountDatabaseID
+            value = getAccountDatabaseID()
+        except (ImportError, AttributeError, RuntimeError):
+            value = None
+        if not value and getattr(player, 'arena', None) is not None:
+            record = player.arena.vehicles.get(getattr(player, 'playerVehicleID', None), {})
+            value = record.get('accountDBID')
+        return int(value) if value else None
+
+    def battle_context(self):
+        player = self.player()
+        arena = getattr(player, 'arena', None)
+        if arena is None or arena.bonusType != self.random_bonus_type:
+            return None
+        arena_id = getattr(player, 'arenaUniqueID', None)
+        if not arena_id:
+            return None
+        vehicle = arena.vehicles.get(getattr(player, 'playerVehicleID', None), {})
+        descriptor = vehicle.get('vehicleType')
+        vehicle_id = getattr(getattr(descriptor, 'type', None), 'compactDescr', None)
+        map_type = getattr(arena, 'arenaType', None)
+        return {
+            'arena_id': str(arena_id), 'started_at': arena_start(arena_id),
+            'account_dbid': self.account_dbid(), 'vehicle_id': vehicle_id,
+            'map_id': getattr(map_type, 'geometryName', None),
+            'map_name': getattr(map_type, 'name', None), 'mode': 'random',
+        }
+
+    def vehicle_info(self, compact):
+        from items.vehicles import getVehicleType
+        vehicle = getVehicleType(compact)
+        return {'name': getattr(vehicle, 'shortUserString', None) or vehicle.userString,
+                'tier': vehicle.level, 'type': vehicle.classTag}
+
+    def map_info(self, arena_type_id):
+        import ArenaType
+        arena = ArenaType.g_cache.get(arena_type_id)
+        if arena is None:
+            return {}
+        return {'id': arena.geometryName, 'name': arena.name}
+
+    def schedule(self, seconds, callback):
+        return self.bw.callback(seconds, callback)
+
+    def cancel(self, callback_id):
+        self.bw.cancelCallback(callback_id)
+
+    def key_down(self, key):
+        return bool(self.bw.isKeyDown(key))
+
+    def request_result(self, arena_id, callback):
+        player = self.player()
+        cache = getattr(player, 'battleResultsCache', None)
+        if cache is None:
+            return False
+        cache.get(int(arena_id), callback)
+        return True
+
+    def posted_bundle(self, arena_id):
+        service = self.results_service
+        if service is None or not service.areResultsPosted(int(arena_id)):
+            return None
+        controller = service.getStatsCtrl(int(arena_id))
+        return controller.getResults() if controller is not None else None
+
+    def load_expected(self, data_dir):
+        override = os.path.join(data_dir, 'wn8exp.json')
+        if os.path.isfile(override):
+            try:
+                table = _load_json_file(override)
+                if not _looks_like_expected(table):
+                    raise ValueError('invalid expected-table schema')
+                return table
+            except (IOError, OSError, ValueError, TypeError):
+                LOG.warning('Invalid local WN8 expected table; bundled table will be used.')
+        import ResMgr
+        section = ResMgr.openSection('grz_session_stats/wn8exp.json')
+        if section is None:
+            raise RuntimeError('Brak dołączonej tabeli oczekiwanych wartości WN8.')
+        raw = section.asBinary
+        if isinstance(raw, bytes):
+            raw = raw.decode('utf-8-sig')
+        table = json.loads(raw)
+        if not _looks_like_expected(table):
+            raise ValueError('Niepoprawna dołączona tabela WN8.')
+        return table
+
+    def notify(self, message):
+        try:
+            from gui import SystemMessages
+            SystemMessages.pushMessage(message, type=SystemMessages.SM_TYPE.Warning)
+            return True
+        except Exception:
+            LOG.error('Could not display the local mod status message.')
+            return False
+
+
+class Runtime(object):
+    def __init__(self, api=None, service_factory=None, data_dir=None,
+                 expected_table=None, now=None, window=None, footer_installer=None,
+                 appearance_path=None):
+        self.api = api
+        self.service_factory = service_factory
+        self.data_dir = data_dir
+        self.expected_table = expected_table
+        self.now = now or time.time
+        self.window = window
+        self.footer_installer = footer_installer
+        self.footer_handle = None
+        self._appearance_override_path = appearance_path
+        self.appearance_path = None
+        self._presentation = {'panel_css': '', 'footer_css': '', 'scroll_speed': 1.0}
+        self.services = {}
+        self.active_service = None
+        self.active_key = None
+        self.contexts = {}
+        self.recent = {}
+        self.retries = {}
+        self.inflight = {}
+        self.subscriptions = []
+        self._tick_id = None
+        self._bonus_callback_id = None
+        self.running = False
+        self.last_error = None
+        self._hotkey_held = False
+        self.config = {'hotkey': 'CTRL+F10', 'footer_button': True}
+        self._hotkey = None
+        self.compatibility_warnings = {}
+        self._diagnostics = set()
+        self._lifecycle = None
+        self._bonus_subscription = None
+        self._bonus_account_key = None
+        self._processing = {}
+        self._footer_activity = None
+        self._log_handle = None
+        self.log_path = None
+        self._log_error = None
+        self._log_notice_sent = False
+        self._log_notice_after = 0
+        self.monitor = ResultMonitor(self.now)
+
+    def _start_log(self):
+        if self._log_handle is not None or self.data_dir is None:
+            return
+        try:
+            from .diagnostics import start_logging
+            self._log_handle = start_logging(self.data_dir)
+            self.log_path = self._log_handle.path
+            self._log_error = self._log_handle.error
+        except Exception:
+            self._log_error = 'Osobny log moda jest niedostępny.'
+            LOG.exception('Could not initialize the dedicated mod log.')
+
+    def _service_diagnostics(self):
+        try:
+            self._service_diagnostics_impl()
+        except Exception:
+            self._warn_once('diagnostics',
+                            'Diagnostyka moda jest częściowo niedostępna; sprawdź game.log.',
+                            exception=True)
+
+    def _service_diagnostics_impl(self):
+        handle = self._log_handle
+        if handle is not None:
+            handle.flush()
+            self._log_error = handle.error if not handle.ok else None
+        self.monitor.log_path = self.log_path if handle is not None and handle.ok else None
+        if self._log_error:
+            self._warn_once('logging',
+                            'Nie można zapisywać osobnego logu moda. Diagnostyka pozostaje w game.log.')
+        else:
+            self.compatibility_warnings.pop('logging', None)
+        if (not self.running or self.active_service is None or
+                self.api.is_replay() or self.api.in_battle()):
+            return
+        if self._log_error and not self._log_notice_sent and self.now() >= self._log_notice_after:
+            self._log_notice_after = self.now() + 60
+            try:
+                self._log_notice_sent = self.api.notify(
+                    'Statystyki sesji: nie można zapisywać osobnego logu moda. '
+                    'Sprawdź dostęp do katalogu danych; szczegóły pozostają w game.log.') is not False
+            except Exception:
+                pass
+        self.monitor.flush_notice(self.api.notify)
+
+    def activity_status(self):
+        if not self.running or self.active_service is None or self.api.is_replay():
+            return (0, False)
+        pending = set(str(value) for value in self.active_service.pending_arena_ids())
+        # A battle still being played is not a result waiting in the garage.
+        # Leaving it early makes it pending until WoT delivers the final result.
+        if self.api.in_battle():
+            context = self.api.battle_context()
+            if isinstance(context, dict):
+                pending.discard(str(context.get('arena_id', '')))
+        processing = (self._processing.get(self.active_key, 0) > 0 or
+                      (self._bonus_callback_id is not None and self._bonus_account_key == self.active_key))
+        return (len(pending), bool(processing))
+
+    def _publish_activity(self):
+        self._publish_appearance()
+        try:
+            state = self.activity_status()
+            handle = self.footer_handle
+            setter = getattr(handle, 'set_activity', None)
+            if not callable(setter):
+                return
+            marker = (id(handle), state)
+            # The child model deduplicates actual native updates. Reapplying a
+            # state lets a child recover after one transient model-write error.
+            setter(*state)
+            if marker != self._footer_activity:
+                self._footer_activity = marker
+                LOG.info('Result activity: pending=%s processing=%s', state[0], state[1])
+        except Exception:
+            self._warn_once('footer:activity', 'Pending-result indicator is unavailable.',
+                            exception=True, visible=False)
+
+    def _load_appearance(self):
+        # Read only on start, opening the panel or explicit Refresh. Never do
+        # file I/O in a render/animation frame or on every result-polling tick.
+        try:
+            from .appearance import load_config, build_presentation
+            from .config_path import find_config_path
+            path = self._appearance_override_path
+            if path is None:
+                path = find_config_path()
+            self.appearance_path = path
+            self._presentation = build_presentation(load_config(path))
+        except Exception:
+            # An unavailable optional configuration layer cannot stop result
+            # collection. Static styles and the original wheel step remain.
+            self._presentation = {'panel_css': '', 'footer_css': '', 'scroll_speed': 1.0}
+            LOG.exception('CONFIG appearance unavailable; built-in styles and scrolling remain active.')
+        self._publish_appearance()
+
+    def _publish_appearance(self):
+        if not self.running:
+            return
+        try:
+            setter = getattr(self.footer_handle, 'set_appearance', None)
+            if callable(setter):
+                # The native child deduplicates successful writes. Reapplying
+                # permits recovery after a transient model transaction error.
+                setter(self._presentation.get('footer_css', ''))
+        except Exception:
+            self._warn_once('footer:appearance', 'CONFIG footer appearance update unavailable.',
+                            exception=True, visible=False)
+
+    def _warn_once(self, key, message, exception=False, visible=True):
+        if visible:
+            self.compatibility_warnings[key] = message
+        if key not in self._diagnostics:
+            self._diagnostics.add(key)
+            LOG.warning('Compatibility [%s]: %s', key, message, exc_info=exception)
+
+    def _guard(self, callback, name):
+        # A client may reject unsubscribe/cancel after an API change. Keep old
+        # handlers inert even if this Runtime is stopped and started again.
+        lifecycle = self._lifecycle
+
+        def guarded(*args, **kwargs):
+            if not guarded._grz_enabled or not self.running or self._lifecycle is not lifecycle:
+                return
+            try:
+                return callback(*args, **kwargs)
+            except Exception:
+                self._warn_once('callback:' + name,
+                                'Nie udało się obsłużyć części zdarzeń klienta; statystyki mogą być niepełne.',
+                                exception=True)
+                if name in ('onBattleResultsReceived', 'onResultPosted', 'bonus', 'bonus_timer'):
+                    self.monitor.fault('callback_contract', name, 'supported result callback', 'exception')
+                    self._service_diagnostics()
+        guarded._grz_enabled = True
+        return guarded
+
+    def _ensure_window(self):
+        if self.window is None:
+            try:
+                from .views import StatsWindow
+                self.window = StatsWindow(self.snapshot, self.on_action)
+            except Exception:
+                self._warn_once('window:init',
+                                'Panel statystyk jest niedostępny; zbieranie wyników pozostaje aktywne.',
+                                exception=True)
+                return False
+        self.compatibility_warnings.pop('window:init', None)
+        return True
+
+    def _window_call(self, method, *args):
+        if self.window is None:
+            return False
+        try:
+            result = getattr(self.window, method)(*args)
+            self.compatibility_warnings.pop('window:' + method, None)
+            return result
+        except Exception:
+            self._warn_once('window:' + method,
+                            'Nie udało się zaktualizować panelu; zapisane wyniki pozostają dostępne.',
+                            exception=True)
+            return False
+
+    def _schedule_tick(self):
+        if self.running and self._tick_id is None:
+            callback = self._guard(self._tick, 'tick')
+            try:
+                self._tick_id = self.api.schedule(TICK_SECONDS, callback)
+                self.compatibility_warnings.pop('timer:results', None)
+            except Exception:
+                callback._grz_enabled = False
+                self._warn_once('timer:results',
+                                'Okresowy odczyt zaległych wyników jest niedostępny; wyniki ze zdarzeń klienta pozostają aktywne.',
+                                exception=True)
+
+    def start(self):
+        if self.running:
+            return
+        if self.data_dir is None:
+            try:
+                self.data_dir = resolve_data_dir()
+            except RuntimeError:
+                pass
+        self._start_log()
+        self.api = self.api or GameAPI()
+        if self.service_factory is None:
+            from .core import StatsService
+            self.service_factory = StatsService
+        if self.data_dir is None:
+            self.data_dir = resolve_data_dir(self.api.bw)
+            self._start_log()
+        self._load_appearance()
+        try:
+            cfg_file = os.path.join(self.data_dir, 'config.json')
+            if os.path.isfile(cfg_file):
+                cfg = _load_json_file(cfg_file)
+                if isinstance(cfg, dict):
+                    for key in self.config:
+                        if key in cfg:
+                            self.config[key] = cfg[key]
+        except (IOError, OSError, ValueError, TypeError):
+            LOG.warning('Invalid local configuration; defaults will be used.')
+        if self.expected_table is None:
+            try:
+                self.expected_table = self.api.load_expected(self.data_dir)
+            except Exception:
+                self.expected_table = {}
+                self.last_error = 'Nie udało się wczytać tabeli WN8; pozostałe statystyki są dostępne.'
+                LOG.exception('WN8 table load failed.')
+        self.running = True
+        self._lifecycle = object()
+        self.compatibility_warnings.clear()
+        self._diagnostics.clear()
+        self._hotkey_held = False
+        self._processing.clear()
+        self._footer_activity = None
+        self._bonus_account_key = None
+        self._log_notice_sent = False
+        self._log_notice_after = 0
+        self.monitor = ResultMonitor(self.now, self.log_path)
+        self._hotkey = self._parse_hotkey(self.config['hotkey'])
+        self._ensure_window()
+        handlers = (
+            ('onAccountBecomePlayer', self._on_account),
+            ('onAccountShowGUI', self._on_account),
+            ('onClientSynchronize', self._on_account),
+            ('onAvatarReady', self._on_avatar),
+            ('onAvatarBecomePlayer', self._close_for_battle),
+            ('onAccountBecomeNonPlayer', self._close_for_battle),
+            ('onBattleResultsReceived', self._on_results),
+        )
+        player_events = getattr(self.api, 'events', None)
+        raw_results = False
+        for name, handler in handlers:
+            ready = self._subscribe(getattr(player_events, name, None), handler, name)
+            if name == 'onBattleResultsReceived':
+                raw_results = ready
+        if not raw_results:
+            self._warn_once('results:raw',
+                            'Bezpośrednie zdarzenie wyniku jest niedostępne; część wyników może pojawić się z opóźnieniem.')
+        input_handler = getattr(self.api, 'input', None)
+        key_down = key_up = False
+        if self._hotkey is not None:
+            key_down = self._subscribe(getattr(input_handler, 'onKeyDown', None), self._on_key_down, 'onKeyDown')
+            key_up = self._subscribe(getattr(input_handler, 'onKeyUp', None), self._on_key_up, 'onKeyUp')
+        if not key_down or not key_up:
+            self._hotkey = None
+            self._warn_once('keyboard', 'Skrót klawiaturowy jest niedostępny; użyj przycisku statystyk w garażu.')
+        service = getattr(self.api, 'results_service', None)
+        posted_results = self._subscribe(getattr(service, 'onResultPosted', None), self._on_posted, 'onResultPosted', optional=True)
+        if not posted_results:
+            self._warn_once('results:posted',
+                            'Powiadomienie o przetworzonym wyniku jest niedostępne; dodatkowe PD po bitwie mogą wymagać odświeżenia.')
+        if service is None:
+            self._warn_once('results:bonus',
+                            'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.')
+        bus = getattr(self.api, 'event_bus', None)
+        bonus_event = getattr(self.api, 'bonus_event', None)
+        bonus_callback = self._guard(self._on_bonus, 'bonus')
+        if bus is not None and bonus_event is not None:
+            try:
+                bus.addListener(bonus_event, bonus_callback)
+                self._bonus_subscription = (bus, bonus_event, bonus_callback)
+            except Exception:
+                bonus_callback._grz_enabled = False
+                try:
+                    bus.removeListener(bonus_event, bonus_callback)
+                except Exception:
+                    pass
+                self._warn_once('event:bonus',
+                                'Automatyczne odświeżanie bonusowych PD jest niedostępne; po użyciu premii wybierz Odśwież.',
+                                exception=True)
+        else:
+            self._warn_once('event:bonus',
+                            'Automatyczne odświeżanie bonusowych PD jest niedostępne; po użyciu premii wybierz Odśwież.')
+        if self.config.get('footer_button', True):
+            try:
+                if self.footer_installer is None:
+                    from .footer import install
+                    self.footer_installer = install
+                self.footer_handle = self.footer_installer(self.open_window)
+                if self.footer_handle is None:
+                    LOG.warning('Footer button unavailable; configured keyboard shortcut remains active.')
+            except Exception:
+                LOG.exception('Footer button unavailable; configured keyboard shortcut remains active.')
+        self._on_account()
+        self._guard(self._on_avatar, 'initial_arena')()
+        self._publish_activity()
+        self._service_diagnostics()
+        LOG.info('GRZ Session Stats %s initialized; target WoT PC EU 2.4.1.', VERSION)
+
+    def _subscribe(self, event, callback, name, optional=False):
+        if event is None:
+            if not optional:
+                self._warn_once('subscribe:' + name, 'Client event unavailable: ' + name, visible=False)
+            return False
+        guarded = self._guard(callback, name)
+        try:
+            event += guarded
+        except Exception:
+            guarded._grz_enabled = False
+            try:
+                event -= guarded
+            except Exception:
+                pass
+            self._warn_once('subscribe:' + name, 'Client event subscription failed: ' + name,
+                            exception=True, visible=False)
+            return False
+        self.subscriptions.append((event, guarded))
+        return True
+
+    def stop(self):
+        self.running = False
+        self._lifecycle = None
+        self._hotkey_held = False
+        self._processing.clear()
+        self._bonus_account_key = None
+        self._publish_activity()
+        for callback_id in (self._tick_id, self._bonus_callback_id):
+            if callback_id is not None:
+                try:
+                    self.api.cancel(callback_id)
+                except Exception:
+                    pass
+        self._tick_id = self._bonus_callback_id = None
+        while self.subscriptions:
+            event, callback = self.subscriptions.pop()
+            try:
+                event -= callback
+            except Exception:
+                self._warn_once('unsubscribe', 'Client event removal failed; retained callbacks are inactive.', visible=False)
+        if self._bonus_subscription is not None:
+            bus, bonus_event, bonus_callback = self._bonus_subscription
+            self._bonus_subscription = None
+            try:
+                bus.removeListener(bonus_event, bonus_callback)
+            except Exception:
+                LOG.warning('Could not remove XP event subscription.')
+        self._window_call('close')
+        if self.footer_handle is not None:
+            handle = self.footer_handle
+            self.footer_handle = None
+            try:
+                handle.uninstall()
+            except Exception:
+                self._warn_once('footer:stop', 'Could not remove optional footer integration.',
+                                exception=True, visible=False)
+        self.inflight.clear()
+        if self._log_handle is not None:
+            handle = self._log_handle
+            self._log_handle = None
+            try:
+                LOG.info('GRZ Session Stats %s stopped.', VERSION)
+                handle.close()
+            except Exception:
+                LOG.warning('Could not close the dedicated mod log.')
+
+    def _ensure_service(self):
+        if not self.running or self.api.is_replay():
+            return None
+        dbid = self.api.account_dbid()
+        if not dbid:
+            return None
+        key = '{0}:{1}'.format(self.api.region, int(dbid))
+        if key != self.active_key:
+            self._window_call('close')
+            if key not in self.services:
+                self.services[key] = self.service_factory(self.data_dir, key, LAUNCH_ID,
+                                                         self.expected_table, now=self.now)
+            self.active_key = key
+            self.active_service = self.services[key]
+            self._publish_activity()
+        return self.active_service
+
+    def _on_account(self, *args, **kwargs):
+        try:
+            self._ensure_service()
+        except Exception:
+            self.last_error = 'Nie udało się otworzyć zapisanych statystyk.'
+            self._warn_once('account', 'Could not initialize account statistics.', exception=True, visible=False)
+        self._schedule_tick()
+        self._publish_activity()
+        self._service_diagnostics()
+
+    def _close_for_battle(self, *args, **kwargs):
+        self._window_call('close')
+
+    def _on_avatar(self, *args, **kwargs):
+        if not self.running:
+            return
+        try:
+            if self.api.is_replay() or not self.api.in_battle():
+                return
+            service = self._ensure_service()
+            context = self.api.battle_context()
+            if service is None or context is None:
+                return
+            arena_id = str(context['arena_id'])
+            context = dict(context)
+            context['account_key'] = self.active_key
+            self.contexts[(self.active_key, arena_id)] = context
+            service.begin_battle(arena_id, started_at=context.get('started_at'),
+                                 vehicle_id=context.get('vehicle_id'), map_id=context.get('map_id'), mode='random')
+            self._window_call('close')
+            self._publish_activity()
+        except Exception:
+            self._warn_once('arena', 'Nie udało się odczytać początku bitwy; część wyników może oczekiwać na rozliczenie.', exception=True)
+
+    def _on_results(self, is_player_vehicle, results, *args):
+        if not self.running or not is_player_vehicle or self.api.is_replay():
+            return
+        try:
+            service = self._ensure_service()
+            if service is not None:
+                self._process(results, self.active_key, service)
+        except Exception:
+            self._warn_once('results:received', 'Nie udało się odczytać części wyników bitew; statystyki mogą być niepełne.', exception=True)
+            self.monitor.fault('result_reader', 'onBattleResultsReceived', 'readable result', 'exception')
+            self._service_diagnostics()
+
+    def _process(self, results, account_key, service, reusable=None, source='event'):
+        if not self.running:
+            return False
+        self._processing[account_key] = self._processing.get(account_key, 0) + 1
+        self._publish_activity()
+        try:
+            return self._process_result(results, account_key, service, reusable, source)
+        finally:
+            remaining = max(0, self._processing.get(account_key, 1) - 1)
+            if remaining:
+                self._processing[account_key] = remaining
+            else:
+                self._processing.pop(account_key, None)
+            self._publish_activity()
+            self._service_diagnostics()
+
+    def _process_result(self, results, account_key, service, reusable, source):
+        arena_id = str(results.get('arenaUniqueID', '')) if isinstance(results, dict) else ''
+        context = {}
+        context_getter = getattr(service, 'result_context', None)
+        if callable(context_getter):
+            stored_context = context_getter(arena_id)
+            if isinstance(stored_context, dict):
+                context.update(stored_context)
+        for field, value in self.contexts.get((account_key, arena_id), {}).items():
+            if value is not None:
+                context[field] = value
+        context['account_dbid'] = int(account_key.rsplit(':', 1)[1])
+        self.monitor.check(results, context, self.api.random_bonus_type, source)
+        record = normalize_result(results, context=context,
+                                  random_bonus_type=self.api.random_bonus_type,
+                                  vehicle_resolver=self.api.vehicle_info, map_resolver=self.api.map_info)
+        if record is None:
+            return False
+        if reusable is None:
+            try:
+                # A cache callback can be older than the displayed result.
+                # Consult the native controller so it cannot undo an applied
+                # post-battle multiplier when events arrive out of order.
+                posted = self.api.posted_bundle(record['arena_id'])
+                reusable = getattr(posted, 'reusable', None)
+            except Exception:
+                self.monitor.fault('bonus_reader', 'postedResults.reusable', 'readable bonus data', 'exception', source)
+                self._warn_once('results:bonus',
+                                'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.',
+                                exception=True)
+        if reusable is not None:
+            # Native service updates this value when the player applies the
+            # post-battle multiplier; never add the bonus to raw XP a second time.
+            try:
+                personal = reusable.personal
+                value = _number(personal.xpProgress.get(record['vehicle_id'], {}).get('xp'))
+                applied = bool(personal.isAddXPBonusApplied)
+                if value is not None and (applied or record['xp_received'] is None):
+                    record['xp_received'] = value
+                    record['xp_bonus_applied'] = applied
+            except Exception:
+                self.monitor.fault('bonus_fields', 'reusable.personal.xpProgress', 'supported bonus fields', 'exception', source)
+                self._warn_once('results:bonus',
+                                'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.',
+                                exception=True)
+        changed = service.record_result(record)
+        LOG.info('Result normalized: source=%s complete=%s changed=%s', source, record.get('complete'), changed)
+        if service.last_error:
+            LOG.error('Statistics storage reported an error; previous data preserved.')
+        self.recent[(account_key, record['arena_id'])] = self.now()
+        if len(self.recent) > 128:
+            oldest = sorted(self.recent, key=self.recent.get)[0]
+            self.recent.pop(oldest, None)
+        if changed and service is self.active_service:
+            self._window_call('refresh')
+        return changed
+
+    def _on_posted(self, reusable, controller, results_window=None, *args):
+        if not self.running or self.api.is_replay():
+            return
+        try:
+            service = self._ensure_service()
+            bundle = controller.getResults()
+            raw = getattr(bundle, 'results', None)
+            if service is not None:
+                self._process(raw, self.active_key, service, reusable, source='posted')
+        except Exception:
+            self._warn_once('results:posted_callback', 'Nie udało się odczytać przetworzonego wyniku; wynik surowy pozostaje dostępny.', exception=True)
+            self.monitor.fault('posted_reader', 'onResultPosted', 'readable posted result', 'exception')
+            self._service_diagnostics()
+
+    def _on_bonus(self, *args):
+        if self.running and self._bonus_callback_id is None:
+            callback = self._guard(self._refresh_posted, 'bonus_timer')
+            try:
+                self._bonus_account_key = self.active_key
+                self._bonus_callback_id = self.api.schedule(0.1, callback)
+                self._publish_activity()
+            except Exception:
+                callback._grz_enabled = False
+                self._warn_once('timer:bonus', 'Odświeżenie bonusowych PD jest niedostępne; po użyciu premii wybierz Odśwież.', exception=True)
+
+    def _refresh_posted(self):
+        self._bonus_callback_id = None
+        self._bonus_account_key = None
+        self._publish_activity()
+        if not self.running or self.api.is_replay() or self.api.in_battle():
+            return
+        for account_key, arena_id in list(self.recent):
+            if account_key != self.active_key:
+                continue
+            try:
+                bundle = self.api.posted_bundle(arena_id)
+                raw = getattr(bundle, 'results', None)
+                if raw is not None:
+                    self._process(raw, account_key, self.services[account_key], getattr(bundle, 'reusable', None), source='refresh')
+            except Exception:
+                self._warn_once('results:bonus', 'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.', exception=True)
+                self.monitor.fault('bonus_reader', 'postedResults.reusable', 'readable bonus data', 'exception', 'refresh')
+        self._service_diagnostics()
+
+    def _tick(self):
+        self._tick_id = None
+        if not self.running:
+            return
+        try:
+            service = self._ensure_service()
+            if service is not None and not self.api.is_replay():
+                if self.api.in_battle():
+                    self._close_for_battle()
+                    # Same verified arena API as the event handler. This also
+                    # captures membership if the ready event is removed/late.
+                    self._on_avatar()
+                else:
+                    self._poll_one(service, self.active_key)
+        except Exception:
+            self._warn_once('tick', 'Okresowy odczyt wyników zgłosił błąd; statystyki mogą być niepełne.', exception=True)
+        finally:
+            self._publish_activity()
+            self._service_diagnostics()
+            self._schedule_tick()
+
+    def _poll_one(self, service, account_key):
+        now = self.now()
+        for key, expires in list(self.inflight.items()):
+            if expires <= now:
+                self.inflight.pop(key, None)
+        if self.inflight:
+            return
+        for arena_id in service.pending_arena_ids():
+            arena_id = str(arena_id)
+            key = (account_key, arena_id)
+            count, due = self.retries.get(key, (0, 0))
+            if due > now:
+                continue
+            self.inflight[key] = now + 30
+            self.retries[key] = (count + 1, now + min(300, 5 * (2 ** min(count, 6))))
+
+            lifecycle = self._lifecycle
+
+            def received(*args, **kwargs):
+                # This invocation requests only one result and then exits the
+                # loop. Account/service/key remain the original request's;
+                # extra native callback arguments cannot override them.
+                if not self.running or self._lifecycle is not lifecycle:
+                    return
+                self.inflight.pop(key, None)
+                try:
+                    if len(args) < 2:
+                        raise TypeError('Result cache callback requires status and result')
+                    code, raw = args[:2]
+                    if _number(code, nonnegative=False) is None:
+                        self.monitor.fault('cache_status', 'battleResultsCache.status', 'numeric status', type(code).__name__, 'cache')
+                    elif code > 0:
+                        if isinstance(raw, dict) and str(raw.get('arenaUniqueID')) == key[1]:
+                            self._process(raw, key[0], service, source='cache')
+                        else:
+                            self.monitor.check(raw, {'account_dbid': int(key[0].rsplit(':', 1)[1])},
+                                               self.api.random_bonus_type, 'cache')
+                            self.monitor.fault('cache_identity', 'battleResultsCache.arenaUniqueID',
+                                               'requested battle identity', 'missing or mismatched', 'cache')
+                except Exception:
+                    self._warn_once('results:cache_callback', 'Nie udało się odczytać zaległego wyniku; bitwa pozostaje do rozliczenia.', exception=True)
+                    self.monitor.fault('cache_callback', 'battleResultsCache.callback', 'status and result', 'exception', 'cache')
+                finally:
+                    self._publish_activity()
+                    self._service_diagnostics()
+            try:
+                requested = self.api.request_result(arena_id, received)
+            except Exception:
+                requested = False
+                self._warn_once('results:cache', 'Odczyt zaległych wyników jest niedostępny; brakujące bitwy pozostają do rozliczenia.', exception=True)
+            if not requested:
+                self.inflight.pop(key, None)
+                self._warn_once('results:cache', 'Odczyt zaległych wyników jest niedostępny; brakujące bitwy pozostają do rozliczenia.')
+            else:
+                self.compatibility_warnings.pop('results:cache', None)
+            break
+
+    def snapshot(self):
+        if self.active_service is None:
+            return {'version': VERSION, 'warnings': ['Oczekiwanie na dane konta.'],
+                    'scopes': {}, 'appearance': dict(self._presentation)}
+        result = self.active_service.snapshot()
+        result['appearance'] = dict(self._presentation)
+        warnings = result.setdefault('warnings', [])
+        try:
+            from .visuals import enrich_snapshot
+            ledger = getattr(self.active_service, '_state', {}).get('battles', {})
+            enrich_snapshot(result, ledger)
+            self.compatibility_warnings.pop('visuals', None)
+        except Exception:
+            self._warn_once('visuals', 'Miniatury są niedostępne w tej wersji klienta; wyniki pozostają dostępne.', exception=True)
+        for value in [self.last_error, self.active_service.last_error] + [
+                self.compatibility_warnings[key] for key in sorted(self.compatibility_warnings)]:
+            if value and value not in warnings:
+                warnings.append(value)
+        health_warning = self.monitor.warning()
+        if health_warning and health_warning not in warnings:
+            warnings.append(health_warning)
+        return result
+
+    def open_window(self):
+        if not self.running or self.api.is_replay() or self.api.in_battle():
+            return False
+        try:
+            if self._ensure_service() is None:
+                self.api.notify('Statystyki sesji będą dostępne po załadowaniu konta w garażu.')
+                return False
+            self._load_appearance()
+            opened = self._ensure_window() and self._window_call('open')
+            if not opened:
+                self.api.notify('Nie udało się otworzyć statystyk sesji. Sprawdź pliki moda i game.log.')
+            return opened
+        except Exception:
+            LOG.exception('Could not open the statistics window.')
+            self.api.notify('Nie udało się otworzyć statystyk sesji. Szczegóły zapisano w game.log.')
+            return False
+
+    def on_action(self, arg):
+        if not self.running:
+            return
+        getter = getattr(arg, 'get', None)
+        if not callable(getter):
+            return
+        action = getter('action')
+        if action == 'close':
+            self._window_call('close')
+        elif action == 'reset' and self.active_service is not None:
+            # Confirmation is performed by the local UI before emitting reset.
+            self.active_service.reset_manual()
+            self._window_call('refresh')
+        elif action == 'refresh':
+            self._load_appearance()
+            self._refresh_posted()
+            if self.active_service is not None and not self.api.in_battle():
+                for key in list(self.retries):
+                    if key[0] == self.active_key:
+                        self.retries[key] = (0, 0)
+                self._poll_one(self.active_service, self.active_key)
+            self._window_call('refresh')
+        elif action == 'resize':
+            self._window_call('resize', getter('width'), getter('height'))
+
+    def _parse_hotkey(self, value):
+        try:
+            parts = str(value).upper().replace(' ', '').split('+')
+            key_name = parts[-1]
+            if key_name not in ['F{0}'.format(i) for i in range(1, 13)]:
+                raise ValueError('Function key required')
+            modifiers = set(parts[:-1])
+            if not modifiers.issubset({'CTRL', 'SHIFT', 'ALT'}):
+                raise ValueError('Unknown hotkey modifier')
+            return (getattr(self.api.keys, 'KEY_' + key_name), modifiers)
+        except (ValueError, TypeError, AttributeError):
+            LOG.warning('Invalid hotkey; using CTRL+F10.')
+            fallback = getattr(getattr(self.api, 'keys', None), 'KEY_F10', None)
+            return (fallback, {'CTRL'}) if fallback is not None else None
+
+    def _on_key_down(self, event):
+        if not self.running or self._hotkey is None:
+            return
+        try:
+            if event.key != self._hotkey[0] or self._hotkey_held:
+                return
+            self._hotkey_held = True
+            pairs = {'CTRL': ('KEY_LCONTROL', 'KEY_RCONTROL'),
+                     'SHIFT': ('KEY_LSHIFT', 'KEY_RSHIFT'), 'ALT': ('KEY_LALT', 'KEY_RALT')}
+            held = set(name for name, pair in pairs.items()
+                       if any(self.api.key_down(getattr(self.api.keys, key)) for key in pair))
+            if held == self._hotkey[1]:
+                if self._window_call('is_open'):
+                    self._window_call('close')
+                else:
+                    self.open_window()
+        except Exception:
+            LOG.exception('Configured shortcut handler failed.')
+
+    def _on_key_up(self, event):
+        if self.running and self._hotkey and getattr(event, 'key', None) == self._hotkey[0]:
+            self._hotkey_held = False
+
+
+_runtime = None
+
+
+def init():
+    global _runtime
+    if _runtime is not None:
+        return
+    instance = Runtime()
+    try:
+        instance.start()
+        _runtime = instance
+    except Exception:
+        LOG.exception('GRZ Session Stats initialization failed; cleaning up partial initialization.')
+        try:
+            instance.stop()
+        except Exception:
+            pass
+
+
+def fini():
+    global _runtime
+    instance = _runtime
+    _runtime = None
+    if instance is not None:
+        try:
+            instance.stop()
+        except Exception:
+            LOG.exception('GRZ Session Stats teardown failed.')

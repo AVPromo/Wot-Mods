@@ -1,0 +1,253 @@
+STATYSTYKI SESJI — ZMIANY
+
+0.2.7 • 21.10.2026
+
+Konfiguracja wyglądu i przewijania obok paczki moda:
+
+• Nowy grz.sessionstats.json w tym samym katalogu co
+  grz.sessionstats_0.2.7.wotmod. Dołączony pełny plik zawiera obecny wygląd:
+  140 ustawień kolorów, 12 promieni zaokrąglenia i 3 ustawienia opacity.
+  Obejmuje panel, tabelki, linie, tekst, cienie, stany kontrolek, ikonę i spinner.
+• scroll.speed_multiplier od 0.1 do 8; domyślnie 1.0 zachowuje obecne tempo.
+  Kolory obsługują alpha, promienie mają zakres 0–24, opacity zakres 0–1.
+  Układ, odstępy, rozmiary i kierunek przewijania pozostają zachowane.
+• Odczyt przy starcie, otwieraniu panelu i kliknięciu „Odśwież”. Edycja wyglądu
+  nie wymaga ponownego uruchomienia gry. Brak sprawdzania pliku co klatkę/tick.
+• Brak pliku lub błędny JSON przywraca pełne ustawienia domyślne. Błędne
+  pojedyncze pole wraca do swojej wartości domyślnej, pozostałe poprawne pola
+  działają. Nieznane klucze są ignorowane i zapisywane w logu.
+• Odczyt UTF-8 z obsługą BOM i limitem 128 KiB. Parser odrzuca powtórzone nazwy
+  pól oraz NaN/Infinity; walidacja sprawdza typy, skończoność i zakresy wartości.
+  Nie przyjmuje dowolnego kodu CSS, ścieżek ani skryptów z konfiguracji.
+• Diagnostyka CONFIG w session-stats.log zawiera nazwę pola i powód, a przy
+  błędzie składni linię/kolumnę, jeśli parser je udostępnia. CONFIG_PATH oznacza
+  problem z jednoznaczną lokalizacją aktywnej paczki. Surowy JSON nie jest logowany.
+• Lokalizacja pliku opiera się na fizycznym paths.xml klienta i aktywnych
+  ścieżkach pakietów *.wotmod, z ograniczonym przeszukiwaniem. Nie wybiera
+  najwyższego numeru folderu ani konfiguracji starej nieaktywnej wersji.
+  Przy niejednoznaczności używa wartości domyślnych. Plików gry nie modyfikuje.
+• Model panelu dostaje panel_css, footer_css i scroll_speed w appearance.
+  Stopka ma osobny StringProperty appearance i metodę set_appearance uchwytu.
+  Awaria opcjonalnej konfiguracji pozostawia statyczne style i domyślną rolkę.
+• Rozszerzone testy parsera, walidacji, domyślnych stylów, lokalizacji paczki,
+  przeładowania konfiguracji, mostka stopki i mnożnika przewijania.
+  Python: 284/284 pod Pythonem 3 i 284/284 pod CPythonem 2.7.18;
+  konfiguracja wyglądu w UI: 30/30. Domyślne obrazy panelu i ikony są pikselowo
+  identyczne z obrazami ich statycznego stylu bazowego w tym samym teście.
+  Regresja UI: panel 78/78, rolka 22/22, zgodność stopki 12/12, spinner 22/22,
+  podstawowa stopka PASS. Brak błędów JavaScript; bez testu w działającym WoT.
+  Szczegółowa instrukcja: source/docs/APPEARANCE_CONFIG.md.
+
+INSTALACJA AKTUALIZACJI
+Zamknij grę. Zastąp grz.sessionstats_0.2.6.wotmod (lub starszą wersję tego moda)
+plikiem grz.sessionstats_0.2.7.wotmod. Umieść obok grz.sessionstats.json, np.
+w mods/2.4.1.0/. OpenWG 1.2.2 pozostaje taki sam; zachowaj jedną jego kopię.
+Przy przyszłych aktualizacjach zachowaj swój JSON zamiast nadpisywać go plikiem
+domyślnym. Przy zmianie folderu wersji przenieś go razem z paczką moda.
+Dotychczasowy config.json w AppData nadal obsługuje skrót i footer_button.
+Format historii nie zmienia się; aktualizacja z 0.2.6 nie wymaga resetowania.
+Wydania 0.2.7 nie uruchamiano tutaj w działającym WoT.
+
+0.2.6 • 21.10.2026
+
+Kontrola zgodności wyników, własny log i wskaźnik oczekiwania w garażu:
+
+• Healthcheck odebranych wyników: znane nazwy pól, typy i kształt kontenerów,
+  wymagane dane używane przez adapter, zakresy liczb, tożsamość pojazdu oraz
+  układ kosztów i potrąceń, w tym obligacji. Katalog pól jest przypięty do
+  sprawdzonych definicji klienta; nie uczy się nowego wzorca z pierwszej bitwy.
+• Ostrzeżenie systemowe WoT pokazuje problematyczne pola i ścieżkę logu.
+  Pojawia się w garażu. Ta sama sygnatura problemu jest zgłaszana raz na
+  uruchomienie; nowe problemy są grupowane, z odstępem co najmniej 60 sekund
+  między próbami powiadomienia. Nieudane powiadomienie pozostaje do ponowienia.
+  Panel zachowuje informację o niezgodności wykrytej w bieżącym uruchomieniu.
+• Własny log UTF-8: %APPDATA%/grz_wot_session_stats/logs/session-stats.log.
+  Czas UTC, poziom, wersja i diagnostyka schematu; bez surowych wyników,
+  identyfikatorów kont i nicków. Rotacja około 1 MiB plus trzy kopie.
+  Krótka nieblokująca blokada koordynuje równoległe procesy. Przy braku modułu
+  blokad powstaje session-stats-<PID>.log z takim samym limitem na rodzinę PID;
+  logi innych procesów nie są usuwane. Ostrzeżenie wskazuje faktyczną ścieżkę.
+  Błąd własnego logu ma komunikat, nie wyłącza statystyk i pozostawia game.log.
+• Spinner nad słupkami małej ikony WN8 pokazuje faktyczną kolejkę konta albo
+  przetwarzanie wyniku/bonusu PD. Podpowiedź rozróżnia te stany i podaje liczbę
+  oczekujących wyników. Ikona nadal ma ten sam rozmiar i otwiera panel.
+• Trwająca właśnie bitwa nie uruchamia sama wskaźnika oczekującego wyniku.
+  Po wcześniejszym powrocie do garażu znana bitwa czeka na rezultat WoT.
+  Niepełny wynik może czekać dalej, także po restarcie. Ręczny reset zakresu
+  nie usuwa kolejki konta. Zmiana konta i zatrzymanie izolują stare callbacki.
+• Nieznana długość krotki kosztów nie jest interpretowana starymi indeksami.
+  Przy znanym układzie brak kwoty jednej waluty nie usuwa pozostałych kwot.
+  Poprawne dane walki i PD pozostają użyteczne przy częściowych finansach.
+• Testy schematu, powiadomień, opóźnionych wyników, zmian konta, zatrzymania,
+  logowania/rotacji oraz stanów spinnera. Python: 214/214 pod Pythonem 3
+  i 214/214 pod CPythonem 2.7.18. Kontrole przeglądarkowe: panel 78,
+  rolka 22, zgodność stopki 12, aktywność/spinner 22; test bazowej ikony PASS.
+
+Kontrola nie wykryje zmiany znaczenia przy identycznych nazwach, typach
+i poprawnych zakresach. Nieużywane wewnętrzne pola nie mają pełnej walidacji;
+brak nieużywanego pola opcjonalnego nie jest alarmem. Nowa nazwa może być
+nieszkodliwym rozszerzeniem. Oczekiwanie na wynik nie jest błędem formatu.
+Dokładny zakres i źródła: source/docs/RESULT_HEALTH_CONTRACT.md.
+
+Główny panel, rolka, dane WN8 i format historii pozostają zachowane.
+Nie ma migracji ani wymaganego resetu. Testy automatyczne nie zastępują
+sprawdzenia 0.2.6 w uruchomionym WoT; tego wydania nie uruchamiano tutaj w grze.
+
+INSTALACJA AKTUALIZACJI
+Zamknij grę. Usuń grz.sessionstats_0.2.5.wotmod (lub starszy plik tego samego
+moda) z aktywnego katalogu mods i wstaw grz.sessionstats_0.2.6.wotmod.
+OpenWG 1.2.2 pozostaje taki sam. Nie trzeba resetować zapisanej sesji.
+
+0.2.5 • 20.10.2026
+
+Odporność na zmiany klienta po potwierdzeniu działania 0.2.4 w grze:
+
+• Niezależny start zbierania wyników, okna, skrótu, stopki i opcjonalnych
+  źródeł danych. Błąd pojedynczego elementu UI nie blokuje samego zapisu.
+• Osłony własnych callbacków i wejść init/fini. Zmieniona sygnatura zdarzenia
+  nie wypuszcza błędu moda do natywnego dispatchera. Powtarzane problemy
+  są logowane jednokrotnie, a niedostępne kanały wyników i bonusów PD mają
+  czytelne ostrzeżenie w panelu.
+• Niezależne sprzątanie i unieważnianie starych listenerów, timerów oraz
+  callbacków wyników po zatrzymaniu. Oczekująca klatka JS nie przywraca
+  usuniętego przycisku garażu.
+• Opcjonalne zdarzenia Wulf nie blokują działających kontrolek okna.
+  Integracja stopki zachowuje wynik i wyjątki oryginalnej metody klienta.
+• Pomocniki miniaturek pojazdów są ładowane dopiero przy ich użyciu;
+  ich brak nie wyłącza niezależnych miniaturek map.
+• Przy ponownym odbiorze starego wyniku po restarcie zachowane znane nazwy
+  i identyfikacja mapy chronią historię przed zastąpieniem nazwami awaryjnymi.
+  Potwierdzone bieżące metadane nadal mogą poprawić wcześniejszy opis.
+• Testy brakujących i zmienionych interfejsów, błędów subskrypcji, cleanup,
+  ponownego uruchomienia oraz zachowania historii. Audyt źródeł znajduje się
+  w source/docs/UPDATE_COMPATIBILITY_SOURCES.md.
+
+Główny HTML/JS/CSS panelu oraz wygląd ikony, obliczenia WN8, normalizacja
+finansów i format zapisu pozostają zgodne z działającą 0.2.4. Bez migracji danych.
+Duża zmiana formatu wyników, Wulf/Gameface lub bajtkodu nadal może wymagać
+poprawki. Testy automatyczne nie są testem 0.2.5 w uruchomionym WoT.
+
+INSTALACJA AKTUALIZACJI
+Zamknij grę. Usuń grz.sessionstats_0.2.4.wotmod (lub starszy plik tego samego
+moda) z aktywnego katalogu mods i wstaw grz.sessionstats_0.2.5.wotmod.
+OpenWG 1.2.2 pozostaje taki sam. Nie trzeba resetować zapisanej sesji.
+
+0.2.4 • 20.10.2026
+
+Poprawki po zrzutach i uwagach do 0.2.3 w rzeczywistym kliencie:
+
+• Szybsza rolka: zwykły pionowy impuls przewija ćwierć widocznej wysokości
+  listy. Mały sygnał klienta, np. delta 1, nie oznacza już ruchu o jeden piksel.
+  Poprawny kierunek z 0.2.3 zostaje zachowany, podobnie jak granice listy,
+  doładowywanie długiej historii i standardowa rolka podglądu przeglądarkowego.
+• Osobny układ pojedynczej bitwy: jedna wartość PD i jedna WN8, data, mapa
+  i wynik bitwy. Znikają powtarzane min/średnia/max oraz Bitwy=1 / WR=0–100%.
+  Przełącznik bazowych/otrzymanych PD działa również tutaj. Brak danych nie
+  jest zastępowany zerem. Finanse, wolne PD i miniatury pozostają dostępne.
+• Min/średnia/max pozostają w podsumowaniach sesji, czołgów i map.
+• Łagodniejszy wygląd: lekko zaokrąglone powierzchnie i nagłówki, subtelne
+  poziome podziały oraz odstępy między liczbami a krawędziami. Pionowa siatka
+  komórek nie dominuje zestawień. Zachowane większe cyfry, kolory i zwartość.
+
+Zmiany dotyczą prezentacji i obsługi rolki. Rdzeń obliczeń, adapter wyników,
+format historii oraz rozliczanie kredytów, obligacji i złota nie są zmieniane.
+Testy interfejsu w Chrome i symulacje kontraktów klienta nie zastępują testu
+0.2.4 w uruchomionym WoT; tutaj nie uruchamiano gotowej gry.
+
+INSTALACJA AKTUALIZACJI
+Zamknij grę. Usuń grz.sessionstats_0.2.3.wotmod (lub starszy plik tego samego
+moda) z aktywnego katalogu mods i wstaw grz.sessionstats_0.2.4.wotmod.
+OpenWG 1.2.2 pozostaje taki sam. Nie trzeba resetować zapisanej sesji.
+
+0.2.3 • 20.10.2026
+
+Czytelniejsze zestawienia po testach 0.2.2 w rzeczywistym kliencie:
+
+• Większe liczby PD, WN8 i rozliczeń walut oraz czytelniejsze podpisy tabel.
+  PD/WN8: 14 → 16 jednostek logicznych; finanse: 12 → 14; etykiety: 12 → 13.
+• Subtelne podziały wierszy i kolumn, wyróżnione nagłówki i łagodniejsze
+  rozróżnienie tła komórek pomagają odczytywać wartości w tej samej linii.
+• Zachowany zwarty panel, szczegóły widoczne od razu i pełne wartości liczbowe.
+  Rozmiar pozostaje 700×620. Szersze kolumny mieszczą pełne 100,0% i duże
+  kwoty; na wąskim ekranie układ przechodzi do kolejnych wierszy.
+• Obsługa rolki uwzględnia znak zdarzenia Gameface, zgodnie z aktualnym kodem
+  klienta. Przewijanie w dół prowadzi do dalszych wyników, w górę — do początku.
+  Podgląd przeglądarkowy zachowuje standardową obsługę przeglądarki.
+
+Na nowych zrzutach użytkownika widać prawidłowe miniatury czołgu i map, krzyżyk
+w prawym rogu oraz dwa zapisane wyniki w 0.2.2. Nowe wydanie poprawia czytelność
+i przewijanie; nie zmienia obliczeń, sposobu rozliczania ani zapisu historii.
+Testy interfejsu i natywnych kontraktów nie są testem gotowej 0.2.3 w WoT.
+
+INSTALACJA AKTUALIZACJI
+Zamknij grę. Usuń grz.sessionstats_0.2.2.wotmod (lub starszą wersję tego samego
+moda) z aktywnego katalogu mods i wstaw grz.sessionstats_0.2.3.wotmod.
+OpenWG 1.2.2 pozostaje taki sam. Nie trzeba resetować zapisanej sesji.
+
+0.2.2 • 20.10.2026
+
+Poprawki po kolejnych czterech zrzutach z klienta WoT:
+
+• Widoczne trzy słupki ikony garażu: zamiast nieobsługiwanego w Gameface
+  currentColor mają określony kolor tła. Małe WN8 pozostaje w górnym rogu.
+• Krzyżyk jest pozycjonowany jawnie przy prawym górnym rogu paska tytułu.
+  Nie zależy już od automatycznego marginesu ignorowanego przez renderer gry.
+• Przeciąganie za pasek tytułu wykorzystuje zdarzenie stosowane przez natywne
+  okna WoT. Aktualizacja wyniku nie powinna nadpisywać pozycji wybranej myszą.
+  Natywny dokument ma rozmiar wynikający z panelu. Diagnostyka rozróżnia
+  żądane położenie i rozmiar od wartości faktycznie zgłoszonych przez klienta.
+• Miniatury czołgów i map przy nazwach na listach pochodzą z lokalnych zasobów
+  klienta, rozpoznanych po identyfikatorach. Nie wymagają dodatkowego pobierania
+  ani zmiany formatu zapisanej historii. Brak zasobu nie wyłącza statystyk.
+• Znak ujemnej kwoty ma postać ASCII '-', aby nie znikał w czcionce klienta.
+  Dotyczy to kosztów oraz ujemnego salda w każdym zestawieniu.
+
+Zrzut potwierdził odbiór co najmniej jednego wyniku w 0.2.1: bitwę, WN8, PD
+i rozliczenie kredytów oraz obligacji. Nie jest to pełne potwierdzenie poprawności
+wszystkich rodzajów wyników ani test nowego wydania 0.2.2 w kliencie.
+
+INSTALACJA AKTUALIZACJI
+Zamknij grę. Usuń poprzedni grz.sessionstats_0.2.0.wotmod lub
+grz.sessionstats_0.2.1.wotmod z aktywnego katalogu mods. Wstaw
+grz.sessionstats_0.2.2.wotmod i pozostaw jedną kopię OpenWG Gameface 1.2.2.
+Nie trzeba resetować zapisanej sesji. Pełna instrukcja jest w README_PL.txt.
+
+0.2.1 • 20.10.2026
+
+Poprawki po zgłoszeniu i zrzucie ekranu z rzeczywistego klienta WoT:
+
+• Kontrolki panelu mają jawny układ, rozmiary i osobne elementy etykiet.
+  Usunięto zależność od domyślnego renderowania tekstu przycisków w przeglądarce.
+  Dotyczy to zakładek sesji, Bazowe/Otrzymane PD, Czołgi/Mapy/Bitwy,
+  odświeżania, zerowania i zamykania okna.
+• Czytelniejszy font Warhelios w treści i przyciskach, z określonymi rozmiarami.
+  Panel zachowuje zwarty układ i jedną przewijaną listę szczegółów.
+• Okno jest centrowane przez mechanizm okien klienta już przy otwieraniu.
+  Rozmiar uwzględnia skalę interfejsu zgłaszaną przez WoT.
+• Szeroki napis w garażu zastąpiono ikoną o szerokości 44 jednostek interfejsu:
+  trzy szare słupki i małe WN8 w górnym rogu, jak indeks. Rozmiar skaluje się
+  razem z natywną stopką. Słupki są własnym kształtem CSS wzorowanym na grze.
+• Uzupełniono sprawdzanie renderowania etykiet, działania kontrolek, skalowania
+  i cyklu życia okna oraz ikony. Testy okna korzystają z symulacji API klienta;
+  testy HTML działają w Chrome, a nie w silniku Gameface uruchomionego WoT.
+
+INSTALACJA AKTUALIZACJI
+Zamknij grę. Usuń z aktywnego katalogu mods wyłącznie poprzedni plik
+grz.sessionstats_0.2.0.wotmod i zastąp go plikiem grz.sessionstats_0.2.1.wotmod.
+Pozostaw jedną kopię OpenWG Gameface; dołączona wersja 1.2.2 jest niezmieniona.
+Nie trzeba zerować danych w AppData. Pełna instrukcja jest w README_PL.txt.
+
+ZAKRES WERYFIKACJI
+To poprawka na podstawie konkretnego zrzutu i sprawdzonych kontraktów klienta.
+Wydania 0.2.1 nie uruchomiono tutaj w działającym WoT. Pierwsze sprawdzenie
+widoczności przycisków, ich reakcji, pozycji okna i ikony można wykonać w garażu,
+bez rozgrywania bitwy losowej. Samo 0 bitew na zrzucie nie rozstrzyga, czy
+odbiór nowych wyników działa; ten etap wymaga porównania z wynikiem gry.
+
+0.2.0 • 20.10.2026
+
+Pierwsza paczka instalacyjna z rzeczywistym bajtkodem Python 2.7, oknem Gameface,
+przyciskiem garażu, trwałą sesją ręczną, sesją od uruchomienia oraz zestawieniami
+czołgów, map i bitew. Zawiera obliczenia WN8, przełącznik rodzaju PD i rozliczenia
+walut, w tym obligacji. Wcześniejsze sprawdzenie w Chrome nie wykryło usterek
+renderowania, które ujawnił zrzut użytkownika z działającego klienta.

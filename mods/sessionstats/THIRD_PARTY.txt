@@ -1,0 +1,81 @@
+STATYSTYKI SESJI 0.2.3 — SKŁADNIKI ZEWNĘTRZNE I ŹRÓDŁA
+20.10.2026
+
+1. OpenWG Gameface 1.2.2
+Autorzy: Andrii Andrushchyshyn, Mikhail Paulyshka i współtwórcy OpenWG.
+Licencja MIT; pełne oryginalne zawiadomienie jest w source/third_party/openwg/LICENSE.
+Dołączona paczka net.openwg.gameface_1.2.2.wotmod pochodzi z wydania autora i nie
+została zmodyfikowana. Umożliwia załadowanie przycisku wewnątrz stopki garażu.
+Wydanie: https://gitlab.com/openwg/wot.gameface/-/releases/v1.2.2
+Źródła: https://gitlab.com/openwg/wot.gameface/-/tree/v1.2.2
+Commit: ca0d87251e68aec578d2bf3356c004236a5e406b
+SHA-256: 2bb65f28663e3ab34b5a1102a1bbd1f6e17a65e1f6a898a8645c4ab732b50184
+
+2. WN8 — wartości oczekiwane XVM, wariant Wargaming
+Publikator danych: zespół XVM, modxvm.com.
+Tabela: https://modxvm.com/en/wn8-expected-values/
+Plik: https://static.modxvm.com/wn8-data-exp/json/wg/wn8exp.json
+Wersja pobrana 20.10.2026: 2026-10-19, 999 pojazdów.
+SHA-256: 00ac1b79966f3243c8f9ee3f7a9fee8b83edcb03ee9c9f137f7b2914b0fc69ff
+Nie zastosowano wariantu Lesta ani przelicznika dwucyfrowej skali XVM.
+Opis formuły autorów WN8, zachowany przez społeczność Korean Random:
+https://koreanrandom.com/forum/topic/81531-wn8-a-detailed-article-about-the-rating-and-its-formula-from-its-developers/
+WN8 nie jest oficjalnym wskaźnikiem Wargaming.
+
+3. Integracja klienta — źródła techniczne
+Zanju WoT Mods, przemyslaw-zan i współtwórcy, GPL-3.0:
+https://github.com/przemyslaw-zan/zanju-wot-mods
+docs/reference/runtime-layout-and-packaging.md
+docs/reference/gameface-mod-widgets.md
+mods/campaign-tracker/src/zanju_ct/gameface/card_window.py
+mods/directives-helper/src/zanju_dh/gameface/bar_probe_inject.py
+Wzorce okna Wulf, rejestracji zasobów oraz własnego komponentu w stopce zostały
+przystosowane do tego moda. Nowy kod, kompletne źródła i skrypt budowy są dołączone
+na warunkach GPL-3.0; tekst licencji znajduje się w LICENSE.txt.
+
+Wotstat Analytics, autorzy projektu wotstat:
+https://github.com/wotstat/wotstat-analytics
+Źródło do sprawdzenia kształtu zdarzenia wyniku bitwy i pól rozliczeń.
+Kod tego moda nie wysyła danych do Wotstat ani żadnej usługi analitycznej.
+
+Mirror kodu klienta, izeberg/wot-src, gałąź EU (2.4.1.5493):
+https://github.com/izeberg/wot-src/tree/EU
+Sprawdzone kontrakty: gui/battle_results/components/details.py, service.py,
+reusable/economics_records.py, reusable/personal.py, stats_ctrl.py,
+frameworks/wulf/__init__.py, frameworks/wulf/windows_system/window.py,
+frameworks/wulf/windows_system/windows_area.py, frameworks/wulf/gui_application.py,
+skeletons/gui/impl.py oraz gui/impl/pub/window_impl.py.
+Służył do weryfikacji wewnętrznego API, zasad rozliczeń i cyklu życia okna.
+Kod klienta nie jest dołączony. Wewnętrzne API może zmienić się w aktualizacji.
+
+Gameface, dokumentacja producenta Coherent Labs:
+https://docs.coherent-labs.com/cpp-gameface/content_development/supported_features_tables/htmlelements/
+https://docs.coherent-labs.com/cpp-gameface/what_is_gfp/htmlfeaturesupport/
+https://docs.coherent-labs.com/cpp-gameface/content_development/tailwindsupport/
+https://docs.coherent-labs.com/cpp-gameface/content_development/supported_features_tables/cssproperties/
+Sprawdzono częściowe wsparcie button oraz różnice układu tekstu i domyślnych
+wartości flex względem przeglądarki. Panel definiuje układ i etykiety jawnie.
+W 0.2.2 usunięto currentColor z tła słupków ikony: dokumentacja producenta
+wprost wskazuje brak obsługi tego słowa kluczowego dla koloru tła.
+Aktualna dokumentacja Gameface nie potwierdza wersji silnika w danym WoT;
+przeglądarka i symulacje API nie zastępują sprawdzenia w rzeczywistym kliencie.
+Szczegółowe źródła kontraktów okna: source/docs/UI_0.2.1_SOURCE_EVIDENCE.md
+oraz source/docs/UI_0.2.2_SOURCE_EVIDENCE.md.
+
+Mirror zasobów klienta, Kurzdor/wot.assets, wydanie 2.4.1.0 #977:
+https://github.com/Kurzdor/wot.assets/tree/3605bd36c53d10c16be5d93f5414aa5fd129e84e
+Commit z 16.10.2026: 3605bd36c53d10c16be5d93f5414aa5fd129e84e.
+Sprawdzono zdarzenie GFViewEventProxy MOVE w tutorial.js i MembersWindow.js,
+natywne użycie loadera img:// oraz rejestr i katalog grafik pojazdów i map.
+Źródła służą weryfikacji adapterów; grafiki gry nie są dołączone do wydania.
+Kontrakty miniatur i dokładne źródła: source/docs/VISUALS_0.2.2_SOURCE_EVIDENCE.md.
+W 0.2.3 sprawdzono kierunek przewijania w InfoView.js oraz przekazywanie
+DOM deltaY w dołączonym React w InfoView.html z tego samego commitu.
+Dokładny łańcuch źródeł i granice weryfikacji, w tym flagi cancelable:
+source/docs/WHEEL_0.2.3_SOURCE_EVIDENCE.md.
+
+4. Zasoby i nazwy gry
+World of Tanks jest grą Wargaming. Mod używa fontów dostępnych w uruchomionym
+kliencie gry. Miniatury odwołują się do zasobów pojazdów i map zainstalowanych
+w kliencie. Nie dołącza skopiowanych fontów, grafik garażu ani plików klienta.
+Przykładowe wyniki w PODGLAD.html są syntetyczne i nie są statystykami użytkownika.

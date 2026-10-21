@@ -1,3 +1,14 @@
+# World of Tanks — mody
+
+| Mod | Źródła i instrukcja | Wydania |
+|---|---|---|
+| Session Stats — WN8, PD, finanse, historia sesji | [mods/sessionstats](mods/sessionstats) | Tagi `sessionstats-v…`, ZIP z zależnością i konfiguracją |
+| Stay Sharp — Medkit Reminder | [source](source), opis poniżej | Tagi `v1.6.…`, samodzielny `.wotmod` |
+
+Oba mody można instalować niezależnie. [Wszystkie wydania](../../releases).
+Źródła, testy i licencje są rozdzielone; licencja statystyk nie obejmuje apteczki.
+Zasady integracji: [mods/sessionstats/README.md](mods/sessionstats/README.md).
+
 # Stay Sharp — Medkit Reminder for World of Tanks
 
 A small **client-side visual reminder** for the Commander's *Stay Sharp* perk.
@@ -7,7 +18,7 @@ The mod uses the regular consumables HUD and works independently of arcade, snip
 
 ## Downloads
 
-**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. Releases become downloadable for everyone after the first reviewed PR is merged and the Release workflow succeeds.
+**[GitHub Releases](../../releases)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. Releases become downloadable for everyone after the first reviewed PR is merged and the Release workflow succeeds.
 
 ## Installation
 
