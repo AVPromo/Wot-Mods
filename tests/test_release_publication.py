@@ -1,429 +1,266 @@
-"""Offline release-transaction regression tests; no real GitHub write operations."""
-import importlib.util
+"""Offline, end-to-end tests of the native GitHub CLI release workflow.
+
+A fake executable `gh` and `git` simulates API data and error conditions.
+Production contains no custom GitHub REST/HTTP client and never requires Java.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
 from pathlib import Path
+import re
+import subprocess
 import tempfile
 import unittest
-from unittest import mock
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/publish_release.py'
-spec = importlib.util.spec_from_file_location('staysharp_release_publisher', SCRIPT)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-PublicationError = module.PublicationError
-publish = module.publish
-sha256 = module.sha256
-GitHubCLI = module.GitHubCLI
-
-SHA = 'a' * 40
-DIFFERENT_SHA = 'b' * 40
+ROOT = Path(__file__).resolve().parents[1]
+PUBLISHER = ROOT / 'scripts/publish_release.sh'
 VERSION = '1.6.7'
 TAG = 'v' + VERSION
+SHA = 'a' * 40
+OTHER_SHA = 'b' * 40
+REPO = 'example/WotMods'
+
+CLI_STUB = r'''#!/usr/bin/env python3
+import base64, json, os, pathlib, sys
+statefile=pathlib.Path(os.environ['FAKE_STATE'])
+state=json.loads(statefile.read_text())
+args=sys.argv[1:]
+cmd=os.path.basename(sys.argv[0])
+state['actions'].append([cmd]+args)
+
+def save(): statefile.write_text(json.dumps(state))
+def fail(message):
+    save()
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+def field(flag,default=None):
+    try: return args[args.index(flag)+1]
+    except ValueError: return default
+
+if cmd=='git':
+    if args[:2]!=['ls-remote','--tags']:
+        fail('Unexpected git operation')
+    tag=args[-2].split('/')[-1]
+    tag=tag.split('^{')[0]
+    sha=state['tags'].get(tag)
+    if sha: print(sha+'\trefs/tags/'+tag)
+    save();sys.exit(0)
+if cmd!='gh' or len(args)<2 or args[0]!='release': fail('No native gh release')
+operation=args[1]
+if operation=='list':
+    if os.environ.get('FAKE_LIST_FAILURE')=='1': fail('Simulated listing failure')
+    print(json.dumps([{'tagName':k,'isDraft':v['draft'],'isPrerelease':v.get('prerelease',False)}
+                      for k,v in state['releases'].items()]))
+if operation=='create':
+    tag=args[2]
+    if tag in state['releases']: fail('Release already exists')
+    if '--verify-tag' in args and tag not in state['tags']: fail('Tag must exist')
+    if tag not in state['tags']: state['tags'][tag]=field('--target')
+    release={'draft':True,'prerelease':False,'assets':{}}
+    state['releases'][tag]=release
+    if os.environ.get('FAKE_FAIL_CREATE_AFTER_DRAFT')=='1':
+        fail('Interrupted after creating draft')
+    paths=[]
+    for v in args[3:]:
+        if v.startswith('--'): break
+        paths.append(pathlib.Path(v))
+    for p in paths:
+        release['assets'][p.name]=base64.b64encode(p.read_bytes()).decode('ascii')
+    release['draft']=False
+if operation=='delete':
+    tag=args[2]
+    if os.environ.get('FAKE_DELETE_FAILURE')=='1': fail('Cannot delete draft')
+    if tag not in state['releases'] or not state['releases'][tag]['draft']:
+        fail('Not a draft')
+    state['releases'].pop(tag)
+if operation=='view':
+    tag=args[2]
+    release=state['releases'].get(tag)
+    if not release or release['draft']: fail('Release not found')
+    assets=[{'name':k,'size':len(base64.b64decode(v))} for k,v in release['assets'].items()]
+    print(json.dumps({'tagName':tag,'isDraft':False,'isPrerelease':release['prerelease'],
+                      'assets':assets,'url':'https://github.com/example/WotMods/releases/tag/'+tag}))
+if operation=='download':
+    tag=args[2]
+    release=state['releases'].get(tag)
+    if not release or release['draft']: fail('Release not found')
+    target=pathlib.Path(field('--dir'))
+    target.mkdir(parents=True,exist_ok=True)
+    for k,v in release['assets'].items():
+        if k in [args[i+1] for i,elm in enumerate(args) if elm=='--pattern']:
+            (target/k).write_bytes(base64.b64decode(v))
+save()
+'''
 
 
-class FakeGitHub:
-    def __init__(self):
-        self.commit = None
-        self.release = None
-        self.actions = []
-        self.fail_upload_once = False
-
-    def tag_commit(self, tag):
-        self.actions.append('get_tag')
-        return self.commit
-
-    def create_tag(self, tag, commit):
-        self.actions.append('create_tag')
-        self.commit = commit
-
-    def get_release(self, tag):
-        self.actions.append('get_release')
-        return self.release
-
-    def create_draft(self, tag, commit, title):
-        self.actions.append('create_draft')
-        self.release = {'tag_name': tag, 'draft': True, 'prerelease': False,
-                        'html_url': 'https://github.com/example/releases/v1.6.7',
-                        'assets': []}
-
-    def upload_draft(self, tag, paths):
-        self.actions.append('upload_draft')
-        self.release['assets'] = []
-        for index, path in enumerate(paths):
-            self.release['assets'].append({
-                'name': path.name,
-                'size': path.stat().st_size,
-                'state': 'uploaded',
-                'digest': 'sha256:' + sha256(path),
-            })
-            if index == 0 and self.fail_upload_once:
-                self.fail_upload_once = False
-                raise PublicationError('Simulated interruption halfway through upload')
-
-    def publish_draft(self, tag):
-        self.actions.append('publish_draft')
-        self.release['draft'] = False
-
-    def asset_hash(self, tag, asset, name):
-        self.actions.append('asset_hash')
-        return asset['digest'].split(':')[1]
-
-
-class ReleasePublicationTests(unittest.TestCase):
+class NativeReleaseTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.folder = Path(self.tmp.name)
-        self.mod = self.folder / ('com.staysharp.medkitreminder_%s.wotmod' % VERSION)
-        self.mod.write_bytes(b'example-mod-for-local-test')
-        self.manifest = self.folder / 'SHA256SUMS.txt'
-        self.manifest.write_text('%s  %s\n' % (sha256(self.mod), self.mod.name), encoding='ascii')
-        self.api = FakeGitHub()
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.work = Path(self.dir.name)
+        self.bin = self.work / 'bin'
+        self.bin.mkdir()
+        stub = self.bin / 'gh'
+        stub.write_text(CLI_STUB)
+        stub.chmod(0o755)
+        (self.bin / 'git').symlink_to(stub)
+        self.dist = self.work / 'dist'
+        self.dist.mkdir()
+        self.mod = self.dist / ('com.staysharp.medkitreminder_%s.wotmod' % VERSION)
+        self.mod.write_bytes(b'wotmod-test-binary--NoCredentials')
+        self.manifest = self.dist / 'SHA256SUMS.txt'
+        self.manifest.write_text(hashlib.sha256(self.mod.read_bytes()).hexdigest() +
+                                 '  ' + self.mod.name + '\n',encoding='ascii')
+        self.state_path = self.work / 'github.json'
+        self.state = {'tags':{},'releases':{},'actions':[]}
+        self.store()
 
-    def run_release(self):
-        return publish(self.api, 'example/WotMods', TAG, SHA, VERSION, self.folder)
+    def store(self):
+        self.state_path.write_text(json.dumps(self.state))
 
-    def test_new_release_creates_tag_then_draft_uploads_verifies_and_publishes(self):
-        self.assertEqual(self.run_release(), 'published')
-        self.assertEqual(self.api.commit, SHA)
-        self.assertFalse(self.api.release['draft'])
-        self.assertEqual(len(self.api.release['assets']), 2)
-        for name in ('create_tag', 'create_draft', 'upload_draft', 'publish_draft'):
-            self.assertEqual(self.api.actions.count(name), 1)
+    def load(self):
+        self.state = json.loads(self.state_path.read_text())
+        return self.state
 
-    def test_existing_wrong_tag_is_never_retargeted(self):
-        self.api.commit = DIFFERENT_SHA
-        with self.assertRaisesRegex(PublicationError, 'points to'):
-            self.run_release()
-        self.assertNotIn('create_draft', self.api.actions)
-        self.assertNotIn('upload_draft', self.api.actions)
+    def already_published(self, tag=TAG, commit=SHA, missing=False, corrupt=False):
+        assets = {
+            self.mod.name:base64.b64encode(b'corruption' if corrupt else self.mod.read_bytes()).decode('ascii'),
+            self.manifest.name:base64.b64encode(self.manifest.read_bytes()).decode('ascii'),
+        }
+        if missing: assets.pop(self.mod.name)
+        self.state['tags'][tag]=commit
+        self.state['releases'][tag]={'draft':False,'prerelease':False,'assets':assets}
+        self.store()
 
-    def test_existing_correct_tag_without_release_can_be_published(self):
-        self.api.commit = SHA
-        self.assertEqual(self.run_release(), 'published')
-        self.assertNotIn('create_tag', self.api.actions)
+    def run_native(self,recovery=False,extra=None):
+        env = os.environ.copy()
+        env.update(PATH=str(self.bin) + os.pathsep + env['PATH'],
+                   FAKE_STATE=str(self.state_path), GH_TOKEN='fake-not-secret',
+                   GITHUB_REPOSITORY=REPO, RELEASE_TAG=TAG,
+                   RELEASE_VERSION=VERSION, RELEASE_COMMIT=SHA,
+                   STAYSHARP_RECOVERY_MODE='1' if recovery else '0',
+                   STAYSHARP_DIST_DIR=str(self.dist))
+        env.update(extra or {})
+        return subprocess.run(['bash',str(PUBLISHER)],cwd=ROOT,env=env,
+                              text=True,capture_output=True,check=False)
 
-    def test_existing_draft_without_assets_is_repaired_and_published(self):
-        self.api.commit = SHA
-        self.api.create_draft(TAG, SHA, 'draft')
-        self.api.actions.clear()
-        self.assertEqual(self.run_release(), 'published')
-        self.assertIn('upload_draft', self.api.actions)
-        self.assertFalse(self.api.release['draft'])
+    def assert_ok(self,r):
+        self.assertEqual(r.returncode,0,r.stderr+'\n'+r.stdout)
 
-    def test_rerun_repairs_failed_upload_in_existing_draft(self):
-        self.api.fail_upload_once = True
-        with self.assertRaisesRegex(PublicationError, 'Simulated interruption'):
-            self.run_release()
-        self.assertTrue(self.api.release['draft'])
-        self.assertEqual(len(self.api.release['assets']), 1)
-        self.assertEqual(self.run_release(), 'published')
-        self.assertEqual(len(self.api.release['assets']), 2)
+    def test_new_release_is_created_with_both_assets(self):
+        r=self.run_native();self.assert_ok(r)
+        state=self.load()
+        self.assertEqual(state['tags'][TAG],SHA)
+        self.assertFalse(state['releases'][TAG]['draft'])
+        self.assertEqual(set(state['releases'][TAG]['assets']),{self.mod.name,self.manifest.name})
+        self.assertIn('Published and verified',r.stdout)
 
-    def test_completed_release_rerun_verifies_and_does_not_mutate(self):
-        self.run_release()
-        self.api.actions.clear()
-        self.assertEqual(self.run_release(), 'verified_existing')
-        self.assertFalse(any(a in self.api.actions for a in
-                             ('create_tag', 'create_draft', 'upload_draft', 'publish_draft')))
+    def test_existing_correct_release_is_verified_without_mutation(self):
+        self.already_published()
+        r=self.run_native();self.assert_ok(r)
+        actions=self.load()['actions']
+        self.assertFalse(any(a[:3] in (['gh','release','create'],['gh','release','delete']) for a in actions))
 
-    def test_published_incomplete_release_fails_instead_of_false_success(self):
-        self.run_release()
-        self.api.release['assets'].pop()
-        self.api.actions.clear()
-        with self.assertRaisesRegex(PublicationError, 'asset set'):
-            self.run_release()
-        self.assertNotIn('upload_draft', self.api.actions)
+    def test_existing_release_corrupt_asset_rejected(self):
+        self.already_published(corrupt=True)
+        r=self.run_native();self.assertNotEqual(r.returncode,0)
+        self.assertIn('differs',r.stderr)
 
-    def test_published_corrupt_asset_fails_instead_of_overwriting(self):
-        self.run_release()
-        self.api.release['assets'][0]['digest'] = 'sha256:' + 'f'*64
-        self.api.actions.clear()
-        with self.assertRaisesRegex(PublicationError, 'SHA-256 mismatch'):
-            self.run_release()
-        self.assertNotIn('upload_draft', self.api.actions)
+    def test_published_release_with_missing_asset_fails(self):
+        self.already_published(missing=True)
+        r=self.run_native();self.assertNotEqual(r.returncode,0)
+        self.assertIn('incomplete',r.stderr)
 
-    def test_draft_with_wrong_tag_sha_does_not_upload(self):
-        self.api.commit = DIFFERENT_SHA
-        self.api.create_draft(TAG, DIFFERENT_SHA, 'draft')
-        self.api.actions.clear()
-        with self.assertRaisesRegex(PublicationError, 'points to'):
-            self.run_release()
-        self.assertNotIn('upload_draft', self.api.actions)
+    def test_wrong_tag_commit_fails_before_release_write(self):
+        self.state['tags'][TAG]=OTHER_SHA;self.store()
+        r=self.run_native();self.assertNotEqual(r.returncode,0)
+        self.assertIn('belongs to',r.stderr)
+        self.assertFalse(any(a[:3]==['gh','release','create'] for a in self.load()['actions']))
 
-    def test_release_without_tag_is_refused(self):
-        self.api.create_draft(TAG, SHA, 'draft')
-        self.api.actions.clear()
-        with self.assertRaisesRegex(PublicationError, 'tag is missing'):
-            self.run_release()
-        self.assertNotIn('create_tag', self.api.actions)
+    def test_draft_blocks_normal_release(self):
+        self.state['tags'][TAG]=SHA
+        self.state['releases'][TAG]={'draft':True,'prerelease':False,'assets':{}}
+        self.store()
+        r=self.run_native();self.assertNotEqual(r.returncode,0)
+        self.assertIn('Recovery workflow',r.stderr)
+        self.assertTrue(self.load()['releases'][TAG]['draft'])
 
-    def test_wrong_manifest_is_rejected_before_any_remote_operation(self):
-        self.manifest.write_text('deadbeef  ' + self.mod.name, encoding='ascii')
-        with self.assertRaisesRegex(PublicationError, 'Checksum manifest'):
-            self.run_release()
-        self.assertFalse(self.api.actions)
+    def test_recover_draft_recreates_without_moving_tag(self):
+        self.state['tags'][TAG]=SHA
+        self.state['releases'][TAG]={'draft':True,'prerelease':False,'assets':{}}
+        self.store()
+        r=self.run_native(recovery=True);self.assert_ok(r)
+        state=self.load()
+        self.assertEqual(state['tags'][TAG],SHA)
+        self.assertFalse(state['releases'][TAG]['draft'])
+        self.assertTrue(any(a[:3]==['gh','release','delete'] for a in state['actions']))
+        self.assertTrue(any('--latest=false' in a for a in state['actions'] if a[:3]==['gh','release','create']))
 
-    def test_unexpected_second_mod_is_rejected(self):
-        (self.folder / 'another.wotmod').write_bytes(b'foo')
-        with self.assertRaisesRegex(PublicationError, 'multiple'):
-            self.run_release()
-        self.assertFalse(self.api.actions)
+    def test_draft_delete_failure_has_manual_instructions(self):
+        self.state['tags'][TAG]=SHA
+        self.state['releases'][TAG]={'draft':True,'prerelease':False,'assets':{}}
+        self.store()
+        r=self.run_native(recovery=True,extra={'FAKE_DELETE_FAILURE':'1'})
+        self.assertNotEqual(r.returncode,0)
+        self.assertIn('GitHub Releases UI',r.stderr)
+        self.assertTrue(self.load()['releases'][TAG]['draft'])
 
-    def test_tag_version_mismatch_rejected(self):
-        with self.assertRaisesRegex(PublicationError, 'do not match'):
-            publish(self.api, 'example/WotMods', 'v1.6.8', SHA, VERSION, self.folder)
+    def test_recover_requires_existing_tag(self):
+        r=self.run_native(recovery=True)
+        self.assertNotEqual(r.returncode,0)
+        self.assertIn('existing',r.stderr)
 
-    def test_uploaded_asset_content_hash_is_also_checked(self):
-        self.run_release()
-        self.api.release['assets'][0]['digest'] = 'sha256:' + '0'*64
-        with self.assertRaisesRegex(PublicationError, 'SHA-256 mismatch'):
-            self.run_release()
+    def test_recover_wrong_tag_sha_never_deletes(self):
+        self.state['tags'][TAG]=OTHER_SHA
+        self.state['releases'][TAG]={'draft':True,'prerelease':False,'assets':{}}
+        self.store()
+        r=self.run_native(recovery=True)
+        self.assertNotEqual(r.returncode,0)
+        self.assertFalse(any(a[:3]==['gh','release','delete'] for a in self.load()['actions']))
 
-    def test_wrong_prerelease_flag_fails_closed(self):
-        self.run_release()
-        self.api.release['prerelease'] = True
-        with self.assertRaisesRegex(PublicationError, 'prerelease'):
-            self.run_release()
+    def test_partial_create_leaves_draft_detected_next_attempt(self):
+        r=self.run_native(extra={'FAKE_FAIL_CREATE_AFTER_DRAFT':'1'})
+        self.assertNotEqual(r.returncode,0)
+        self.assertTrue(self.load()['releases'][TAG]['draft'])
+        r=self.run_native()
+        self.assertNotEqual(r.returncode,0)
+        self.assertIn('Recovery workflow',r.stderr)
 
+    def test_bad_manifest_fails_before_github_calls(self):
+        self.manifest.write_text('bad hash\n')
+        r=self.run_native();self.assertNotEqual(r.returncode,0)
+        self.assertEqual(self.load()['actions'],[])
 
-class CLIContractTests(unittest.TestCase):
-    def test_only_404_counts_as_missing(self):
-        client = GitHubCLI('some/repository')
-        for code in (401, 403, 500):
-            fake = mock.Mock(returncode=1, stderr='gh: Forbidden (HTTP %d)' % code, stdout='')
-            with mock.patch.object(module.subprocess, 'run', return_value=fake):
-                with self.assertRaises(PublicationError):
-                    client.api('releases/tags/v1.6.1', missing_ok=True)
-        fake = mock.Mock(returncode=1, stderr='gh: Not Found (HTTP 404)', stdout='')
-        with mock.patch.object(module.subprocess, 'run', return_value=fake):
-            self.assertIsNone(client.api('releases/tags/v1.6.1', missing_ok=True))
+    def test_github_listing_failure_fails_closed(self):
+        r=self.run_native(extra={'FAKE_LIST_FAILURE':'1'})
+        self.assertNotEqual(r.returncode,0)
+        self.assertIn('Cannot list',r.stderr)
 
-    def test_annotated_tag_resolves_to_commit(self):
-        client = GitHubCLI('some/repository')
-        with mock.patch.object(client, 'api', side_effect=[
-            {'object': {'type': 'tag', 'sha': 'b' * 40}},
-            {'object': {'type': 'commit', 'sha': SHA}},
-        ]) as called:
-            self.assertEqual(client.tag_commit(TAG), SHA)
-            self.assertEqual(called.call_count, 2)
+    def test_no_homegrown_http_or_gh_api(self):
+        code=PUBLISHER.read_text()
+        self.assertNotIn('gh api',code)
+        self.assertNotIn('urllib',code)
+        self.assertNotIn('https://api.github.com',code)
+        self.assertNotIn('curl ',code)
+        self.assertNotIn('java ',code)
+        for workflow in ('release.yml','recover.yml'):
+            source=(ROOT/'.github/workflows'/workflow).read_text()
+            self.assertIn('publish_release.sh',source)
+            self.assertNotIn('publish_release.py',source)
+            self.assertNotIn('gh api',source)
+        self.assertFalse((ROOT/'scripts/publish_release.py').exists())
 
-    def test_ambiguous_reference_is_rejected(self):
-        client = GitHubCLI('some/repository')
-        with mock.patch.object(client, 'api', return_value=[]):
-            with self.assertRaises(PublicationError):
-                client.tag_commit(TAG)
-
-    def test_explicit_tag_creation_uses_expected_commit(self):
-        client = GitHubCLI('some/repository')
-        with mock.patch.object(client, 'command', return_value='') as gh:
-            client.create_tag(TAG, SHA)
-            self.assertIn('sha='+SHA, gh.call_args.args)
-            self.assertIn('ref=refs/tags/'+TAG, gh.call_args.args)
+    def test_no_unexpected_release_cli_actions(self):
+        self.run_native()
+        for args in self.load()['actions']:
+            if args[0] == 'gh':
+                self.assertEqual(args[1], 'release')
+                self.assertIn(args[2], {'create','list','view','download','delete'})
 
 
-if __name__ == '__main__':
+if __name__=='__main__':
     unittest.main()
-
-
-class RealGitHubDraftRegressionTests(unittest.TestCase):
-    """Recreate the exact GitHub API contract behind run #39677307005."""
-
-    def test_draft_is_listed_but_tag_endpoint_is_404(self):
-        client = GitHubCLI('owner/repo')
-        draft = {'id': 420063804, 'tag_name': 'v1.6.1', 'draft': True,
-                 'prerelease': False, 'assets': []}
-        called = []
-
-        def actual_api(resource, **kwargs):
-            called.append(resource)
-            if resource.startswith('releases?'):
-                return [draft]
-            if resource == 'releases/420063804':
-                return draft
-            if resource == 'releases/tags/v1.6.1':
-                return None  # Verified real GitHub HTTP 404 for a draft.
-            raise AssertionError('Unexpected endpoint ' + resource)
-
-        with mock.patch.object(client, 'api', side_effect=actual_api):
-            self.assertEqual(client.get_release('v1.6.1'), draft)
-        self.assertEqual(called,
-                         ['releases?per_page=100&page=1', 'releases/420063804'])
-
-    def test_paginate_when_draft_not_on_first_page(self):
-        client = GitHubCLI('owner/repo')
-        page1 = [{'id': k+1, 'tag_name': 'v0.0.%d' % k} for k in range(100)]
-        item = {'id': 555, 'tag_name': 'v1.6.1', 'draft': True, 'assets': []}
-
-        def actual_api(resource, **kwargs):
-            if resource.endswith('page=1'):
-                return page1
-            if resource.endswith('page=2'):
-                return [item]
-            if resource == 'releases/555':
-                return item
-            raise AssertionError(resource)
-
-        with mock.patch.object(client, 'api', side_effect=actual_api):
-            self.assertEqual(client.get_release('v1.6.1'), item)
-            self.assertIsNone(client.get_release('v1.6.2'))
-
-    def test_unknown_release_returns_none_without_creating_draft(self):
-        client = GitHubCLI('owner/repo')
-        with mock.patch.object(client, 'api', return_value=[]):
-            self.assertIsNone(client.get_release('v1.6.2'))
-
-    def test_malformed_release_listing_fails_closed(self):
-        client = GitHubCLI('owner/repo')
-        with mock.patch.object(client, 'api', return_value={'draft': True}):
-            with self.assertRaisesRegex(PublicationError, 'listing'):
-                client.get_release('v1.6.1')
-
-    def test_duplicate_tag_listings_are_rejected(self):
-        client = GitHubCLI('owner/repo')
-        item = {'id': 15, 'tag_name': 'v1.6.1'}
-        with mock.patch.object(client, 'api', return_value=[item, item]):
-            with self.assertRaisesRegex(PublicationError, 'Ambiguous'):
-                client.get_release('v1.6.1')
-
-    def test_uploads_draft_by_numeric_id_not_by_tag(self):
-        client = GitHubCLI('owner/repo')
-        with tempfile.TemporaryDirectory() as directory:
-            p = Path(directory) / 'com.staysharp.medkitreminder_1.6.1.wotmod'
-            p.write_bytes(b'mod-1.6.1')
-            draft = {'id': 420063804, 'tag_name': 'v1.6.1',
-                     'draft': True, 'assets': []}
-            created = {'name': p.name, 'size': p.stat().st_size,
-                       'state': 'uploaded', 'digest': 'sha256:' + sha256(p)}
-            with mock.patch.object(client, 'get_release', return_value=draft), \
-                 mock.patch.object(client, '_request_bytes',
-                                   return_value=module.json.dumps(created).encode()) as transfer, \
-                 mock.patch.object(client, 'command') as command:
-                client.upload_draft('v1.6.1', [p])
-                command.assert_not_called()
-                transfer.assert_called_once()
-                url = transfer.call_args.args[0]
-                self.assertEqual(url, 'https://uploads.github.com/repos/owner/repo/'
-                                      'releases/420063804/assets?name=' + p.name)
-                self.assertEqual(transfer.call_args.kwargs['method'], 'POST')
-                self.assertEqual(transfer.call_args.kwargs['payload'], b'mod-1.6.1')
-
-    def test_corrupted_draft_asset_is_removed_before_reupload(self):
-        client = GitHubCLI('owner/repo')
-        with tempfile.TemporaryDirectory() as directory:
-            p = Path(directory) / 'SHA256SUMS.txt'
-            p.write_bytes(b'new manifest')
-            draft = {'id': 22, 'tag_name': 'v1.6.1', 'draft': True,
-                     'assets': [{'id': 53, 'name': p.name, 'size': 3,
-                                 'state': 'uploaded', 'digest': 'sha256:bad'}]}
-            created = {'name': p.name, 'size': p.stat().st_size,
-                       'state': 'uploaded', 'digest': 'sha256:' + sha256(p)}
-            with mock.patch.object(client, 'get_release', return_value=draft), \
-                 mock.patch.object(client, '_request_bytes',
-                                   return_value=module.json.dumps(created).encode()), \
-                 mock.patch.object(client, 'command') as command:
-                client.upload_draft('v1.6.1', [p])
-                self.assertEqual(command.call_args.args[-1],
-                                 'repos/owner/repo/releases/assets/53')
-
-    def test_matching_draft_asset_not_clobbered(self):
-        client = GitHubCLI('owner/repo')
-        with tempfile.TemporaryDirectory() as directory:
-            p = Path(directory) / 'SHA256SUMS.txt'
-            p.write_bytes(b'already uploaded')
-            draft = {'id': 22, 'tag_name': 'v1.6.1', 'draft': True,
-                     'assets': [{'id': 54, 'name': p.name,
-                                 'size': p.stat().st_size, 'state': 'uploaded',
-                                 'digest': 'sha256:' + sha256(p)}]}
-            with mock.patch.object(client, 'get_release', return_value=draft), \
-                 mock.patch.object(client, '_request_bytes') as transfer, \
-                 mock.patch.object(client, 'command') as command:
-                client.upload_draft('v1.6.1', [p])
-                transfer.assert_not_called()
-                command.assert_not_called()
-
-    def test_publish_draft_uses_release_numeric_id(self):
-        client = GitHubCLI('owner/repo')
-        draft = {'id': 420063804, 'tag_name': 'v1.6.1', 'draft': True}
-        with mock.patch.object(client, 'get_release', return_value=draft), \
-             mock.patch.object(client, 'command') as command:
-            client.publish_draft('v1.6.1')
-            self.assertEqual(command.call_args.args,
-                             ('api', '--method', 'PATCH',
-                              'repos/owner/repo/releases/420063804',
-                              '-F', 'draft=false'))
-
-    def test_missing_digest_fail_closed_without_draft_download(self):
-        client = GitHubCLI('owner/repo')
-        with mock.patch.object(client, 'command') as command:
-            with self.assertRaisesRegex(PublicationError, 'valid GitHub SHA-256'):
-                client.asset_hash('v1.6.1', {'id': 33}, 'example.wotmod')
-            command.assert_not_called()
-
-    def test_creating_draft_waits_for_listing_visibility(self):
-        with tempfile.TemporaryDirectory() as directory:
-            folder = Path(directory)
-            version = '1.6.7'
-            p = folder / ('com.staysharp.medkitreminder_%s.wotmod' % version)
-            p.write_bytes(b'example')
-            (folder / 'SHA256SUMS.txt').write_text(
-                '%s  %s\n' % (sha256(p), p.name), encoding='ascii')
-            api = FakeGitHub()
-            original_get = api.get_release
-            waited = [0]
-
-            def lagged_get(tag):
-                if api.release is not None and waited[0] < 2:
-                    waited[0] += 1
-                    return None
-                return original_get(tag)
-
-            with mock.patch.object(api, 'get_release', side_effect=lagged_get), \
-                 mock.patch.object(module.time, 'sleep') as sleep:
-                self.assertEqual(publish(api, 'owner/repo', 'v1.6.7', SHA,
-                                         version, folder), 'published')
-                self.assertEqual(sleep.call_count, 2)
-
-
-class WorkflowRegressionTests(unittest.TestCase):
-    """Check recovery is opt-in and cannot publish from PR event."""
-
-    def test_recovery_workflow_requires_manual_dispatch(self):
-        root = Path(__file__).resolve().parents[1]
-        source = (root / '.github/workflows/recover.yml').read_text(encoding='utf-8')
-        self.assertIn('workflow_dispatch:', source)
-        self.assertIn('required: true', source)
-        self.assertIn("if: github.ref == 'refs/heads/main'", source)
-        self.assertIn('RELEASE_COMMIT: ${{ steps.tagged.outputs.commit }}', source)
-        self.assertIn('STAYSHARP_DIST_DIR: ${{ github.workspace }}/tagged_source/dist', source)
-        self.assertIn('persist-credentials: false', source)
-        self.assertNotIn('pull_request:', source)
-        self.assertNotIn('curl -H', source)
-
-    def test_release_workflow_still_auto_publishes_new_main_commits(self):
-        root = Path(__file__).resolve().parents[1]
-        source = (root / '.github/workflows/release.yml').read_text(encoding='utf-8')
-        self.assertIn('push:', source)
-        self.assertIn('branches: [main]', source)
-        self.assertIn('python3 scripts/publish_release.py', source)
-        self.assertIn('wotmod-release-${{ github.repository }}', source)
-
-
-class RecoveryLatestRegressionTests(unittest.TestCase):
-    def test_repairing_old_draft_never_marks_it_latest(self):
-        client = GitHubCLI('owner/repo')
-        with mock.patch.dict(module.os.environ, {'STAYSHARP_RECOVERY_MODE': '1'}), \
-             mock.patch.object(client, 'get_release',
-                               return_value={'id': 420063804, 'draft': True}), \
-             mock.patch.object(client, 'command') as command:
-            client.publish_draft('v1.6.1')
-            self.assertEqual(command.call_args.args[-2:], ('-f', 'make_latest=false'))
-
-    def test_regular_release_can_be_automatically_latest(self):
-        client = GitHubCLI('owner/repo')
-        with mock.patch.dict(module.os.environ,
-                             {'STAYSHARP_RECOVERY_MODE': ''}), \
-             mock.patch.object(client, 'get_release',
-                               return_value={'id': 420063804, 'draft': True}), \
-             mock.patch.object(client, 'command') as command:
-            client.publish_draft('v1.6.2')
-            self.assertNotIn('make_latest=false', command.call_args.args)

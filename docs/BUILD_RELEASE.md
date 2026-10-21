@@ -40,44 +40,34 @@ Runs on every push to `main` and optional manual dispatch, serializing all relea
 1. Compute `v<base_patch + run_number - 1>`; a **rerun uses the same release version**, and failed attempts can leave gaps.
 2. Run full unit tests, privacy scan and deterministic `.wotmod` builder.
 3. Generate `SHA256SUMS.txt` and verify it before any GitHub write.
-4. `scripts/publish_release.py` checks the target tag's **resolved commit** (including annotated tags). An existing wrong-commit tag **fails without publication**.
-5. If no tag exists, create it explicitly at the workflow's exact `GITHUB_SHA` and verify it before making a draft Release.
-6. If a matching **draft** exists, re-upload/repair its two assets, check exact names/sizes/SHA-256, and only then publish it.
-7. If a matching **published Release** already exists, re-verify its two immutable assets; success only if it is complete and correct. Missing or corrupt published assets fail with a clear error for manual investigation; never silently overwrite published binaries.
-8. After publishing, verify tag, published state and both asset hashes again. GitHub supplies asset SHA-256 digests; if missing, the publisher downloads and hashes the asset.
+4. `scripts/publish_release.sh` uses only **GitHub CLI `gh release`**, read-only Git tag checks (`git ls-remote`) and `sha256sum`. No hand-written REST calls, HTTP client, Java, additional credentials or third-party release service.
+5. If a release tag already exists, its resolved commit is checked against the exact `GITHUB_SHA`. Incorrect tags stop publication; tags are never moved.
+6. `gh release create` takes both built files in one command. GitHub CLI internally creates a temporary draft, uploads its assets and publishes it. It is **not** fully atomic; an interrupted command may leave a draft.
+7. The pipeline recognizes incomplete drafts via `gh release list --json tagName,isDraft` rather than incorrectly treating `gh release view` HTTP 404 as proof of absence. An ordinary release run refuses to overwrite an existing draft.
+8. For already published releases, the pipeline downloads and compares the actual asset bytes with the local build. Both the mod and checksum manifest must match; existing published assets are never modified.
+9. The publication is verified only after GitHub CLI reports it as published and both downloads match `sha256sum`.
 
-The release script uses `gh` CLI and the built-in GitHub `GITHUB_TOKEN` (`GH_TOKEN`). No PAT or repository secret is required. There are no external actions other than pinned `actions/checkout`.
+The sole GitHub credential is the job-scoped built-in `GITHUB_TOKEN`, passed to GitHub CLI as `GH_TOKEN`. `actions/checkout` is pinned to a commit SHA and configured with `persist-credentials: false`.
 
 ## Operational limitations
 
-- A public repository does not guarantee an active Actions runner. Check workflow logs/billing/policy on any failure before merging. Local tests cannot prove the GitHub API publication path itself.
-- Release publication is multi-step, not an atomic GitHub operation. A failed run may leave a correctly tagged draft, which a rerun repairs. A corrupt **published** release intentionally requires manual intervention instead of overwriting public binaries.
+- A public repository does not guarantee an active Actions runner. Check workflow logs/billing/policy on any failure before merging. Offline command-level mocks cannot guarantee success of the real GitHub CLI upload path until a release completes.
+- Release publication is multi-step, not an atomic GitHub operation. A failed run may leave a correctly tagged draft. A manually dispatched Recovery workflow deletes **only that draft** (leaving its existing Git tag intact) and recreates it using one `gh release create` invocation. A corrupt **published** release intentionally requires manual intervention instead of overwriting public binaries.
 - `github.run_number` is workflow-specific. Changing the workflow name or lowering the base `VERSION` requires a review of version collisions. Tags are never moved by the pipeline.
 - The WoT bytecode uses the game's historical CPython 2.7 interpreter and non-public HUD structures. A future game update may require changing the mod.
 - Do not merge until the PR CI actually runs and passes, and perform one live in-game regression test of v1.6.1 after release.
 
 ## Recovery of interrupted draft releases
 
-The original `v1.6.1` publication workflow passed all build and privacy checks
-but failed while looking up a draft through `GET /releases/tags/v1.6.1`.
-That endpoint returns `404` for draft releases, even when the draft exists.
-The corrected publisher lists releases (including drafts), obtains their numeric
-release IDs, and uses those IDs for asset upload and publication.
+The original `v1.6.1` publication workflow built correctly but left a draft without files. The manual Recovery workflow uses only native `git` and `gh release` commands:
 
-A release remains a **draft** until both assets have been uploaded and their
-SHA-256 and metadata have been verified. On a failure, rerun the workflow from
-**Actions > Recover an interrupted WotMod Release > Run workflow**, choosing
-branch `main` and setting `tag` (e.g. `v1.6.1`). This manually triggered
-workflow:
+1. Validate `vX.Y.Z`, and resolve the existing tag to the exact commit with `git ls-remote` (including annotated tags).
+2. Check out that exact commit, rebuild the original `.wotmod`, run its own unit tests, privacy scan and SHA-256 manifest validation.
+3. Detect the existing release with `gh release list` (drafts included). If it is a **draft**, delete that draft only using `gh release delete --yes` (never `--cleanup-tag`). Then recreate and publish the complete Release using `gh release create TAG .wotmod SHA256SUMS.txt --verify-tag`.
+4. If GitHub CLI cannot delete the draft, fail with instructions to delete just the draft in the Releases UI while retaining the tag, then rerun Recovery.
+5. Verify the published release using `gh release view`, `gh release download`, byte-for-byte comparison and SHA-256.
+6. If already published, verify assets read-only. A wrong commit or a corrupt published release always fails without overwriting it.
 
-1. Resolves the tag to the exact, immutable commit SHA and verifies the checkout.
-2. Rebuilds the `.wotmod` using the source **at that tag**, not newer sources.
-3. Runs regression tests, privacy audit and SHA-256 manifest creation.
-4. Executes the **current reviewed** release publisher from `main` to resume
-   the draft with its original tag/commit, or to verify an already published
-   release without changing it.
+To recover `v1.6.1`, after merging the reviewed fix: **Actions → Recover an interrupted WotMod Release → Run workflow**, choose branch `main`, tag `v1.6.1`. This does not increment the normal Release workflow's version numbering or make the older release the latest one.
 
-Recovery never increments the automatic Release workflow's run number. The
-normal pipeline continues to create a new patch release for each push to `main`.
-Both workflows share a concurrency group to avoid conflicting publication runs.
-A failed earlier run should **not** be rerun using the original buggy commit.
+The GitHub CLI may use GitHub's own APIs internally; the repository does not implement or contact any external release API or service.

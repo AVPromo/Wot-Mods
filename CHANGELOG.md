@@ -18,3 +18,8 @@
 - Existing offline tests and release-packaging pipeline.
 
 Later releases are generated for **each push to `main`** after a reviewed merge; GitHub Releases contains the corresponding commit-based change notes.
+
+### GitHub Releases automation (pending PR #4)
+- Replaced the bespoke GitHub HTTP/REST publisher with first-party `gh release` commands.
+- Verify exact Git tags and real downloaded Release files using Git and SHA-256.
+- Explicitly detect incomplete draft releases; recovery deletes only the draft and recreates it from the original tag.

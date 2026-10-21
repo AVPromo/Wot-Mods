@@ -19,7 +19,7 @@ concurrency:
 jobs:
   recover:
     if: github.ref == 'refs/heads/main'
-    name: Rebuild exact tagged source and resume draft
+    name: Rebuild exact tagged source and recreate incomplete draft
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -31,30 +31,29 @@ jobs:
           persist-credentials: false
           path: publisher
 
-      - name: Resolve requested tag to its authoritative commit
+      - name: Resolve release tag using Git only
         id: tagged
         shell: bash
+        working-directory: publisher
         env:
-          GH_TOKEN: ${{ github.token }}
           RECOVER_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import os
-          import re
-          import sys
-          sys.path.insert(0, 'publisher/scripts')
-          from publish_release import GitHubCLI, PublicationError
-          tag = os.environ['RECOVER_TAG']
-          if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag):
-              raise SystemExit('Invalid release tag')
-          commit = GitHubCLI(os.environ['GITHUB_REPOSITORY']).tag_commit(tag)
-          if commit is None or not re.fullmatch(r'[0-9a-f]{40}', commit):
-              raise SystemExit('Release tag does not resolve to a commit')
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
-              handle.write('commit=' + commit + '\n')
-              handle.write('version=' + tag[1:] + '\n')
-          PY
+          [[ "$RECOVER_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
+          refs="$(git ls-remote --tags origin "refs/tags/$RECOVER_TAG" "refs/tags/$RECOVER_TAG^{}")"
+          direct=""
+          peeled=""
+          while IFS=$'\t' read -r sha ref; do
+            [[ -z "$sha" ]] && continue
+            case "$ref" in
+              "refs/tags/$RECOVER_TAG") direct="$sha" ;;
+              "refs/tags/$RECOVER_TAG^{}") peeled="$sha" ;;
+              *) echo 'Unexpected tag ref' >&2; exit 1 ;;
+            esac
+          done <<< "$refs"
+          commit="${peeled:-$direct}"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo 'Tag not found or not a commit' >&2; exit 1; }
+          printf 'commit=%s\nversion=%s\n' "$commit" "${RECOVER_TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout original source from exact tag commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -93,4 +92,5 @@ jobs:
           STAYSHARP_DIST_DIR: ${{ github.workspace }}/tagged_source/dist
         run: |
           set -euo pipefail
-          python3 publisher/scripts/publish_release.py
+          cd publisher
+          bash scripts/publish_release.sh

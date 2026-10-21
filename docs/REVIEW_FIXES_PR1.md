@@ -25,3 +25,8 @@ Rotation removes the old `.old` backup before calling Python 2.7-compatible `os.
 - Existing mod/HUD and packaging tests are retained; assets are not modified.
 
 This tests the logic and packaging **offline**. Real GitHub Releases are not created until the PR has passed review and been merged. Live WoT rendering of the updated runtime remains to be confirmed.
+
+
+## Follow-up: native GitHub Releases publishing
+
+The earlier Python GitHub publication implementation documented above has been superseded by `scripts/publish_release.sh` in PR #4. No Python REST client or `gh api` calls remain in the active release pipeline. It now delegates Release creation, asset upload and publication to GitHub's own `gh release create` command. Existing draft releases are inspected with `gh release list`; the manual Recovery workflow may delete only a verified draft, retaining its tag, before recreating the full release. Existing published releases are verified by downloading both assets instead of modifying them. Details: `docs/BUILD_RELEASE.md`.
