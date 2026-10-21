@@ -7,7 +7,7 @@ The mod uses the regular consumables HUD and works independently of arcade, snip
 
 ## Downloads
 
-**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. The Releases page becomes publicly available once the repository owner makes this repository public.
+**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. Releases become downloadable for everyone after the first reviewed PR is merged and the Release workflow succeeds.
 
 ## Installation
 
@@ -16,7 +16,7 @@ The mod uses the regular consumables HUD and works independently of arcade, snip
 3. Copy the downloaded `.wotmod` to `<World_of_Tanks_EU>/mods/<current_game_version>/`.
 4. Start WoT. To uninstall, remove this single `.wotmod` file.
 
-The version folder must match your currently installed WoT version. This modification is community-maintained and relies on internal WoT interfaces; **an update to WoT can break it**. The v1.6.0 implementation has offline test coverage, but it has **not** yet been confirmed in a live game client. Back up the last working version before testing an update.
+The version folder must match your currently installed WoT version. This modification is community-maintained and relies on internal WoT interfaces; **an update to WoT can break it**. The v1.5.0 rendering has been confirmed in a real client; the v1.6.1 event-driven implementation and the 1.6.1 log fix still require an in-game regression test. Back up the last working version before testing an update.
 
 Diagnostic log (created on the player's computer, **never included in releases**): `%LOCALAPPDATA%\StaySharpMedkit\staysharp.log`.
 
@@ -31,7 +31,7 @@ python3 source/build_wotmod.py
 sha256sum dist/*.wotmod
 ```
 
-The `assets/medkit_pulse_master.dds.b85` file is a compressed, ASCII-encoded source DDS. The builder recreates **all 21 original DDS animation frames byte-for-byte** using an exact, tested alpha-scaling formula; the full assets do not need to be separately committed. Build of baseline **v1.6.0** is bit-for-bit identical to the previously assembled release candidate (SHA-256: `9f3d98948ed398c3a4dc14b6785b68f10f1319381f896c6cd49b8709359c4927`).
+The `assets/medkit_pulse_master.dds.b85` file is a compressed, ASCII-encoded source DDS. The builder recreates **all 21 original DDS animation frames byte-for-byte** using an exact, tested alpha-scaling formula; the full assets do not need to be separately committed. The **historical v1.6.0** artifact has SHA-256 `9f3d98948ed398c3a4dc14b6785b68f10f1319381f896c6cd49b8709359c4927`. This legacy check applies only when building v1.6.0. Current code starts at **v1.6.1**, which includes a Windows log-rotation fix.
 
 See [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](docs/REVIEW_1.6.0.md), and [installation guide](docs/INSTALACJA.md).
 
@@ -39,14 +39,14 @@ See [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](
 
 1. Open a pull request against `main`. The **CI** workflow builds and tests the mod with a read-only token; it does **not** create Releases.
 2. Review and merge the PR. A separate **Release** workflow on each push to `main` rebuilds, reruns tests and privacy checks, then publishes a new versioned `.wotmod` together with `SHA256SUMS.txt` in GitHub Releases.
-3. Releases use monotonically increasing patch numbers derived from the **Release workflow run number**: the first release is `v1.6.0`, the next is `v1.6.1`, and so on. Skipped versions are possible after a failed workflow run. Re-running a successful workflow does not replace an existing Release.
+3. Releases use monotonically increasing patch numbers derived from the **Release workflow run number**: the first release is `v1.6.1`, the next is `v1.6.2`, and so on. Skipped versions are possible after a failed workflow run. Re-running a successful workflow does not replace an existing Release.
 
-A manual Release workflow trigger is also available. The pipeline uses the repository-scoped `GITHUB_TOKEN` only; **no PAT or repository secret is required**. Releases stay private until the repository is public.
+A manual Release workflow trigger is also available. The pipeline uses the repository-scoped `GITHUB_TOKEN` only; **no PAT or repository secret is required**. The repo is public, but no Release is published until this PR is merged.
 
 ## Privacy and safety
 
-No player ID, nickname, account token, email, API key, machine identifier, private path, telemetry collector or crash dump is shipped in source or releases. The build process scans for common secret/PII patterns. Runtime logging is local-only and is never uploaded by the mod.
+No player ID, nickname, account token, email, API key, machine identifier, private path, telemetry collector or crash dump is shipped in source or releases. The build process scans for common secret/PII patterns. This does **not** anonymize commit author/committer names or prior PR/Actions activity. Runtime logging is local-only and is never uploaded by the mod.
 
-When the repository becomes **public**, the **GitHub account that owns it, commits, PRs, Release authorship, Actions history and logs** will be publicly attributable; this repository cannot conceal its GitHub owner's identity. Do not commit private test logs or screenshots. See [publication checklist](docs/PUBLICATION_PRIVACY.md).
+As the repository is **public**, the **GitHub account that owns it, commits, PRs, Release authorship, Actions history and logs** will be publicly attributable; this repository cannot conceal its GitHub owner's identity. Do not commit private test logs or screenshots. See [publication checklist](docs/PUBLICATION_PRIVACY.md).
 
 This project is not affiliated with Wargaming. World of Tanks and related marks are the property of their respective owners. No license for redistribution/modification of the source beyond GitHub's platform terms has been chosen yet; the owner can add a `LICENSE` file in a separate reviewed PR.

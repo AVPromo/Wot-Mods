@@ -554,7 +554,7 @@ class Tests(unittest.TestCase):
         self.animate_at(8.0)
         log=Path(self.temp.name)/'StaySharpMedkit/staysharp.log'
         data=log.read_text()
-        for s in ['v1.6.0 loaded','native HUD visibility=hud_visible','equipment state=ready','GFX AFTER GUI.addRoot',
+        for s in ['v' + self.mod.VERSION + ' loaded','native HUD visibility=hud_visible','equipment state=ready','GFX AFTER GUI.addRoot',
                   'PULSE alive frame=0']:
             self.assertIn(s,data)
 

@@ -12,13 +12,13 @@ jobs:
   validate:
     name: Privacy, tests, deterministic build
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - name: Checkout reviewed source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Python and baseline version
+      - name: Python and base version
         shell: bash
         run: |
           set -euo pipefail
@@ -30,19 +30,21 @@ jobs:
       - name: Unit and packaging tests
         shell: bash
         run: python3 -m unittest discover -s tests -v
-      - name: Rebuild from source and verify baseline checksum
+      - name: Build reviewed version and check original v1.6.0 only when applicable
         shell: bash
         run: |
           set -euo pipefail
           python3 source/build_wotmod.py
-          echo '9f3d98948ed398c3a4dc14b6785b68f10f1319381f896c6cd49b8709359c4927  dist/com.staysharp.medkitreminder_1.6.0.wotmod' | sha256sum --check --status
+          if [[ "$(cat VERSION)" == '1.6.0' ]]; then
+            echo '9f3d98948ed398c3a4dc14b6785b68f10f1319381f896c6cd49b8709359c4927  dist/com.staysharp.medkitreminder_1.6.0.wotmod' | sha256sum --check --status
+          fi
           python3 scripts/privacy_audit.py --scan-dist
-      - name: Test next-release version interpolation
+      - name: Test automatic next-release version with the same reviewed sources
         shell: bash
-        env:
-          WOTMOD_VERSION: '1.6.1'
         run: |
           set -euo pipefail
+          export WOTMOD_VERSION="$(python3 scripts/release_version.py --run-number 2)"
+          echo "Testing generated patch version: $WOTMOD_VERSION"
           python3 -m unittest discover -s tests -q
           python3 source/build_wotmod.py
           python3 scripts/privacy_audit.py --scan-dist

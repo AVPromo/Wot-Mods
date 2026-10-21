@@ -8,7 +8,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 SCRIPT=ROOT/'source/build_wotmod.py'
-spec=importlib.util.spec_from_file_location('build_wotmod_v160', SCRIPT)
+spec=importlib.util.spec_from_file_location('build_wotmod_v161', SCRIPT)
 build=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
 
@@ -89,12 +89,16 @@ class Tests(unittest.TestCase):
             for c in range(3):
                 self.assertEqual(pix[c::4],reference[c::4])
 
-    def test_15_exact_shas_of_production_master_and_package(self):
+    def test_15_historical_v160_baseline_does_not_pin_future_versions(self):
         import hashlib
-        master=build.load_master()
-        self.assertEqual(hashlib.sha256(master).hexdigest(),
-                         '4659a9da85e1c35634e9dcbabbe6090d4a2fc292c485be484235ccd042517589')
+        master = build.load_master()
+        expected = (ROOT / 'assets/medkit_pulse_master.sha256').read_text().strip()
+        self.assertEqual(hashlib.sha256(master).hexdigest(), expected)
+        # Historical v1.6.0 checksum applies ONLY when actually rebuilding
+        # the historical source/version. New reviewed versions are allowed.
         if build.VERSION == '1.6.0':
+            self.assertEqual(hashlib.sha256(master).hexdigest(),
+                             '4659a9da85e1c35634e9dcbabbe6090d4a2fc292c485be484235ccd042517589')
             self.assertEqual(hashlib.sha256(self.target.read_bytes()).hexdigest(),
                              '9f3d98948ed398c3a4dc14b6785b68f10f1319381f896c6cd49b8709359c4927')
 

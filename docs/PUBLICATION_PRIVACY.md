@@ -1,14 +1,11 @@
-# Pre-publication privacy checklist
+# Public repository: privacy and provenance
 
-The tracked code and package were audited for accidental personal or security-related information. No identity/nickname, player ID, device ID, Windows user profile, email address, tokens or keys were found. The DDS source contains image data only; there is no EXIF or author block. The runtime log is created **locally** on the player's PC, not included in Git.
+The repo is now **public**. The build-time privacy scanner checks source, release resources, notes and common secret formats, but it does not scan Git commit metadata or GitHub Actions/PR records.
 
-Checklist before making the repository public:
-
-- Review **all PR files**, including `.github/workflows`, and Actions output. GitHub makes historic **Actions logs and history public** when repository visibility switches to public.
-- Review commit author/committer details and the GitHub account username. These are part of the project's public provenance, and **cannot be anonymized by the mod's code**.
-- Confirm no `.env`, workflow secrets, `python.log`, `staysharp.log`, `*.dmp`, screenshots of game accounts, local config exports or archives have ever been committed.
-- Review issue/PR descriptions and review comments: those also become public with the repo.
-- Run `python3 scripts/privacy_audit.py` and build tests before each merge.
-- Decide whether to add an open-source `LICENSE`. Publicly readable source does not automatically grant a software license.
-
-The security scanner is a **defense in depth** measure, not a guarantee. It catches common formats, not all possible sensitive or personal data. The source contains generic `%LOCALAPPDATA%` only, not an actual username or home path. No runtime HTTP requests, third-party telemetry, or sound assets are used.
+- **GitHub commit author/committer names and platform PR/review history are public.** They may contain personal attribution from earlier commits. Changing a profile display name does not change already-published commit objects or cached PR activities. Check this separately before distributing project links.
+- Do not commit `staysharp.log`, `python.log`, screenshots, game identifiers, private account exports, credentials or user-machine paths.
+- Run `python3 scripts/privacy_audit.py` and tests for every reviewed PR.
+- The DDS master is an image file without EXIF/user metadata; the resulting `.wotmod` includes the runtime bootstrap and 21 DDS frames only.
+- No network telemetry or secrets are used by the mod. Its diagnostic log remains local and is never uploaded by the mod itself.
+- A public repository is **not** the same as a privacy guarantee. Review Git history, Release notes, Actions logs and GitHub-account attribution manually.
+- Consider choosing a source license via a separate reviewed change; public visibility does not automatically grant reuse permissions.

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Stay Sharp Medkit Reminder v1.6.0 (WoT EU, CPython 2.7).
+"""Stay Sharp Medkit Reminder v1.6.1 (WoT EU, CPython 2.7).
 
 One optional HUD-parented GUI.Simple overlay, 21 ARGB DDS animation frames.
 This mod does not change battle SWF or WoT's own equipment logic. It keeps
@@ -24,7 +24,7 @@ except NameError:
     long = int
 
 TAG = '[StaySharpMedkit]'
-VERSION = '1.6.0'
+VERSION = '1.6.1'
 MEDKIT_TAG = 'medkit'
 TEXTURE_TEMPLATE = 'gui/maps/staysharp/medkit_pulse_%02d.dds'
 FRAME_LEVELS = 20              # frames 0..20, each step is 5% optical intensity
@@ -85,11 +85,24 @@ def _log(message):
             if not os.path.isdir(folder):
                 os.makedirs(folder)
             _log_file = os.path.join(folder, 'staysharp.log')
-            if os.path.isfile(_log_file) and os.path.getsize(_log_file) > 524288:
+        # Windows os.rename() cannot overwrite an existing backup. Check the
+        # size on every write, not only at startup: a long battle can generate
+        # enough pulse diagnostics to exceed the configured log budget.
+        if os.path.isfile(_log_file) and os.path.getsize(_log_file) > 524288:
+            backup = _log_file + '.old'
+            try:
+                if os.path.exists(backup):
+                    os.remove(backup)
+                os.rename(_log_file, backup)
+            except OSError:
+                # Preserve the size bound if an external process has locked
+                # the backup or an antivirus interfered with rotation. Losing
+                # older diagnostics is preferable to unbounded disk growth.
                 try:
-                    os.rename(_log_file, _log_file + '.old')
+                    with open(_log_file, 'wb'):
+                        pass
                 except OSError:
-                    pass
+                    return
         with open(_log_file, 'ab') as output:
             output.write(('%s %s %s\n' % (time.strftime('%Y-%m-%d %H:%M:%S'), TAG, message)).encode('ascii', 'replace'))
             output.flush()

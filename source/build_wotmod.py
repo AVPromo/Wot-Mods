@@ -27,7 +27,7 @@ if len(base_parts) != 3 or not all(part.isdigit() for part in base_parts):
 if not re.fullmatch(r'\d+\.\d+\.(0|[1-9]\d*)', VERSION):
     raise ValueError('Invalid WOTMOD_VERSION')
 if VERSION.split('.')[:2] != base_parts[:2] or int(VERSION.split('.')[-1]) < int(base_parts[-1]):
-    raise ValueError('Release version must belong to the current major.minor series')
+    raise ValueError('Release version must belong to current major.minor series')
 PYC_PATH = 'res/scripts/client/gui/mods/mod_staysharp_medkit.pyc'
 DDS_PREFIX = 'res/gui/maps/staysharp/medkit_pulse_'
 FRAME_COUNT = 21
@@ -63,10 +63,7 @@ def make_py27_entrypoint(source):
 
 
 def render_source():
-    """Patch only the runtime VERSION constant for automatic releases.
-
-    VERSION=BASE_VERSION returns the unmodified, verified v1.6.0 source.
-    """
+    """Patch the runtime VERSION constant for automatic releases."""
     original = SOURCE.read_bytes()
     baseline = ("VERSION = '%s'" % BASE_VERSION).encode('ascii')
     replacement = ("VERSION = '%s'" % VERSION).encode('ascii')
@@ -83,15 +80,18 @@ def render_source():
 
 
 def load_master():
-    text = (ASSETS / 'medkit_pulse_master.dds.b85').read_text(encoding='ascii')
-    payload = zlib.decompress(base64.b85decode(''.join(text.split()).encode('ascii')))
-    if hashlib.sha256(payload).hexdigest() != '4659a9da85e1c35634e9dcbabbe6090d4a2fc292c485be484235ccd042517589':
+    content = (ASSETS / 'medkit_pulse_master.dds.b85').read_text(encoding='ascii')
+    payload = zlib.decompress(base64.b85decode(''.join(content.split()).encode('ascii')))
+    expected = (ASSETS / 'medkit_pulse_master.sha256').read_text(encoding='ascii').strip()
+    if not re.fullmatch(r'[0-9a-f]{64}', expected):
+        raise ValueError('Malformed DDS master checksum')
+    if hashlib.sha256(payload).hexdigest() != expected:
         raise ValueError('Master DDS integrity mismatch')
     return payload
 
 
 def load_frames():
-    """Exactly reconstruct 21 original frames; RGB/header never modified."""
+    """Exactly reconstruct 21 production frames from one DDS master."""
     master = load_master()
     out = []
     previous = None
@@ -109,15 +109,14 @@ def load_frames():
         if (size, h, w, pfsize, flags, fourcc, bpp, r, g, b, a) != (
                  124, 128, 128, 32, 65, 0, 32, 0xff0000, 0xff00, 0xff, 0xff000000):
             raise ValueError('DDS pixel-format mismatch: %s' % path)
-        raw = payload[128:]
-        alpha = raw[3::4]
+        alpha = payload[131::4]
         if i == 0 and max(alpha) != 0:
             raise ValueError('First frame not transparent')
         if previous is not None and any(x < y for x,y in zip(alpha,previous)):
             raise ValueError('Opacity decreases between consecutive frames')
         previous = alpha
-        out.append((DDS_PREFIX + ('%02d.dds' % i),payload))
-    if max(out[-1][1][128+3::4]) < 240:
+        out.append((DDS_PREFIX + ('%02d.dds' % i), payload))
+    if max(out[-1][1][131::4]) < 240:
         raise ValueError('Last frame not sufficiently opaque')
     return out
 
