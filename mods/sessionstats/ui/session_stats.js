@@ -520,6 +520,7 @@
     });
 
     function readModel() {
+        if (state.destroyed || !state.bound) { return; }
         // Optional Gameface registration can fail during readiness. Keep the
         // engine listener and initial model usable; retry on the next update.
         if (state.callbackId === null && window.viewEnv && typeof window.viewEnv.addDataChangedCallback === 'function') {

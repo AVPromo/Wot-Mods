@@ -474,9 +474,14 @@ async function nativeHost(browser, options) {
     check('Model updates retry optional registration without duplicate engine listeners ('+callback+')',await degraded.evaluate(mode=>
       document.querySelector('#ss-summary .ss-kpi-value').textContent==='0' && __grzEngineOn.length===2 &&
       __grzHelperCalls.callback===(mode==='throw-once'?2:3),callback));
-    await degraded.evaluate(()=>GRZSessionStats.destroy());
+    await degraded.evaluate(()=>{
+      window.__grzCallsBeforeDestroy=__grzHelperCalls.callback;
+      GRZSessionStats.destroy();
+      __grzEvents['viewEnv.onDataChanged']();
+    });
     check('Cleanup removes only a successfully registered callback ('+callback+')',await degraded.evaluate(mode=>
-      !GRZSessionStats.getState().nativeBound && __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
+      !GRZSessionStats.getState().nativeBound && __grzHelperCalls.callback===__grzCallsBeforeDestroy &&
+      __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
     await degraded.close();
   }
   for(const helpers of ['absent','throw']) {
