@@ -74,27 +74,36 @@ async function frames(page) {
 async function sameRaster(page, before, after) {
     // Chromium may round a handful of shadow/antialiasing edge pixels differently
     // after repaint. Layout and computed paint are checked separately, exactly.
-    return page.evaluate(async buffers => {
+    const result = await page.evaluate(async buffers => {
         const decode = encoded => new Promise(resolve => {
             const img = new Image(); img.onload = () => resolve(img);
             img.src = 'data:image/png;base64,' + encoded;
         });
         const images = await Promise.all(buffers.map(decode));
-        if (images[0].width !== images[1].width || images[0].height !== images[1].height) return false;
+        if (images[0].width !== images[1].width || images[0].height !== images[1].height) return {matches:false,reason:'dimensions'};
         const pixels = images.map(img => {
             const canvas = document.createElement('canvas');
             canvas.width = img.width; canvas.height = img.height;
             const context = canvas.getContext('2d'); context.drawImage(img, 0, 0);
             return context.getImageData(0, 0, canvas.width, canvas.height).data;
         });
-        let changed = 0;
+        let changed = 0, maxDelta = 0;
+        const bounds = [images[0].width, images[0].height, -1, -1];
         for (let i = 0; i < pixels[0].length; i += 4) {
             let delta = 0;
             for (let c = 0; c < 4; c++) delta = Math.max(delta, Math.abs(pixels[0][i+c] - pixels[1][i+c]));
-            if (delta > 4 || (delta && ++changed > 16)) return false;
+            maxDelta = Math.max(maxDelta, delta);
+            if (delta) {
+                changed++;
+                const x = (i / 4) % images[0].width, y = Math.floor((i / 4) / images[0].width);
+                bounds[0] = Math.min(bounds[0], x); bounds[1] = Math.min(bounds[1], y);
+                bounds[2] = Math.max(bounds[2], x); bounds[3] = Math.max(bounds[3], y);
+            }
         }
-        return true;
+        return {matches:changed<=16 && maxDelta<=4,changed,maxDelta,bounds};
     }, [before.toString('base64'), after.toString('base64')]);
+    if (!result.matches) console.error('Panel raster comparison:', JSON.stringify(result));
+    return result.matches;
 }
 
 async function paint(page, selector) {
