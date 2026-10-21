@@ -1,0 +1,96 @@
+name: Recover an interrupted WotMod Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to recover, e.g. v1.6.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Share the lock with the automatic publication workflow.
+concurrency:
+  group: wotmod-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/main'
+    name: Rebuild exact tagged source and resume draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout reviewed release publisher from main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          path: publisher
+
+      - name: Resolve requested tag to its authoritative commit
+        id: tagged
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVER_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+          sys.path.insert(0, 'publisher/scripts')
+          from publish_release import GitHubCLI, PublicationError
+          tag = os.environ['RECOVER_TAG']
+          if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag):
+              raise SystemExit('Invalid release tag')
+          commit = GitHubCLI(os.environ['GITHUB_REPOSITORY']).tag_commit(tag)
+          if commit is None or not re.fullmatch(r'[0-9a-f]{40}', commit):
+              raise SystemExit('Release tag does not resolve to a commit')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              handle.write('commit=' + commit + '\n')
+              handle.write('version=' + tag[1:] + '\n')
+          PY
+
+      - name: Checkout original source from exact tag commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ steps.tagged.outputs.commit }}
+          path: tagged_source
+
+      - name: Audit and rebuild the exact tagged source
+        working-directory: tagged_source
+        shell: bash
+        env:
+          TARGET_COMMIT: ${{ steps.tagged.outputs.commit }}
+          WOTMOD_VERSION: ${{ steps.tagged.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
+          python3 scripts/privacy_audit.py
+          python3 -m unittest discover -s tests -q
+          python3 source/build_wotmod.py
+          python3 scripts/privacy_audit.py --scan-dist
+          (
+            cd dist
+            sha256sum -- *.wotmod > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+
+      - name: Resume or verify release using current reviewed publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_VERSION: ${{ steps.tagged.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.tagged.outputs.commit }}
+          STAYSHARP_RECOVERY_MODE: '1'
+          STAYSHARP_DIST_DIR: ${{ github.workspace }}/tagged_source/dist
+        run: |
+          set -euo pipefail
+          python3 publisher/scripts/publish_release.py

@@ -223,3 +223,207 @@ class CLIContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RealGitHubDraftRegressionTests(unittest.TestCase):
+    """Recreate the exact GitHub API contract behind run #39677307005."""
+
+    def test_draft_is_listed_but_tag_endpoint_is_404(self):
+        client = GitHubCLI('owner/repo')
+        draft = {'id': 420063804, 'tag_name': 'v1.6.1', 'draft': True,
+                 'prerelease': False, 'assets': []}
+        called = []
+
+        def actual_api(resource, **kwargs):
+            called.append(resource)
+            if resource.startswith('releases?'):
+                return [draft]
+            if resource == 'releases/420063804':
+                return draft
+            if resource == 'releases/tags/v1.6.1':
+                return None  # Verified real GitHub HTTP 404 for a draft.
+            raise AssertionError('Unexpected endpoint ' + resource)
+
+        with mock.patch.object(client, 'api', side_effect=actual_api):
+            self.assertEqual(client.get_release('v1.6.1'), draft)
+        self.assertEqual(called,
+                         ['releases?per_page=100&page=1', 'releases/420063804'])
+
+    def test_paginate_when_draft_not_on_first_page(self):
+        client = GitHubCLI('owner/repo')
+        page1 = [{'id': k+1, 'tag_name': 'v0.0.%d' % k} for k in range(100)]
+        item = {'id': 555, 'tag_name': 'v1.6.1', 'draft': True, 'assets': []}
+
+        def actual_api(resource, **kwargs):
+            if resource.endswith('page=1'):
+                return page1
+            if resource.endswith('page=2'):
+                return [item]
+            if resource == 'releases/555':
+                return item
+            raise AssertionError(resource)
+
+        with mock.patch.object(client, 'api', side_effect=actual_api):
+            self.assertEqual(client.get_release('v1.6.1'), item)
+            self.assertIsNone(client.get_release('v1.6.2'))
+
+    def test_unknown_release_returns_none_without_creating_draft(self):
+        client = GitHubCLI('owner/repo')
+        with mock.patch.object(client, 'api', return_value=[]):
+            self.assertIsNone(client.get_release('v1.6.2'))
+
+    def test_malformed_release_listing_fails_closed(self):
+        client = GitHubCLI('owner/repo')
+        with mock.patch.object(client, 'api', return_value={'draft': True}):
+            with self.assertRaisesRegex(PublicationError, 'listing'):
+                client.get_release('v1.6.1')
+
+    def test_duplicate_tag_listings_are_rejected(self):
+        client = GitHubCLI('owner/repo')
+        item = {'id': 15, 'tag_name': 'v1.6.1'}
+        with mock.patch.object(client, 'api', return_value=[item, item]):
+            with self.assertRaisesRegex(PublicationError, 'Ambiguous'):
+                client.get_release('v1.6.1')
+
+    def test_uploads_draft_by_numeric_id_not_by_tag(self):
+        client = GitHubCLI('owner/repo')
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / 'com.staysharp.medkitreminder_1.6.1.wotmod'
+            p.write_bytes(b'mod-1.6.1')
+            draft = {'id': 420063804, 'tag_name': 'v1.6.1',
+                     'draft': True, 'assets': []}
+            created = {'name': p.name, 'size': p.stat().st_size,
+                       'state': 'uploaded', 'digest': 'sha256:' + sha256(p)}
+            with mock.patch.object(client, 'get_release', return_value=draft), \
+                 mock.patch.object(client, '_request_bytes',
+                                   return_value=module.json.dumps(created).encode()) as transfer, \
+                 mock.patch.object(client, 'command') as command:
+                client.upload_draft('v1.6.1', [p])
+                command.assert_not_called()
+                transfer.assert_called_once()
+                url = transfer.call_args.args[0]
+                self.assertEqual(url, 'https://uploads.github.com/repos/owner/repo/'
+                                      'releases/420063804/assets?name=' + p.name)
+                self.assertEqual(transfer.call_args.kwargs['method'], 'POST')
+                self.assertEqual(transfer.call_args.kwargs['payload'], b'mod-1.6.1')
+
+    def test_corrupted_draft_asset_is_removed_before_reupload(self):
+        client = GitHubCLI('owner/repo')
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / 'SHA256SUMS.txt'
+            p.write_bytes(b'new manifest')
+            draft = {'id': 22, 'tag_name': 'v1.6.1', 'draft': True,
+                     'assets': [{'id': 53, 'name': p.name, 'size': 3,
+                                 'state': 'uploaded', 'digest': 'sha256:bad'}]}
+            created = {'name': p.name, 'size': p.stat().st_size,
+                       'state': 'uploaded', 'digest': 'sha256:' + sha256(p)}
+            with mock.patch.object(client, 'get_release', return_value=draft), \
+                 mock.patch.object(client, '_request_bytes',
+                                   return_value=module.json.dumps(created).encode()), \
+                 mock.patch.object(client, 'command') as command:
+                client.upload_draft('v1.6.1', [p])
+                self.assertEqual(command.call_args.args[-1],
+                                 'repos/owner/repo/releases/assets/53')
+
+    def test_matching_draft_asset_not_clobbered(self):
+        client = GitHubCLI('owner/repo')
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / 'SHA256SUMS.txt'
+            p.write_bytes(b'already uploaded')
+            draft = {'id': 22, 'tag_name': 'v1.6.1', 'draft': True,
+                     'assets': [{'id': 54, 'name': p.name,
+                                 'size': p.stat().st_size, 'state': 'uploaded',
+                                 'digest': 'sha256:' + sha256(p)}]}
+            with mock.patch.object(client, 'get_release', return_value=draft), \
+                 mock.patch.object(client, '_request_bytes') as transfer, \
+                 mock.patch.object(client, 'command') as command:
+                client.upload_draft('v1.6.1', [p])
+                transfer.assert_not_called()
+                command.assert_not_called()
+
+    def test_publish_draft_uses_release_numeric_id(self):
+        client = GitHubCLI('owner/repo')
+        draft = {'id': 420063804, 'tag_name': 'v1.6.1', 'draft': True}
+        with mock.patch.object(client, 'get_release', return_value=draft), \
+             mock.patch.object(client, 'command') as command:
+            client.publish_draft('v1.6.1')
+            self.assertEqual(command.call_args.args,
+                             ('api', '--method', 'PATCH',
+                              'repos/owner/repo/releases/420063804',
+                              '-F', 'draft=false'))
+
+    def test_missing_digest_fail_closed_without_draft_download(self):
+        client = GitHubCLI('owner/repo')
+        with mock.patch.object(client, 'command') as command:
+            with self.assertRaisesRegex(PublicationError, 'valid GitHub SHA-256'):
+                client.asset_hash('v1.6.1', {'id': 33}, 'example.wotmod')
+            command.assert_not_called()
+
+    def test_creating_draft_waits_for_listing_visibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            version = '1.6.7'
+            p = folder / ('com.staysharp.medkitreminder_%s.wotmod' % version)
+            p.write_bytes(b'example')
+            (folder / 'SHA256SUMS.txt').write_text(
+                '%s  %s\n' % (sha256(p), p.name), encoding='ascii')
+            api = FakeGitHub()
+            original_get = api.get_release
+            waited = [0]
+
+            def lagged_get(tag):
+                if api.release is not None and waited[0] < 2:
+                    waited[0] += 1
+                    return None
+                return original_get(tag)
+
+            with mock.patch.object(api, 'get_release', side_effect=lagged_get), \
+                 mock.patch.object(module.time, 'sleep') as sleep:
+                self.assertEqual(publish(api, 'owner/repo', 'v1.6.7', SHA,
+                                         version, folder), 'published')
+                self.assertEqual(sleep.call_count, 2)
+
+
+class WorkflowRegressionTests(unittest.TestCase):
+    """Check recovery is opt-in and cannot publish from PR event."""
+
+    def test_recovery_workflow_requires_manual_dispatch(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / '.github/workflows/recover.yml').read_text(encoding='utf-8')
+        self.assertIn('workflow_dispatch:', source)
+        self.assertIn('required: true', source)
+        self.assertIn("if: github.ref == 'refs/heads/main'", source)
+        self.assertIn('RELEASE_COMMIT: ${{ steps.tagged.outputs.commit }}', source)
+        self.assertIn('STAYSHARP_DIST_DIR: ${{ github.workspace }}/tagged_source/dist', source)
+        self.assertIn('persist-credentials: false', source)
+        self.assertNotIn('pull_request:', source)
+        self.assertNotIn('curl -H', source)
+
+    def test_release_workflow_still_auto_publishes_new_main_commits(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        self.assertIn('push:', source)
+        self.assertIn('branches: [main]', source)
+        self.assertIn('python3 scripts/publish_release.py', source)
+        self.assertIn('wotmod-release-${{ github.repository }}', source)
+
+
+class RecoveryLatestRegressionTests(unittest.TestCase):
+    def test_repairing_old_draft_never_marks_it_latest(self):
+        client = GitHubCLI('owner/repo')
+        with mock.patch.dict(module.os.environ, {'STAYSHARP_RECOVERY_MODE': '1'}), \
+             mock.patch.object(client, 'get_release',
+                               return_value={'id': 420063804, 'draft': True}), \
+             mock.patch.object(client, 'command') as command:
+            client.publish_draft('v1.6.1')
+            self.assertEqual(command.call_args.args[-2:], ('-f', 'make_latest=false'))
+
+    def test_regular_release_can_be_automatically_latest(self):
+        client = GitHubCLI('owner/repo')
+        with mock.patch.dict(module.os.environ,
+                             {'STAYSHARP_RECOVERY_MODE': ''}), \
+             mock.patch.object(client, 'get_release',
+                               return_value={'id': 420063804, 'draft': True}), \
+             mock.patch.object(client, 'command') as command:
+            client.publish_draft('v1.6.2')
+            self.assertNotIn('make_latest=false', command.call_args.args)

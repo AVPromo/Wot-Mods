@@ -41,7 +41,7 @@ See [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](
 2. Review and merge the PR. A separate **Release** workflow on each push to `main` rebuilds, reruns tests and privacy checks, then publishes a new versioned `.wotmod` together with `SHA256SUMS.txt` in GitHub Releases.
 3. Releases use monotonically increasing patch numbers derived from the **Release workflow run number**: the first release is `v1.6.1`, the next is `v1.6.2`, and so on. Skipped versions are possible after a failed workflow run. Re-running a successful workflow does not replace an existing Release.
 
-A manual Release workflow trigger is also available. The pipeline uses the repository-scoped `GITHUB_TOKEN` only; **no PAT or repository secret is required**. The repo is public, but no Release is published until this PR is merged.
+A manual Release workflow trigger is also available. Interrupted drafts (including `v1.6.1` from the first main run) can be safely recovered through **Actions > Recover an interrupted WotMod Release**, using the original tag; recovery rebuilds from the tagged commit with the current reviewed publisher, without retagging or rewriting published assets. The pipeline uses the repository-scoped `GITHUB_TOKEN` only; **no PAT or repository secret is required**. The repo is public, but no Release is published until this PR is merged.
 
 ## Privacy and safety
 

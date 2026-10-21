@@ -55,3 +55,29 @@ The release script uses `gh` CLI and the built-in GitHub `GITHUB_TOKEN` (`GH_TOK
 - `github.run_number` is workflow-specific. Changing the workflow name or lowering the base `VERSION` requires a review of version collisions. Tags are never moved by the pipeline.
 - The WoT bytecode uses the game's historical CPython 2.7 interpreter and non-public HUD structures. A future game update may require changing the mod.
 - Do not merge until the PR CI actually runs and passes, and perform one live in-game regression test of v1.6.1 after release.
+
+## Recovery of interrupted draft releases
+
+The original `v1.6.1` publication workflow passed all build and privacy checks
+but failed while looking up a draft through `GET /releases/tags/v1.6.1`.
+That endpoint returns `404` for draft releases, even when the draft exists.
+The corrected publisher lists releases (including drafts), obtains their numeric
+release IDs, and uses those IDs for asset upload and publication.
+
+A release remains a **draft** until both assets have been uploaded and their
+SHA-256 and metadata have been verified. On a failure, rerun the workflow from
+**Actions > Recover an interrupted WotMod Release > Run workflow**, choosing
+branch `main` and setting `tag` (e.g. `v1.6.1`). This manually triggered
+workflow:
+
+1. Resolves the tag to the exact, immutable commit SHA and verifies the checkout.
+2. Rebuilds the `.wotmod` using the source **at that tag**, not newer sources.
+3. Runs regression tests, privacy audit and SHA-256 manifest creation.
+4. Executes the **current reviewed** release publisher from `main` to resume
+   the draft with its original tag/commit, or to verify an already published
+   release without changing it.
+
+Recovery never increments the automatic Release workflow's run number. The
+normal pipeline continues to create a new patch release for each push to `main`.
+Both workflows share a concurrency group to avoid conflicting publication runs.
+A failed earlier run should **not** be rerun using the original buggy commit.
