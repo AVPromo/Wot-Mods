@@ -3,6 +3,17 @@ name: Release WotMod
 on:
   push:
     branches: [main]
+    paths:
+      - 'source/**'
+      - 'assets/**'
+      - 'VERSION'
+      - 'scripts/publish_release.py'
+      - 'scripts/release_version.py'
+      - 'scripts/privacy_audit.py'
+      - 'tests/**'
+      - '!tests/test_sessionstats_pipeline.py'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:

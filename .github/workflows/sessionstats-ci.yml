@@ -1,0 +1,42 @@
+name: Validate Session Stats PR
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sessionstats:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Detect source import
+        id: source
+        run: |
+          if test -f mods/sessionstats/src/mod_grz_session_stats.py; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'CI infrastructure ready; source import has not been merged yet.'
+          fi
+      - name: Test release infrastructure
+        run: python3 -m unittest discover -s tests -v
+      - name: Compile verified CPython 2.7.18 for game bytecode
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/python27.sh
+      - name: Test, build, audit and reproduce both mods
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/validate.sh
+      - name: Upload reviewed Session Stats build
+        if: steps.source.outputs.enabled == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sessionstats-pr-${{ github.run_id }}
+          path: mods/sessionstats/dist/*
+          if-no-files-found: error
+          retention-days: 14
