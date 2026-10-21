@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / 'VERSION').read_text(encoding='ascii').strip()
 ZIP_DATE = (2026, 10, 21, 0, 0, 0)
 MAGIC27 = b'\x03\xf3\r\n'
+RELEASE_GUIDES = {'README_PL.txt', 'README.md', 'CONTRACT.txt', 'docs/APPEARANCE_CONFIG.md'}
 
 
 def put(archive, name, data):
@@ -31,6 +32,27 @@ def put(archive, name, data):
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def render_guide(relative, content, version, client_version):
+    """Stamp active installation guides; keep historical changelogs/evidence intact."""
+    if relative not in RELEASE_GUIDES:
+        return content
+    text = content.decode('utf-8')
+    text = text.replace('grz.sessionstats_'+VERSION+'.wotmod', 'grz.sessionstats_'+version+'.wotmod')
+    text = text.replace('wot-statystyki-sesji-v'+VERSION+'.zip', 'wot-statystyki-sesji-v'+version+'.zip')
+    text = text.replace('mods/2.4.1.0/', 'mods/'+client_version+'/')
+    if relative == 'README_PL.txt':
+        text = re.sub(r'(?m)^Wersja '+re.escape(VERSION)+r'\b', 'Wersja '+version, text)
+    return text.encode('utf-8')
+
+
+def installer_checksums(package, dependency, config, client_version):
+    target = 'mods/'+client_version+'/'
+    entries = [(package, target+package.name),
+               (dependency, target+'net.openwg/'+dependency.name),
+               (config, target+config.name)]
+    return ''.join(digest(path)+'  '+name+'\n' for path, name in entries).encode('ascii')
 
 
 def check_package(path):
@@ -129,7 +151,7 @@ def main():
     bundle = dist / ('wot-statystyki-sesji-v'+version_tag+'.zip')
     shutil.copyfile(dependency, dist/dependency.name)
     shutil.copyfile(config_path, dist/CONFIG_FILENAME)
-    inner_checksums = [digest(path)+'  '+path.name for path in (package, dependency, config_path)]
+    inner_checksums = installer_checksums(package, dependency, config_path, args.client_version)
     report = {
         'version': version_tag, 'client_target': args.client_version, 'python_bytecode': '2.7',
         'package_compression': 'ZIP_STORED', 'package_entries': entries,
@@ -145,9 +167,9 @@ def main():
         put(z, target+CONFIG_FILENAME, config_path.read_bytes())
         put(z, target+'net.openwg/'+dependency.name, dependency.read_bytes())
         for name in ['README_PL.txt', 'ZMIANY.txt', 'LICENSE.txt', 'THIRD_PARTY.txt']:
-            put(z, name, (ROOT/name).read_bytes())
+            put(z, name, render_guide(name, (ROOT/name).read_bytes(), version_tag, args.client_version))
         put(z, 'BUILD.json', (dist/'BUILD.json').read_bytes())
-        put(z, 'SHA256SUMS.txt', ('\n'.join(inner_checksums)+'\n').encode('ascii'))
+        put(z, 'SHA256SUMS.txt', inner_checksums)
         for directory in ['src','ui','tools','tests','data','resources','third_party','preview','docs']:
             for path in sorted((ROOT/directory).rglob('*')):
                 if not path.is_file() or '__pycache__' in path.parts or path.suffix in ('.pyc','.pyo','.wotmod','.png') or path.name.endswith('-report.json') or 'node_modules' in path.parts:
@@ -155,12 +177,13 @@ def main():
                 content = path.read_bytes()
                 if path == ROOT/'src'/'grz_session_stats'/'__init__.py':
                     content = re.sub(rb"(?m)^VERSION = '[^']+'$", ("VERSION = '"+version_tag+"'").encode('ascii'), content)
-                put(z, 'source/'+path.relative_to(ROOT).as_posix(), content)
+                relative = path.relative_to(ROOT).as_posix()
+                put(z, 'source/'+relative, render_guide(relative, content, version_tag, args.client_version))
         for name in ['meta.xml','VERSION','README.md','CONTRACT.txt','LICENSE.txt','README_PL.txt','ZMIANY.txt','THIRD_PARTY.txt',CONFIG_FILENAME]:
             content = (ROOT/name).read_bytes()
             if name == 'meta.xml': content = metadata
             if name == 'VERSION': content = (version_tag+'\n').encode('ascii')
-            put(z, 'source/'+name, content)
+            put(z, 'source/'+name, render_guide(name, content, version_tag, args.client_version))
         # Dependency remains available to a source rebuild without network.
         put(z, 'source/third_party/openwg/'+dependency.name, dependency.read_bytes())
         preview = ROOT/'preview'/'PODGLAD.html'

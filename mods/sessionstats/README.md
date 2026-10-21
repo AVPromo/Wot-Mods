@@ -3,6 +3,9 @@
 Źródła wersji 0.2.7: dwie niezależne sesje, WN8, PD, finanse z obligacjami,
 podział na czołgi/mapy/bitwy, healthcheck wyników, lokalny log i konfigurowalny wygląd.
 Szczegółowa instrukcja: [README_PL.txt](README_PL.txt), historia: [ZMIANY.txt](ZMIANY.txt).
+Poprawki po review importu: [REVIEW_FIXES_PR3.md](docs/REVIEW_FIXES_PR3.md).
+Pipeline budowania i walidacji jest dostarczany przez nadrzędny PR #2;
+PR ze źródłami jest na nim oparty i wymaga jego wcześniejszego merge.
 
 ## Instalacja i współpraca z innymi modami
 

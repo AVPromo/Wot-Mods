@@ -130,14 +130,14 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.summary(reloaded)['battles'], 1)
         self.assertEqual(reloaded.pending_arena_ids(), [])
 
-    def test_partial_update_preserves_known_values_and_complete_can_revise(self):
+    def test_partial_update_preserves_known_values_and_reconciliation_can_revise(self):
         self.service.record_result(result())
         update = {'arena_id': '1', 'damage': None, 'xp_base': None, 'xp_received': 999,
                   'currencies': {'credits': {'income': None, 'costs': None, 'net': None}}, 'complete': False}
         self.service.record_result(update)
         self.assertEqual(self.summary()['xp_received']['sum'], 1500)
         self.assertEqual(self.summary()['currencies']['credits']['income'], 100)
-        update.update(complete=True, xp_received=4500)
+        update.update(complete=True, xp_received=4500, reconcile=True)
         self.assertTrue(self.service.record_result(update))
         self.assertEqual(self.summary()['xp_received']['sum'], 4500)
         self.assertEqual(self.summary()['xp_base']['sum'], 500)
@@ -212,9 +212,30 @@ class ServiceTests(unittest.TestCase):
 
     def test_updated_components_recalculate_derived_net(self):
         self.service.record_result(result())
-        self.service.record_result({'arena_id': '1', 'complete': True,
+        self.service.record_result({'arena_id': '1', 'complete': True, 'reconcile': True,
                                     'currencies': {'credits': {'income': 200, 'net': None}}})
         self.assertEqual(self.summary()['currencies']['credits']['net'], 180)
+
+    def test_complete_stale_duplicate_has_no_authority_over_confirmed_values(self):
+        current = result(reconcile=True, damage=2400, xp_received=4500)
+        current['currencies']['credits'].update(income=500, costs=80, net=420)
+        self.service.record_result(current)
+        confirmed = copy.deepcopy(self.service._state['battles']['1'])
+        sequence = self.service.store.sequence
+        self.assertFalse(self.service.record_result(result(complete=True)))
+        self.assertEqual(self.service._state['battles']['1'], confirmed)
+        self.assertEqual(self.service.store.sequence, sequence)
+        reloaded = StatsService(self.directory, 'EU:1', 'launch-one', EXPECTED, self.clock)
+        self.assertFalse(reloaded.record_result(result(complete=True)))
+        self.assertEqual(reloaded._state['battles']['1'], confirmed)
+
+    def test_non_authoritative_complete_result_can_fill_unknown_fields(self):
+        self.service.record_result(result(complete=False, damage=None, xp_base=None))
+        self.assertTrue(self.service.record_result(result(complete=True, damage=2400, xp_base=800)))
+        row = self.service._state['battles']['1']
+        self.assertEqual(row['damage'], 2400)
+        self.assertEqual(row['xp_base'], 800)
+        self.assertTrue(row['complete'])
 
     def test_reset_keeps_launch_and_history_late_known_result_stays_old(self):
         self.service.begin_battle('1', started_at=110, vehicle_id=1, mode='random')

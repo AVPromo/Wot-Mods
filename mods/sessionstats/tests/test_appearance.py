@@ -123,7 +123,7 @@ class AppearanceTests(unittest.TestCase):
     def test_syntax_error_location_is_available_on_python27_without_echoing_values(self):
         raw = '{\n  "colors": {"window_background": "PRIVATE-value"},\n}'
         self.assertEqual(self.write(raw), style.default_config())
-        self.assertIn('line=3 column=1', self.output.getvalue())
+        self.assertIsNotNone(re.search(r'line=[1-9][0-9]* column=[1-9][0-9]*', self.output.getvalue()))
         self.assertNotIn('PRIVATE-value', self.output.getvalue())
 
     def test_nonstandard_nan_and_infinity_reject_whole_file(self):

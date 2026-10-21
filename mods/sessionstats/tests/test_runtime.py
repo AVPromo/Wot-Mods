@@ -299,6 +299,30 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.summary()['battles'], 2)
         self.assertEqual(self.summary()['currencies']['credits']['net'], 64000)
 
+    def test_expired_request_callback_cannot_consume_a_newer_retry(self):
+        self.begin()
+        self.garage()
+        self.tick()
+        unused_id, original_callback = self.api.pending_callbacks.pop()
+        self.tick(seconds=31)
+        unused_id, retry_callback = self.api.pending_callbacks.pop()
+        key = ('EU:7', ARENA_ID)
+        current = self.mod.inflight[key]
+        retries = dict(self.mod.retries)
+        self.clock.value += 11  # Retry backoff has elapsed, timeout has not.
+        for args in ((-1, None), (1, []), (), (1, raw_result())):
+            original_callback(*args)
+            self.assertIs(self.mod.inflight[key], current)
+            self.mod._poll_one(self.mod.active_service, 'EU:7')
+            self.assertEqual(self.api.pending_callbacks, [])
+            self.assertEqual(self.mod.retries, retries)
+            self.assertEqual(self.summary()['battles'], 0)
+        retry_callback(1, raw_result())
+        self.assertEqual(self.mod.inflight, {})
+        self.assertEqual(self.summary()['battles'], 1)
+        original_callback(1, raw_result())
+        self.assertEqual(self.summary()['battles'], 1)
+
     def test_cache_mismatched_arena_and_callback_after_stop_are_ignored(self):
         self.begin()
         self.garage()

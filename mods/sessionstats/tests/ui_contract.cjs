@@ -90,7 +90,9 @@ async function nativeHost(browser, options) {
     window.__grzCommands=[];
     window.__grzEvents={};
     window.__grzWindowEvents=[];
-    window.__grzHelperCalls={rem:0,resize:0};
+    window.__grzHelperCalls={rem:0,resize:0,callback:0};
+    window.__grzEngineOn=[];
+    window.__grzRemovedCallbacks=[];
     window.isDomBuilt=true;
     window.model={payload:JSON.stringify(snapshot),onAction:function(args){
       window.__grzCommands.push(args);
@@ -101,8 +103,12 @@ async function nativeHost(browser, options) {
         window.__grzEvents['viewEnv.onDataChanged']();
       }
     }};
-    window.engine={whenReady:Promise.resolve(),on:function(name,fn){window.__grzEvents[name]=fn;},off:function(){}};
-    window.viewEnv={addDataChangedCallback:function(){return 71;},removeDataChangedCallback:function(){}};
+    window.engine={whenReady:Promise.resolve(),on:function(name,fn){window.__grzEngineOn.push(name);window.__grzEvents[name]=fn;},off:function(){}};
+    window.viewEnv={addDataChangedCallback:function(){
+      const count=++window.__grzHelperCalls.callback;
+      if(options.callback==='throw' || (options.callback==='throw-once' && count===1)) throw new Error('Optional model registration unavailable');
+      return 71;
+    },removeDataChangedCallback:function(id){window.__grzRemovedCallbacks.push(id);}};
     if(options.drag==='supported' || options.drag==='throw') {
       window.viewEnv.handleViewEvent=function(event){
         if(options.drag==='throw') { throw new Error('Unavailable native move proxy'); }
@@ -455,6 +461,24 @@ async function nativeHost(browser, options) {
   }));
   await native.evaluate(()=>{model.payload=JSON.stringify({version:'0.2.0',scopes:{launch:{summary:{battles:0,wins:0,losses:0,draws:0},vehicles:[],maps:[],battles:[]},manual:{summary:{battles:0,wins:0,losses:0,draws:0},vehicles:[],maps:[],battles:[]}}});__grzEvents['viewEnv.onDataChanged']();});
   check('Native model push updates UI',await native.locator('#ss-summary .ss-kpi-value').first().innerText()==='0');
+  for(const callback of ['throw-once','throw']) {
+    const degraded=await nativeHost(browser,{callback});
+    check('Failed callback registration still renders and sizes the initial model ('+callback+')',await degraded.evaluate(()=>
+      GRZSessionStats.getState().nativeBound && document.querySelectorAll('#ss-groups .ss-group').length===3 &&
+      __grzCommands.some(x=>x.action==='resize') && __grzHelperCalls.callback===1));
+    await degraded.evaluate(()=>{
+      const changed=JSON.parse(model.payload);changed.scopes.launch.summary.battles=0;
+      model.payload=JSON.stringify(changed);__grzEvents['viewEnv.onDataChanged']();
+      __grzEvents['viewEnv.onDataChanged']();
+    });
+    check('Model updates retry optional registration without duplicate engine listeners ('+callback+')',await degraded.evaluate(mode=>
+      document.querySelector('#ss-summary .ss-kpi-value').textContent==='0' && __grzEngineOn.length===2 &&
+      __grzHelperCalls.callback===(mode==='throw-once'?2:3),callback));
+    await degraded.evaluate(()=>GRZSessionStats.destroy());
+    check('Cleanup removes only a successfully registered callback ('+callback+')',await degraded.evaluate(mode=>
+      !GRZSessionStats.getState().nativeBound && __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
+    await degraded.close();
+  }
   for(const helpers of ['absent','throw']) {
     const degraded=await nativeHost(browser,{helpers,noFocus:true,drag:helpers});
     check('Python resize is still sent when native helpers are '+helpers,await degraded.evaluate(()=>__grzCommands.some(x=>x.action==='resize' && x.width==='700' && x.height==='620')));

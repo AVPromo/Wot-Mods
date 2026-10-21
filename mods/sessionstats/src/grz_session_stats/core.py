@@ -376,7 +376,7 @@ class StatsService(object):
         old = self._state['battles'].get(arena_id, {})
         # Authority and completeness are separate: a new XP bonus can arrive
         # while a currency is unavailable. This control flag is not ledger data.
-        revise = incoming.pop('reconcile', False) or incoming.get('complete') is True
+        revise = incoming.pop('reconcile', False)
         # The raw server-result cache may predate an already applied premium XP
         # bonus even after restart. Only another bonus-aware reading can revise it.
         if old.get('xp_bonus_applied') and not incoming.get('xp_bonus_applied'):

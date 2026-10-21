@@ -1,0 +1,80 @@
+name: Release Session Stats
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mods/sessionstats/**'
+      - 'scripts/sessionstats/**'
+      - 'scripts/publish_release.py'
+      - 'scripts/release_version.py'
+      - 'scripts/privacy_audit.py'
+      - 'tests/test_sessionstats_pipeline.py'
+      - '.github/workflows/sessionstats-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Every run has a distinct tag. Parallel runs do not share an artifact or a draft;
+# no concurrency group can discard an intermediate merged update.
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      enabled: ${{ steps.source.outputs.enabled }}
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Detect source import
+        id: source
+        run: python3 scripts/sessionstats/source_state.py
+      - name: Compute independent Session Stats version
+        id: version
+        if: steps.source.outputs.enabled == 'true'
+        run: |
+          version="$(python3 scripts/sessionstats/release.py --run-number "$GITHUB_RUN_NUMBER")"
+          echo "SESSIONSTATS_VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=sessionstats-release-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Compile verified CPython 2.7.18
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/python27.sh
+      - name: Validate exact release assets with a read-only token
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/validate.sh
+      - name: Save validated assets for this run
+        if: steps.source.outputs.enabled == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: mods/sessionstats/dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: needs.build.outputs.enabled == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: mods/sessionstats/dist
+      - name: Publish or verify immutable Session Stats Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SESSIONSTATS_VERSION: ${{ needs.build.outputs.version }}
+        run: python3 scripts/sessionstats/release.py

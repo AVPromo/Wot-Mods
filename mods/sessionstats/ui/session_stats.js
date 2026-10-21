@@ -520,6 +520,14 @@
     });
 
     function readModel() {
+        // Optional Gameface registration can fail during readiness. Keep the
+        // engine listener and initial model usable; retry on the next update.
+        if (state.callbackId === null && window.viewEnv && typeof window.viewEnv.addDataChangedCallback === 'function') {
+            try {
+                var callbackId = window.viewEnv.addDataChangedCallback('model', 0, true);
+                if (callbackId !== undefined && callbackId !== null) { state.callbackId = callbackId; }
+            } catch (error) { /* A later model event or readiness pass can retry. */ }
+        }
         var model = window.model;
         if (model && model.payload !== undefined) { update(model.payload); }
     }
@@ -579,7 +587,8 @@
         queueResize();
     }
     function bindModel() {
-        if (state.destroyed || state.bound) { return; }
+        if (state.destroyed) { return; }
+        if (state.bound) { readModel(); queueResize(); return; }
         if (!window.engine || !window.viewEnv) { return; }
         state.bound = true;
         document.documentElement.className += ' ss-native-document';
@@ -587,9 +596,6 @@
         nativeDiagnostic('dom_ready');
         window.engine.on('viewEnv.onDataChanged', readModel);
         window.engine.on('self.onScaleUpdated', onScaleUpdated);
-        if (typeof window.viewEnv.addDataChangedCallback === 'function') {
-            state.callbackId = window.viewEnv.addDataChangedCallback('model', 0, true);
-        }
         readModel();
         nativeDiagnostic('model_bound');
         queueResize();

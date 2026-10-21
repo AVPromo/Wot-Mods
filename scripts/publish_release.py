@@ -148,13 +148,14 @@ def verify_assets(api, release, tag, artifacts):
             raise PublicationError('Asset SHA-256 mismatch: ' + name)
 
 
-def publish(api, repo, tag, commit, version, dist):
+def publish(api, repo, tag, commit, version, dist, *, tag_prefix='v',
+            title='Stay Sharp Medkit Reminder', artifact_loader=release_inputs):
     """Idempotent transaction: create/check tag, draft, assets, publish."""
-    if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag) or tag != 'v' + version:
+    if not re.fullmatch(re.escape(tag_prefix)+r'[0-9]+\.[0-9]+\.[0-9]+', tag) or tag != tag_prefix + version:
         raise PublicationError('Release tag and version do not match')
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
         raise PublicationError('Invalid Git commit SHA')
-    artifacts = release_inputs(dist, version)
+    artifacts = artifact_loader(dist, version)
 
     release = api.get_release(tag)
     current_tag_commit = api.tag_commit(tag)
@@ -170,7 +171,7 @@ def publish(api, repo, tag, commit, version, dist):
             # Verify that GitHub created the expected tag, not an unrelated ref.
             if api.tag_commit(tag) != commit:
                 raise PublicationError('Tag creation did not target the expected commit')
-        api.create_draft(tag, commit, 'Stay Sharp Medkit Reminder %s' % tag)
+        api.create_draft(tag, commit, '%s %s' % (title, tag))
         release = api.get_release(tag)
         if release is None:
             raise PublicationError('Draft was not created by GitHub')

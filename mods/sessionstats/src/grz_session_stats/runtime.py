@@ -846,8 +846,8 @@ class Runtime(object):
 
     def _poll_one(self, service, account_key):
         now = self.now()
-        for key, expires in list(self.inflight.items()):
-            if expires <= now:
+        for key, request in list(self.inflight.items()):
+            if request['expires'] <= now:
                 self.inflight.pop(key, None)
         if self.inflight:
             return
@@ -857,7 +857,8 @@ class Runtime(object):
             count, due = self.retries.get(key, (0, 0))
             if due > now:
                 continue
-            self.inflight[key] = now + 30
+            request = {'expires': now + 30}
+            self.inflight[key] = request
             self.retries[key] = (count + 1, now + min(300, 5 * (2 ** min(count, 6))))
 
             lifecycle = self._lifecycle
@@ -867,6 +868,10 @@ class Runtime(object):
                 # loop. Account/service/key remain the original request's;
                 # extra native callback arguments cannot override them.
                 if not self.running or self._lifecycle is not lifecycle:
+                    return
+                # An expired request may finish after its replacement started.
+                # Only the callback owning the current token can consume it.
+                if self.inflight.get(key) is not request:
                     return
                 self.inflight.pop(key, None)
                 try:
@@ -895,7 +900,8 @@ class Runtime(object):
                 requested = False
                 self._warn_once('results:cache', 'Odczyt zaległych wyników jest niedostępny; brakujące bitwy pozostają do rozliczenia.', exception=True)
             if not requested:
-                self.inflight.pop(key, None)
+                if self.inflight.get(key) is request:
+                    self.inflight.pop(key, None)
                 self._warn_once('results:cache', 'Odczyt zaległych wyników jest niedostępny; brakujące bitwy pozostają do rozliczenia.')
             else:
                 self.compatibility_warnings.pop('results:cache', None)
