@@ -277,7 +277,7 @@ class GameAPI(object):
 class Runtime(object):
     def __init__(self, api=None, service_factory=None, data_dir=None,
                  expected_table=None, now=None, window=None, footer_installer=None,
-                 appearance_path=None):
+                 appearance_path=None, installation_dir=None):
         self.api = api
         self.service_factory = service_factory
         self.data_dir = data_dir
@@ -316,6 +316,7 @@ class Runtime(object):
         self._recovery_states = {}
         self._instance_tab_enabled = False
         self._instance_session = None
+        self._installation_dir = installation_dir
         self._footer_activity = None
         self._log_handle = None
         self.log_path = None
@@ -430,6 +431,10 @@ class Runtime(object):
             self._presentation = {'panel_css': '', 'footer_css': '', 'scroll_speed': 1.0}
             self._instance_tab_enabled = False
             LOG.exception('CONFIG appearance unavailable; built-in styles and scrolling remain active.')
+        if not self._instance_tab_enabled:
+            self.compatibility_warnings.pop('installation:identity', None)
+        if self.running and self.active_service is not None:
+            self._ensure_installation_session()
         self._publish_appearance()
 
     def _publish_appearance(self):
@@ -559,9 +564,6 @@ class Runtime(object):
         self._log_notice_sent = False
         self._log_notice_after = 0
         self.monitor = ResultMonitor(self.now, self.log_path)
-        if self._instance_session is None:
-            from .sessions import InstanceSession
-            self._instance_session = InstanceSession(self._started_at)
         self._hotkey = self._parse_hotkey(self.config['hotkey'])
         self._ensure_window()
         handlers = (
@@ -719,7 +721,54 @@ class Runtime(object):
             self.active_service = self.services[key]
             self._publish_activity()
         self._ensure_cache_observer()
+        self._ensure_installation_session()
         return self.active_service
+
+    def _ensure_installation_session(self):
+        if self._instance_session is not None:
+            return self._instance_session
+        if not self.running or self.active_service is None:
+            return None
+        try:
+            from .config_path import find_installation_root
+            from .sessions import InstallationSession
+            root = self._installation_dir or find_installation_root()
+            if root is None:
+                raise ValueError('Installation root unavailable.')
+            self._instance_session = InstallationSession(self.data_dir, root, LAUNCH_ID,
+                                                        self.expected_table, self.now, self._started_at)
+            # Only this process's records have known installation provenance.
+            # Account archives from previous processes must not be guessed in.
+            for account_key, service in self.services.items():
+                for record in service.launch_records():
+                    self._instance_session.begin(account_key, record)
+                    if record.get('_result_seen'):
+                        self._instance_session.result(account_key, record)
+            self.compatibility_warnings.pop('installation:identity', None)
+        except Exception:
+            self._warn_once('installation:identity',
+                            'Shared installation statistics are unavailable; account statistics remain active.',
+                            visible=self._instance_tab_enabled)
+        return self._instance_session
+
+    def _record_installation(self, account_key, record, is_result=False):
+        session = self._ensure_installation_session()
+        if session is None:
+            return False
+        try:
+            if is_result:
+                observed = (account_key, str(record['arena_id'])) in self._observed_arenas
+                changed = session.result(account_key, record, allow_new=observed)
+            else:
+                changed = session.begin(account_key, record)
+            if session.service.last_error:
+                raise RuntimeError('Installation ledger write failed.')
+            self.compatibility_warnings.pop('installation:storage', None)
+            return changed
+        except Exception:
+            self._warn_once('installation:storage',
+                            'Installation history could not be saved; previous data was preserved.')
+            return False
 
     def _close_cache_observer(self):
         observer = self._cache_observer
@@ -801,6 +850,7 @@ class Runtime(object):
                                  vehicle_name=context.get('vehicle_name'), vehicle_tier=context.get('vehicle_tier'),
                                  vehicle_type=context.get('vehicle_type'), map_name=context.get('map_name'))
             self._observed_arenas.add((self.active_key, arena_id))
+            self._record_installation(self.active_key, context)
             self._window_call('close')
             self._publish_activity()
         except Exception:
@@ -890,6 +940,7 @@ class Runtime(object):
                                 'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.',
                                 exception=True)
         changed = service.record_result(record)
+        installation_changed = self._record_installation(account_key, record, is_result=True)
         LOG.info('Result normalized: source=%s complete=%s changed=%s', source, record.get('complete'), changed)
         if service.last_error:
             LOG.error('Statistics storage reported an error; previous data preserved.')
@@ -897,7 +948,8 @@ class Runtime(object):
         if len(self.recent) > 128:
             oldest = sorted(self.recent, key=self.recent.get)[0]
             self.recent.pop(oldest, None)
-        if changed and (service is self.active_service or self._instance_tab_enabled):
+        if ((changed and service is self.active_service) or
+                (installation_changed and self._instance_tab_enabled)):
             self._window_call('refresh')
         return changed
 
@@ -1080,10 +1132,13 @@ class Runtime(object):
         result = self.active_service.snapshot()
         result['appearance'] = dict(self._presentation)
         instance_records = {}
-        if self._instance_tab_enabled and self._instance_session is not None:
-            instance_records = self._instance_session.records(self.services)
-            result['scopes']['instance'] = self.active_service.project_scope(
-                list(instance_records.values()), 'Cała instancja', self._instance_session.started_at)
+        if self._instance_tab_enabled:
+            session = self._ensure_installation_session()
+            if session is not None:
+                scope, instance_records, installation_warnings = session.snapshot()
+                result['scopes']['instance'] = scope
+                result['warnings'].extend(warning for warning in installation_warnings
+                                          if warning not in result['warnings'])
         warnings = result.setdefault('warnings', [])
         pending, waiting = self._pending_activity()
         result['recovery'] = {'pending': len(pending),
@@ -1149,8 +1204,11 @@ class Runtime(object):
             scope = getter('scope')
             if scope is None or scope == 'manual':
                 self.active_service.reset_manual()
-            elif scope == 'instance' and self._instance_tab_enabled and self._instance_session is not None:
-                self._instance_session.reset(self.services, self.now())
+            elif scope == 'instance' and self._instance_tab_enabled:
+                session = self._ensure_installation_session()
+                if session is None:
+                    return
+                session.reset()
             else:
                 return
             self._window_call('refresh')

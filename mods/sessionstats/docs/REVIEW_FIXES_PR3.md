@@ -21,10 +21,9 @@
   restarcie bez nowej bitwy nie utrzymują spinnera. Panel pokazuje wyjaśnienie.
   Szczegóły i granice działania: [RESTORED_RESULTS_ACTIVITY.md](RESTORED_RESULTS_ACTIVITY.md).
 
-Weryfikacja: 349 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
-z czterema pominiętymi testami narzędzia pakującego wymagającego Pythona 3.
-113 kontroli panelu obejmuje trwały i przejściowy błąd rejestracji callbacku,
-synchroniczne wywołanie podczas rejestracji oraz spóźnione zdarzenia po zamknięciu.
+Validation: 364 Python 3 tests; the same Python 2.7 suite with 4 Python-3-only
+builder tests skipped. The 114 panel checks cover rejected callback registration,
+synchronous delivery during registration and retained callbacks after teardown.
 Sprawdzono wydanie 0.2.8, rzeczywistą weryfikację sum po rozpakowaniu ZIP-a
 oraz identyczny ZIP po ponownym zbudowaniu z zawartych w nim źródeł.
 Testy z atrapami klienta nie zastępują uruchomienia WoT.
@@ -59,13 +58,16 @@ Review 5610518614:
   Piętnaście kontroli Chromium obejmuje osobną awarię każdego usunięcia,
   wspólną awarię wszystkich, ponowne sprzątanie i spóźnione callbacki.
 
-Sesje kont i opcjonalny zakres całego procesu:
-- Dwie domyślne zakładki i ręczny reset pozostają osobne dla każdego konta
-  i regionu. Stare potwierdzenie po zmianie konta nie resetuje nowego konta.
-- sessions.instance_tab=true włącza osobną trzecią zakładkę z niezależnym
-  resetem w pamięci procesu. Nie zmienia dzienników ani epok ręcznych kont.
-- Dwanaście testów Pythona obejmuje izolację kont/regionów, zmiany konta,
-  oba kierunki niezależności resetów, późne wyniki i restart procesu.
-  Dziesięć kontroli Chromium sprawdza wyłączenie domyślne, polecenia resetu,
-  zamykanie starego potwierdzenia, przełączanie kont i wąski panel z trzema
-  podpisami. Szczegóły: [ACCOUNT_SESSIONS.md](ACCOUNT_SESSIONS.md).
+Account scopes and the optional durable installation scope:
+- Default scopes and manual resets remain isolated per account and region.
+  A confirmation from a previous account cannot reset the current account.
+- sessions.instance_tab=true displays the installation tab. Its history and
+  manual reset persist across game restarts using a separate transactional
+  StatsService ledger; account ledgers and reset epochs are never modified.
+- Installation identity uses the verified physical game root, independent of
+  client-version directories. Unknown roots do not select a global fallback.
+- Fifteen additional Python tests cover persistent history and reset boundaries,
+  restart recovery, late discovery, separate installations, failed writes,
+  corrupted generations and identity discovery. An additional browser check
+  verifies that confirmation explains restart persistence.
+- Details and migration rules: [ACCOUNT_SESSIONS.md](ACCOUNT_SESSIONS.md).

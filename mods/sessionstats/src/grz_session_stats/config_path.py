@@ -236,3 +236,30 @@ def find_config_path(package_name=None, resmgr=None, cwd=None):
     except Exception:
         pass
     return None
+
+
+def find_installation_root(resmgr=None, cwd=None):
+    """Identify the physical game root, independently of mod/client versions."""
+    try:
+        if resmgr is None:
+            try:
+                import ResMgr as resmgr
+            except Exception:
+                resmgr = None
+        if resmgr is not None:
+            try:
+                resolver = getattr(resmgr, 'resolveToAbsolutePath', None)
+                path = _physical_xml(resolver('../paths.xml')) if callable(resolver) else None
+            except Exception:
+                path = None
+            if path is not None:
+                _package_roots(path)
+                return os.path.realpath(os.path.dirname(path))
+        candidates = _fallback_files(resmgr, cwd)
+        if len(candidates) == 1:
+            _package_roots(candidates[0])
+            return os.path.realpath(os.path.dirname(candidates[0]))
+    except Exception:
+        pass
+    # Never use one global fallback that could merge distinct installations.
+    return None

@@ -1,20 +1,18 @@
-# Sesje kont i całej instancji gry
+# Account and installation sessions
 
-Domyślnie mod pokazuje wyłącznie statystyki bieżącego konta. Rozdziela również
-konta o takim samym numerze w różnych regionach. Nie zapisuje nicku jako klucza.
+The two default tabs are isolated by account and region. Switching A → B → A
+restores A's own manual period. Resetting B never changes A. Nicknames are
+not used as storage keys.
 
-| Zakładka | Konta | Reset | Nowy proces gry |
+| Scope | Accounts | Reset | After restarting the game |
 | --- | --- | --- | --- |
-| Od uruchomienia | Tylko bieżące konto | Nowy proces | Pusty zakres |
-| Od resetu | Tylko bieżące konto | Ręczny, osobny dla konta | Zachowuje historię |
-| Cała instancja, opcjonalnie | Konta użyte w bieżącym procesie | Własny ręczny | Pusty zakres |
+| Since launch | Current account | New game process | Empty |
+| Since reset | Current account | Its own manual reset | Preserved |
+| Installation, optional tab | Accounts observed in this installation | Its own manual reset | Preserved |
 
-Przełączenie A → B → A przywraca poprzednią historię i ręczny okres A.
-Reset B nie zmienia historii A ani jego daty resetu. Zwykły przycisk resetu
-działa na wybrany zakres bieżącego konta. Potwierdzenie znika po zmianie konta,
-a adapter odrzuca polecenie ze starym kluczem konta lub nieznanym zakresem.
-
-W JSON obok paczki moda opcjonalnie ustaw:
+To display the installation tab, add this section to the existing JSON beside
+the mod. The previous `instance_tab` option name is retained for compatibility;
+it now selects the durable installation scope, not a process-only scope.
 
 ```json
 {
@@ -24,26 +22,46 @@ W JSON obok paczki moda opcjonalnie ustaw:
 }
 ```
 
-Domyślne `false`, brak pola i błędny typ pozostawiają trzecią zakładkę ukrytą.
-Pozostałe sekcje istniejącego pliku można zachować. Zmiana jest odczytywana
-przy otwieraniu panelu lub po wybraniu „Odśwież”. Przy trzech zakładkach
-„Od uruchomienia” ma krótszy podpis „Od startu”, aby zmieścić się w wąskim oknie.
+The default is `false`. Missing fields and invalid types keep the tab hidden.
+The setting controls visibility; collection continues while hidden, so toggling
+or restarting with the tab hidden does not create a gap in the saved period.
+Settings reload when opening the panel or choosing Refresh.
 
-Wspólny zakres jest projekcją wpisów przypisanych do bieżącego procesu gry.
-WN8, średnie i pokrycie są ponownie liczone z poszczególnych bitew. Nie jest to
-średnia wyników kont. Identyfikacja wierszy uwzględnia konto, ale wiersz wspólny
-nie ujawnia jego identyfikatora. Istniejące miniatury i grupowania pozostają.
+The installation ledger and its manual reset boundary use the same checksummed,
+atomic generation store as account histories. They are saved under the local
+mod data directory in a separate `installations` namespace. Restarting, closing
+before a result arrives, switching accounts and updating the client version do
+not clear that period. Only its explicit manual reset starts a new one.
 
-Wspólny reset nie zapisuje ani nie zmienia żadnej historii konta. Ręczny reset
-konta również nie zmienia wspólnego zakresu. Wyniki zaczętych wcześniej bitew,
-także nierozliczonych w chwili resetu, nadal uzupełniają pierwotną historię
-konta, ale nie trafiają do świeżego wspólnego zakresu. Zaległości poprzedniego
-procesu również nie są dodawane do nowej instancji gry.
+Installation identity comes from the verified physical game root containing
+`paths.xml`, independently of the version directory under `mods`. Its normalized
+path is hashed; the shared ledger contains neither the raw path nor raw account
+IDs. Distinct installation roots remain separate even when account data uses
+the same AppData directory. Moving the game root selects a different namespace;
+the former history is retained. Unknown or ambiguous roots never fall back to
+one global shared history. Account collection remains available independently.
 
-Wspólny reset i identyfikacja jego wierszy istnieją wyłącznie w pamięci procesu.
-Ukrycie i ponowne włączenie zakładki zachowuje reset; uruchomienie nowego
-procesu rozpoczyna nowy wspólny zakres. Mod nie tworzy połączonego archiwum
-kont. Zmiana konta nadal przełącza spinner na kolejkę aktywnego konta.
+Each account/battle pair has a stable hashed key. WN8, averages, coverage and
+groups are computed from the shared ledger's individual normalized records.
+The installation reset never resets an account; account resets never reset the
+installation. Confirmation closes on account changes and stale commands are
+rejected. The footer spinner still follows the active account only.
 
-Testy używają syntetycznych kont, wyników i transportu. Weryfikacja w Chromium
-i Pythonie nie zastępuje sprawdzenia w działającym kliencie WoT.
+Beginnings are saved before results. A result delivered after a restart fills
+its existing shared record exactly once and retains its original reset epoch.
+A battle started before an installation reset cannot enter the new period,
+including when its result arrives in a later game process. Unknown historical
+results without installation provenance are not imported from another client's
+account history. Known records from the current process can be adopted if
+installation discovery becomes available late.
+
+No account-history migration or reset is required. Earlier account archives
+lack installation provenance and are not guessed into the new shared ledger.
+Shared collection starts with this implementation's observed battles. Errors
+in its storage do not block account results; the panel reports incomplete or
+unavailable shared storage instead of silently overwriting existing data.
+
+Tests use synthetic accounts/results and cover restarts, independent durable
+resets, separate installations, delayed results, duplicate delivery, corrupted
+generations and failed writes. Python and Chromium checks do not replace an
+in-game test with the actual WoT client.

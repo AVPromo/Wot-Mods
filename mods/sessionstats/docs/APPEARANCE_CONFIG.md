@@ -24,13 +24,13 @@ Dołączony pełny JSON zawiera **obecny wygląd jako wartości domyślne**:
 mnożnik przewijania. Brak pliku, pusty obiekt `{}` i pominięte pola korzystają
 z wartości wbudowanych w mod.
 
-## Opcjonalna wspólna sesja
+## Optional installation session
 
-W tym samym pliku można dodać `"sessions": {"instance_tab": true}`.
-Wartość domyślna to `false`; pole przyjmuje wyłącznie logiczne `true`/`false`.
-Włącza trzecią zakładkę „Cała instancja” ze wspólnymi wynikami bieżącego
-procesu i własnym resetem. Dwie zwykłe zakładki oraz ręczne resety kont
-pozostają rozdzielone. [Dokładne zasady](ACCOUNT_SESSIONS.md).
+Add `"sessions": {"instance_tab": true}` to display the installation tab.
+The strict boolean defaults to `false`. Its shared history and independent
+manual reset survive game restarts. The setting controls visibility, so hiding
+the tab does not stop collection or clear the saved period. The two account
+scopes remain independent. [Persistence and identity rules](ACCOUNT_SESSIONS.md).
 
 ## Najczęściej przydatne pola
 

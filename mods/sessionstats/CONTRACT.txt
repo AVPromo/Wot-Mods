@@ -116,13 +116,18 @@ ACCOUNT AND OPTIONAL INSTANCE SCOPES
 Both launch and manual scopes belong exclusively to REGION:DBID. Switching accounts
 selects that account's saved manual epoch; resetting it never touches another account.
 Optional sessions.instance_tab is a strict JSON boolean, default false. If true,
-Runtime adds scopes.instance with the same scope shape and label 'Cała instancja'.
-It projects raw records from the current launch of all accounts loaded in this process,
-using account-aware opaque row aliases to avoid collisions without exposing account IDs.
+Runtime adds scopes.instance with the same scope shape and label 'Installation'.
+InstallationSession uses its own StatsService/GenerationStore ledger under installations,
+keyed by the hashed canonical game root located through the physical paths.xml.
+Never use a global fallback for unknown roots. Client version directories do not
+change its identity. Stable hashed account/battle keys avoid collisions and raw IDs.
 Recalculate WN8/averages/coverage from records; never average account summaries.
-InstanceSession is memory-only and has its own reset boundary and excluded beginnings.
-Late pre-reset results cannot reenter it. Toggling the tab preserves its epoch; a new
-game process starts it empty. It never changes any account ledger or manual epoch.
+Installation history and its manual reset boundary survive game restarts. Only an
+explicit installation reset starts a new period; it never changes account epochs.
+Late known results keep their original installation epoch even after restarting.
+Do not import unknown historical account records without installation provenance.
+Visibility is independent of collection: hiding the tab does not erase or interrupt
+the saved period. Installation storage errors must not block account collection.
 reset actions optionally carry scope (manual/instance) and account_key. Missing scope
 means manual for compatibility; unknown/disabled targets and stale account keys do
 nothing. UI confirms the selected target and closes confirmation on account changes.

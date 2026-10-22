@@ -507,9 +507,9 @@
         if (show) { endNativeDrag(); }
         state.dialog = !!show;
         document.getElementById('ss-confirm-title').textContent = state.scope === 'instance' ?
-            'Wyzerować zakres „Cała instancja”?' : 'Wyzerować zakres „Od resetu”?';
+            'Wyzerować zakres „Instalacja”?' : 'Wyzerować zakres „Od resetu”?';
         document.getElementById('ss-confirm-message').textContent = state.scope === 'instance' ?
-            'Nowy wspólny zakres zacznie się teraz. Historie kont i ich ręczne resety pozostaną bez zmian.' :
+            'Nowy wspólny zakres tej instalacji zacznie się teraz i zachowa się po ponownym uruchomieniu gry. Historie kont i ich ręczne resety pozostaną bez zmian.' :
             'Nowy zakres zacznie się teraz tylko dla bieżącego konta. Pozostałe konta pozostaną bez zmian.';
         nodes['reset-overlay'].style.display = show ? 'flex' : 'none';
         if (show) { focusControl(nodes['reset-cancel']); } else if (state.scope !== 'launch') { focusControl(nodes.reset); }

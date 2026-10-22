@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Account isolation is the default; the shared process view is explicit."""
+"""Account isolation is the default; the durable installation view is explicit."""
 from __future__ import unicode_literals
 
 import copy
@@ -40,6 +40,7 @@ class AccountSessionTests(unittest.TestCase):
         return self.mod.snapshot()['scopes']
 
     def enable_instance(self, value=True):
+        self.mod._installation_dir = self.directory
         self.mod._appearance_override_path = os.path.join(self.directory, 'grz.sessionstats.json')
         with io.open(self.mod._appearance_override_path, 'w', encoding='utf-8') as handle:
             handle.write(json.dumps({'sessions': {'instance_tab': value}}, ensure_ascii=False))
@@ -155,7 +156,7 @@ class AccountSessionTests(unittest.TestCase):
         self.assertEqual(self.scopes()['instance']['summary']['observed_battles'], 0)
         self.assertEqual(self.mod.active_service._state, before)
 
-    def test_new_game_process_starts_empty_shared_scope_but_keeps_account_manual_history(self):
+    def test_new_game_process_keeps_shared_scope_and_account_manual_history(self):
         self.enable_instance()
         self.battle()
         self.mod.stop()
@@ -167,14 +168,15 @@ class AccountSessionTests(unittest.TestCase):
             self.mod = runtime.Runtime(api=self.api, data_dir=self.directory,
                                        expected_table=fixtures.EXPECTED, now=self.clock,
                                        window=self.window, footer_installer=self.no_footer,
-                                       appearance_path=os.path.join(self.directory, 'grz.sessionstats.json'))
+                                       appearance_path=os.path.join(self.directory, 'grz.sessionstats.json'),
+                                       installation_dir=self.directory)
             self.mod.start()
         finally:
             runtime.LAUNCH_ID = previous
         scopes = self.scopes()
         self.assertEqual(scopes['manual']['summary']['battles'], 1)
         self.assertEqual(scopes['launch']['summary']['battles'], 0)
-        self.assertEqual(scopes['instance']['summary']['observed_battles'], 0)
+        self.assertEqual(scopes['instance']['summary']['observed_battles'], 1)
 
     def test_detached_launch_records_cannot_mutate_account_history(self):
         self.battle()

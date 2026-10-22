@@ -97,6 +97,24 @@ class ConfigPathTests(unittest.TestCase):
         self.write(os.path.join(base, 'paths.xml'), ''.join(parts).encode('utf-8'))
         return base
 
+    def test_installation_root_is_stable_across_client_version_directories(self):
+        base = self.game()
+        resources = Resources(xml=os.path.join(base, 'paths.xml'))
+        self.assertEqual(cp.find_installation_root(resources), os.path.realpath(base))
+        self.game(entries=[('./mods/2.5.0.0', 'recursive')])
+        self.assertEqual(cp.find_installation_root(resources), os.path.realpath(base))
+
+    def test_installation_root_does_not_merge_ambiguous_fallback_locations(self):
+        first = self.game('game-a')
+        second = self.game('game-b')
+        self.assertIsNone(cp.find_installation_root(Resources(app=first), cwd=second))
+
+    def test_invalid_authoritative_installation_xml_does_not_select_another_game(self):
+        first = self.game('game-a')
+        second = self.game('game-b')
+        path = self.write(os.path.join(first, 'paths.xml'), b'<invalid>')
+        self.assertIsNone(cp.find_installation_root(Resources(xml=path, app=second), cwd=second))
+
     def install(self, base, subdir='mods/2.4.1.0', name=None):
         return self.write(os.path.join(base, subdir, name or self.package), b'package fixture')
 

@@ -57,8 +57,8 @@ zgodności z nową wersją gry. Ten adapter oparto na interfejsach gałęzi 2.4.
 JAK DZIAŁA PANEL
 • Na górze: liczba zakończonych bitew, win rate i pełna liczba WN8.
 • Dwie zakładki okresu: „Od uruchomienia” oraz „Od resetu”.
-  Obie dotyczą bieżącego konta. Opcjonalna trzecia zakładka „Cała instancja”
-  jest domyślnie wyłączona i ma osobny reset.
+  Both belong to the active account. The optional installation tab has its
+  own persistent manual reset and is hidden by default.
 • Domyślnie „Bazowe PD”. „Otrzymane PD” przełącza wszystkie widoczne statystyki
   doświadczenia na wartości z premiami przyznanymi przez grę.
 • Podsumowanie i szczegóły są widoczne od razu. Poniżej są Czołgi / Mapy / Bitwy.
@@ -98,9 +98,9 @@ Dołączony pełny plik zawiera 140 ustawień kolorów, 12 promieni zaokrągleni
 układ, odstępy, wygląd tabel, ikony, spinnera i szybkość rolki.
 
 Sekcje pliku:
-• sessions: instance_tab — true pokazuje wspólną zakładkę całej instancji gry;
-  false (domyślnie) zachowuje wyłącznie dwie zakładki bieżącego konta.
-  Dozwolone są wartości logiczne true/false, bez cudzysłowów.
+• sessions.instance_tab: true displays the durable installation tab;
+  false (default) keeps it hidden. Only JSON booleans are accepted.
+  The option controls visibility; hiding it does not interrupt collection.
 • colors: kolory tekstu, tła, linii, cieni, gradientów i stanów kontrolek.
   Obsługiwane są #RGB, #RRGGBB, #RRGGBBAA, rgb(...), rgba(...) i transparent.
   Kanały RGB mają zakres 0–255, alpha w rgba ma zakres 0–1.
@@ -167,22 +167,23 @@ garażu i ponowne połączenie z serwerem w tym samym procesie nie zerują go.
 Przycisk „Wyzeruj zakres” jest dostępny w „Od resetu” i prosi o potwierdzenie.
 Nie zeruje okresu „Od uruchomienia”; północ również niczego nie resetuje.
 
-OPCJONALNIE: CAŁA INSTANCJA
-Aby dołożyć trzecią zakładkę, dodaj w grz.sessionstats.json:
+OPTIONAL INSTALLATION SESSION
+To display the third tab, add this section to grz.sessionstats.json:
 {"sessions": {"instance_tab": true}}
-Jeśli masz już inne sekcje, dodaj sessions jako kolejną sekcję tego samego obiektu.
-Po zapisaniu wybierz Odśwież albo ponownie otwórz panel. Domyślne false nie
-pokazuje wspólnej zakładki. Nie zmienia to znaczenia zwykłego „Od resetu”.
+Keep other existing sections. Refresh or reopen the panel after saving.
+The tab is hidden by default; the existing account scopes remain separate.
 
-„Cała instancja” zbiera bitwy ze wszystkich kont użytych w bieżącym procesie
-gry. Ma osobne potwierdzenie i reset, który nie zmienia żadnej historii konta.
-Reset konta również nie zeruje wspólnego zakresu. Spóźniony wynik bitwy sprzed
-wspólnego resetu uzupełnia historię konta, ale nie wraca do świeżego zakresu.
-Nowy proces gry zaczyna pustą wspólną sesję. Ukrycie i ponowne włączenie
-zakładki w tym samym procesie zachowuje jej bieżący reset. Nie zapisujemy
-osobnego połączonego archiwum kont. Spinner nadal dotyczy aktywnego konta.
-Przy trzech zakładkach pierwszy podpis skraca się do „Od startu”.
-Szczegóły: source/docs/ACCOUNT_SESSIONS.md.
+Installation history combines accounts observed in this installation and
+survives game restarts, along with its own manual reset boundary. Only its
+explicit reset starts a new period. Neither reset changes the other histories.
+Late results retain their original installation period after restarting.
+The shared ledger uses atomic, checksummed local storage and a hashed game-root
+identity independent of the client version directory. Separate installations
+remain separate. Hiding the tab neither clears nor stops the saved period.
+The footer spinner still follows only the active account.
+No account-history migration or reset is required. Older account archives
+without installation provenance are not automatically imported.
+Details: source/docs/ACCOUNT_SESSIONS.md.
 
 Przynależność bitwy do obu okresów jest utrwalana przy wejściu do bitwy.
 Wynik otrzymany później uzupełnia właściwy okres. Powtórzony wynik aktualizuje
@@ -426,8 +427,8 @@ node tests/ui-footer-activity.cjs — spinner, stan kolejki, podpowiedź i clean
 node tests/ui-appearance.cjs — style z konfiguracji, fallback i mnożnik rolki.
 Testy Pythona obejmują także walidację JSON, zgodność wartości domyślnych ze
 stylem, ustalanie ścieżki paczki oraz przekazanie konfiguracji do panelu i stopki.
-Weryfikacja źródeł po poprawkach PR #3: 349 testów pod Pythonem 3; ten sam zestaw
-pod CPythonem 2.7.18 z 4 pominięciami testów buildera wymagającego Pythona 3.
+Source validation after PR #3 corrections: 364 tests on Python 3; the same suite
+on CPython 2.7.18 with 4 Python-3-only builder tests skipped.
 Testy obejmują zachowanie spinnera po restarcie i odzyskiwanie starych wyników.
 Style i geometria domyślnego panelu i ikony są porównywane z bazowym wyglądem;
 kontrola rastra dopuszcza ograniczone różnice antyaliasingu między Chromium.

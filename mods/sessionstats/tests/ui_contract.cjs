@@ -563,7 +563,7 @@ async function nativeHost(browser, options) {
   await native.locator('#ss-titlebar').dispatchEvent('mousedown',{button:0});
   check('Destroy ends the native drag and removes titlebar listeners',await native.evaluate(count=>__grzWindowEvents.length===count && __grzWindowEvents[count-1].on===false && !GRZSessionStats.getState().dragging,dragEventsAfterDestroy));
   const sessions=await nativeHost(browser,{});
-  check('Shared instance tab is absent from the default account-only view',!(await sessions.locator('#ss-scope-instance').isVisible()));
+  check('Installation tab is absent from the default account-only view',!(await sessions.locator('#ss-scope-instance').isVisible()));
   await sessions.evaluate(()=>{
     const payload=JSON.parse(model.payload);
     payload.account_key='fixture-account-a';
@@ -573,11 +573,13 @@ async function nativeHost(browser, options) {
   await sessions.locator('#ss-scope-instance').click();
   check('Opt-in instance tab has a visible caption and its own results',await sessions.evaluate(()=>
     GRZSessionStats.getState().scope==='instance' && document.querySelector('#ss-summary .ss-kpi-value').textContent==='25' &&
-    document.querySelector('#ss-scope-instance .ss-control-label').textContent==='Cała instancja'));
+    document.querySelector('#ss-scope-instance .ss-control-label').textContent==='Instalacja'));
   await sessions.locator('#ss-reset').click();
   check('Instance reset confirmation explicitly preserves account histories',
-    (await sessions.locator('#ss-confirm-title').innerText()).includes('Cała instancja') &&
+    (await sessions.locator('#ss-confirm-title').innerText()).includes('Instalacja') &&
     (await sessions.locator('#ss-confirm-message').innerText()).includes('Historie kont'));
+  check('Installation confirmation explains that the shared period survives game restarts',
+    (await sessions.locator('#ss-confirm-message').innerText()).includes('zachowa się po ponownym uruchomieniu'));
   await sessions.locator('#ss-reset-confirm').click();
   check('Instance confirmation sends only the instance reset target and current account',await sessions.evaluate(()=>{
     const reset=__grzCommands.filter(x=>x.action==='reset');
@@ -599,7 +601,7 @@ async function nativeHost(browser, options) {
   check('Manual tab switches to the new account rather than shared statistics',
     (await sessions.locator('#ss-summary .ss-kpi-value').first().innerText())==='0');
   await sessions.locator('#ss-scope-instance').click();
-  check('Explicit shared tab retains the process results across an account switch',
+  check('Explicit installation tab retains shared results across an account switch',
     (await sessions.locator('#ss-summary .ss-kpi-value').first().innerText())==='25');
   let sessionLabelsFit=true;
   const sessionLabelLayouts=[];
