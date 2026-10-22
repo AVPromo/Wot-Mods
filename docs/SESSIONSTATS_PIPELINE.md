@@ -1,55 +1,52 @@
-# Wspólne repozytorium, niezależne wydania
+# Independent Session Stats builds and shared release snapshots
 
-Infrastruktura CI jest osobnym PR od importu źródeł. Kolejność merge:
-**pipeline → aktualizacja gałęzi importu z `main` → pełne CI → źródła statystyk**.
-Przed importem źródeł infrastruktura wykonuje swoje testy, a kroki kompilacji
-i wydawania statystyk raportują oczekiwanie. Nie oznacza to przetestowania moda.
-Ten wyjątek działa tylko, gdy katalog źródeł nie istnieje ani w checkout,
-ani w jego pełnej historii Git. Usunięcie lub zmiana nazwy pliku startowego
-po imporcie kończy błędem zarówno walidację PR, jak i build wydania.
-Po połączeniu źródeł z `main` uruchomi się pierwsze automatyczne wydanie.
-Samo utworzenie obu PR nie publikuje Release i nie łączy ich automatycznie.
+CI infrastructure is reviewed in PR #2 separately from source import PR #3.
+Merge order: accepted infrastructure → update the source branch onto main →
+full source validation → source merge. Before the first import, source steps
+are skipped only if neither the checkout nor full Git history contains the
+mod. A removed/misnamed entrypoint or shallow history fails validation.
 
-| Mod | Źródła | Wersja bazowa | Tagi | Workflow |
+| Mod | Sources | Baseline | Tags | Workflow |
 |---|---|---|---|---|
-| Medkit Reminder | `source/`, `assets/` | `VERSION` | `v1.6.…` | `release.yml` |
+| Stay Sharp | `source/`, `assets/` | `VERSION` | `v1.6.…` | `release.yml` |
 | Session Stats | `mods/sessionstats/` | `mods/sessionstats/VERSION` | `sessionstats-v0.2.…` | `sessionstats-release.yml` |
 
-Zmiany w katalogu jednego moda nie wydają drugiego. Wspólna zmiana publikatora,
-obliczania wersji albo skanera powoduje wydanie obu, ponieważ może wpływać na oba.
-Każdy push na `main` dotyczący statystyk buduje nową wersję i tworzy Release.
-PR wykonuje testy i tworzy tylko artefakt Actions, bez prawa publikacji.
+Session Stats builds never invoke Stay Sharp's builder. Read-only builds test
+and reproduce all six Session Stats assets before uploading an Actions artifact.
+The installer includes the mod, default configuration, one OpenWG dependency
+and sources; editable language catalogs are included by the source builder.
 
-Numer patch = bazowy patch + numer uruchomienia danego workflow − 1.
-Puste, nieudane lub wstrzymane przebiegi mogą pozostawić luki w numeracji.
-Nie zmieniaj bazowego VERSION dla zwykłych poprawek; podnieś major/minor przy
-nowej linii wydań. Ponowienie tego samego run zachowuje wersję i sprawdza
-istniejący tag, SHA commitu, pełny zestaw plików oraz ich SHA-256. Opublikowane
-pliki nie są nadpisywane. Niepełny draft można wznowić; obcy tag blokuje publikację.
+Patch = baseline patch + workflow run number − 1. Failed/skipped runs may leave
+gaps. Ordinary fixes do not require a baseline bump. Reruns retain their version.
+Version stamping covers filenames, meta.xml, runtime bytecode and BUILD.json.
+Historical client versions describe tested baselines, not future compatibility.
 
-ZIP instalacyjny zawiera `.wotmod`, domyślny JSON, jedną kopię OpenWG i źródła.
-Osobnymi assetami są również oba `.wotmod`, JSON, `BUILD.json`, `SHA256SUMS.txt`.
-Wersja trafia do nazwy pliku, `meta.xml`, skompilowanego `VERSION` i raportu.
-Wersje klienta w starszych notatkach oznaczają przebadany punkt odniesienia,
-nie gwarancję zgodności z dowolną przyszłą wersją WoT.
+Publication follows the accepted [shared snapshot model](MULTIMOD_RELEASES.md).
+Only the publish job has `contents: write` and holds the repository-wide
+`wotmod-release-${{ github.repository }}` mutex with `queue: max` and
+`cancel-in-progress: false`. Inside the lock it verifies the build, fetches
+Latest, carries other mods byte-for-byte, publishes and compares every uploaded
+file. Stale/equal identical primary versions return a successful no-op; equal
+versions with different bytes fail. Drafts require manual inspection and are
+never automatically resumed, overwritten or deleted. Tags must resolve to the
+exact build commit before and after publication.
 
-Kompilator gry to CPython 2.7.18 pobrany z oficjalnego python.org i zweryfikowany
-SHA-256 `da3080e3b488f648a3d7a4560ddee895284c3380b11d6de75edb986526b9a814`.
-Archiwum zgadza się również z opublikowanym przez Python.org historycznym MD5
-`38c84292658ed4456157195f1c9bcbe1` (MD5 jest tu informacją o pochodzeniu;
-pipeline egzekwuje SHA-256). Źródło: https://www.python.org/downloads/release/python-2718/.
-Kompilacja i testy moda nie pobierają kodu przez interpreter 2.7.
+The owner must configure the `sessionstats-release-tags` Ruleset and
+`sessionstats-release` Environment described in MULTIMOD_RELEASES.md before the
+first publication. Missing/changed approval fails closed. No PAT, user secrets,
+custom release API, pull_request_target or publication from PR branches is used.
+Actions use full SHA pins matching accepted main.
 
-Walidacja obejmuje testy Pythona 3 i 2.7, sześć zestawów testów Chromium,
-powtórne budowanie z porównaniem SHA-256, prywatność źródeł i archiwów
-oraz rekursywną kontrolę stałych/ścieżek bajtkodu. Materiały QA są syntetyczne.
-To testy z atrapami klienta; nie zastępują uruchomienia gry.
-Porównanie dwóch buildów obejmuje wszystkie sześć publikowanych plików,
-łącznie z JSON-em konfiguracji, raportem i manifestem sum. Skan prywatności
-oraz kontrola integracji badają ostateczny wynik drugiego buildu.
-Skaner odrzuca także binarne `.p12`/`.P12` wewnątrz zagnieżdżonych archiwów.
+The game compiler is CPython 2.7.18 from python.org, verified with SHA-256
+`da3080e3b488f648a3d7a4560ddee895284c3380b11d6de75edb986526b9a814`.
+Historical upstream MD5 `38c84292658ed4456157195f1c9bcbe1` records provenance;
+the pipeline enforces SHA-256. Source: https://www.python.org/downloads/release/python-2718/.
+Python 2.7 does not download build dependencies.
 
-Build ma `contents: read`; osobny job publikacji dostaje `contents: write`
-i tylko jego krok publikujący otrzymuje `GH_TOKEN`. Bez PAT, sekretów użytkownika,
-`pull_request_target`, prywatnych runnerów ani publikacji z gałęzi PR.
-Akcje checkout/upload/download mają przypięte pełne SHA.
+Full source validation runs Python 3 and 2.7 tests, six Chromium suites, two
+builds compared across all six assets including configuration/report/checksums,
+final-output integration and recursive source/archive/bytecode privacy scans.
+Nested binary .p12/.P12 files are rejected. Integration inspects local built
+packages without compiling another mod; the publisher also checks carried
+packages for resource or package-ID collisions. Synthetic tests do not replace
+validation inside the real World of Tanks client.

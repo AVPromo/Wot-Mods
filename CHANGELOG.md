@@ -4,7 +4,7 @@
 
 - Fix Windows log rotation when the `.old` backup already exists; also rotate logs during long sessions.
 - Fail closed on existing mismatched release tags and wrong SHA-256 assets.
-- Make GitHub Releases resumable after interrupted draft creation or partial upload.
+- Add checks ensuring a published GitHub Release has complete, correct assets.
 - Stop forcing future builds to reproduce the original v1.6.0 checksum.
 - Verify the master DDS against its own reviewed SHA-256 file so artwork can be updated in later PRs.
 - Add offline regression tests for failed/draft/published release states and Windows log rotation.
@@ -18,3 +18,10 @@
 - Existing offline tests and release-packaging pipeline.
 
 Later releases are generated for **each push to `main`** after a reviewed merge; GitHub Releases contains the corresponding commit-based change notes.
+
+### GitHub Actions release workflow simplification (PR #4)
+- Separate read-only build/tests from the write-scoped publishing job with first-party GitHub artifact actions.
+- Replace bespoke release REST/HTTP and recovery scripts with Git tags and a single `gh release create --verify-tag`.
+- Verify published asset bytes and checksums; never overwrite or automatically delete releases.
+- Use native GitHub Immutable Releases protection for future published versions (repository setting).
+- Retain the historical empty `v1.6.1` draft for manual inspection; allow next version to publish independently.

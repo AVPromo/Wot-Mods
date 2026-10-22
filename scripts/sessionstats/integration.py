@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Check that the shipped resource namespaces of both mods remain disjoint."""
+"""Inspect built/carried packages without building another mod."""
+import argparse
 from pathlib import Path
 import json
 import os
@@ -17,18 +18,25 @@ def resources(path):
         paths = archive.namelist()
         if len(paths) != len(set(paths)):
             raise ValueError('Duplicate archive member')
-        return {p for p in paths if p.startswith('res/')}, ET.fromstring(archive.read('meta.xml')).findtext('id')
+        identifier = ET.fromstring(archive.read('meta.xml')).findtext('id')
+        if not identifier:
+            raise ValueError('Package ID is missing')
+        return {p.filename for p in archive.infolist()
+                if p.filename.startswith('res/') and not p.is_dir()}, identifier
 
 
-def main():
-    medkit = list((ROOT/'dist').glob('com.staysharp.medkitreminder_*.wotmod'))
-    stats = list((ROOT/'mods/sessionstats/dist').glob('grz.sessionstats_*.wotmod'))
-    if len(medkit) != 1 or len(stats) != 1:
-        raise ValueError('Expected one built package for each mod')
-    a, a_id = resources(medkit[0])
-    b, b_id = resources(stats[0])
-    if a & b or a_id == b_id:
-        raise ValueError('Mods conflict in resource paths or package ID')
+def check(directory, python27=None):
+    directory = Path(directory)
+    stats = list(directory.glob('grz.sessionstats_*.wotmod'))
+    if len(stats) != 1 or len(list(directory.glob('net.openwg.gameface_*.wotmod'))) != 1:
+        raise ValueError('Expected one Session Stats package and one OpenWG dependency')
+    known_paths, identifiers = set(), set()
+    for package in sorted(directory.glob('*.wotmod')):
+        paths, identifier = resources(package)
+        if known_paths & paths or identifier in identifiers:
+            raise ValueError('Mods conflict in resource paths or package ID')
+        known_paths.update(paths)
+        identifiers.add(identifier)
     report = json.loads((stats[0].parent/'BUILD.json').read_text())
     version = report['version']
     if stats[0].name != 'grz.sessionstats_'+version+'.wotmod':
@@ -36,12 +44,19 @@ def main():
     with zipfile.ZipFile(stats[0]) as archive:
         if ET.fromstring(archive.read('meta.xml')).findtext('version') != version:
             raise ValueError('meta.xml does not match BUILD.json')
-    if os.environ.get('PYTHON27'):
-        subprocess.check_call([os.environ['PYTHON27'], '-c',
+    if python27:
+        subprocess.check_call([python27, '-c',
             'import marshal,sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); '
             'c=marshal.loads(z.read("res/scripts/client/gui/mods/grz_session_stats/__init__.pyc")[8:]); '
             'assert sys.argv[2] in c.co_consts', str(stats[0]), version])
-    print('Integration OK: distinct package IDs and no shared resource paths')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--directory', type=Path, default=ROOT/'mods/sessionstats/dist')
+    args = parser.parse_args()
+    check(args.directory, os.environ.get('PYTHON27'))
+    print('Integration OK: built/carried package IDs and resource paths are disjoint')
 
 
 if __name__ == '__main__': main()

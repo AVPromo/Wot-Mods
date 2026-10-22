@@ -12,8 +12,6 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
-import publish_release as shared
-from test_release_publication import FakeGitHub
 
 
 def load(name, filename):
@@ -41,52 +39,27 @@ class SessionStatsPipelineTests(unittest.TestCase):
             (self.folder/name).write_bytes(b'synthetic-artifact')
         (self.folder/'BUILD.json').write_text(json.dumps({'version':self.version,'python_bytecode':'2.7'}))
         self.checksums()
-        self.api = FakeGitHub()
 
     def checksums(self):
-        (self.folder/'SHA256SUMS.txt').write_text(''.join(shared.sha256(p)+'  '+p.name+'\n'
+        (self.folder/'SHA256SUMS.txt').write_text(''.join(release.sha256(p)+'  '+p.name+'\n'
             for p in sorted(self.folder.iterdir()) if p.name != 'SHA256SUMS.txt'))
 
-    def publish(self, tag='sessionstats-v0.2.9'):
-        return shared.publish(self.api, 'example/mods', tag, 'a'*40, self.version, self.folder,
-            tag_prefix='sessionstats-v', title='Session Stats', artifact_loader=release.inputs)
-
-    def test_all_six_assets_publish_and_rerun_verifies_without_overwrite(self):
-        self.assertEqual(self.publish(), 'published')
-        self.assertEqual(len(self.api.release['assets']), 6)
-        self.api.actions.clear()
-        self.assertEqual(self.publish(), 'verified_existing')
-        self.assertNotIn('upload_draft', self.api.actions)
-
-    def test_medkit_tag_cannot_be_used_by_sessionstats(self):
-        with self.assertRaises(shared.PublicationError): self.publish('v0.2.9')
-        self.assertEqual(self.api.actions, [])
-
-    def test_wrong_source_commit_is_not_retargeted(self):
-        self.api.commit = 'b'*40
-        with self.assertRaises(shared.PublicationError): self.publish()
-        self.assertNotIn('upload_draft', self.api.actions)
-
-    def test_interrupted_upload_resumes_same_draft(self):
-        self.api.fail_upload_once = True
-        with self.assertRaisesRegex(RuntimeError, 'Simulated interruption'): self.publish()
-        self.assertEqual(self.publish(), 'published')
-        self.assertEqual(self.api.actions.count('create_tag'), 1)
+    def test_all_six_assets_validate(self):
+        self.assertEqual(len(release.inputs(self.folder, self.version)), 6)
 
     def test_changed_asset_hash_blocks_before_remote_operations(self):
         (self.folder/'grz.sessionstats.json').write_text('changed')
-        with self.assertRaises(shared.PublicationError): self.publish()
-        self.assertEqual(self.api.actions, [])
+        with self.assertRaises(release.ValidationError): release.inputs(self.folder, self.version)
 
     def test_additional_stale_build_blocks_publication(self):
         (self.folder/'grz.sessionstats_0.2.8.wotmod').write_bytes(b'stale')
         self.checksums()
-        with self.assertRaises(shared.PublicationError): self.publish()
+        with self.assertRaises(release.ValidationError): release.inputs(self.folder, self.version)
 
     def test_incorrect_runtime_version_blocks_publication(self):
         (self.folder/'BUILD.json').write_text(json.dumps({'version':'0.2.8','python_bytecode':'2.7'}))
         self.checksums()
-        with self.assertRaises(shared.PublicationError): self.publish()
+        with self.assertRaises(release.ValidationError): release.inputs(self.folder, self.version)
 
     def test_nested_archives_do_not_hide_credentials(self):
         inner = io.BytesIO()
@@ -130,7 +103,7 @@ class SessionStatsPipelineTests(unittest.TestCase):
                 else:
                     (self.folder/name).write_bytes(original[name] + b'changed by rebuild')
                 if name != 'SHA256SUMS.txt': self.checksums()
-                with self.assertRaises(shared.PublicationError): artifacts.verify(self.folder, expected)
+                with self.assertRaises(artifacts.ValidationError): artifacts.verify(self.folder, expected)
 
 
 class SourceStateTests(unittest.TestCase):

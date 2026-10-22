@@ -7,7 +7,7 @@ The mod uses the regular consumables HUD and works independently of arcade, snip
 
 ## Downloads
 
-**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. Releases become downloadable for everyone after the first reviewed PR is merged and the Release workflow succeeds.
+**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest published release. The latest immutable Release is a **snapshot**: it may also include unchanged files of other mods, carried byte-for-byte from the preceding verified Release. An update to Session Stats does **not** rebuild Stay Sharp. Only fully published Releases are downloadable; a failed draft is not a usable release.
 
 ## Installation
 
@@ -33,15 +33,30 @@ sha256sum dist/*.wotmod
 
 The `assets/medkit_pulse_master.dds.b85` file is a compressed, ASCII-encoded source DDS. The builder recreates **all 21 original DDS animation frames byte-for-byte** using an exact, tested alpha-scaling formula; the full assets do not need to be separately committed. The **historical v1.6.0** artifact has SHA-256 `9f3d98948ed398c3a4dc14b6785b68f10f1319381f896c6cd49b8709359c4927`. This legacy check applies only when building v1.6.0. Current code starts at **v1.6.1**, which includes a Windows log-rotation fix.
 
-See [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](docs/REVIEW_1.6.0.md), and [installation guide](docs/INSTALACJA.md).
+See [independent builds and shared Release snapshots](docs/MULTIMOD_RELEASES.md), [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](docs/REVIEW_1.6.0.md), and [installation guide](docs/INSTALACJA.md).
 
 ## Changes, reviews and releases
 
-1. Open a pull request against `main`. The **CI** workflow builds and tests the mod with a read-only token; it does **not** create Releases.
-2. Review and merge the PR. A separate **Release** workflow on each push to `main` rebuilds, reruns tests and privacy checks, then publishes a new versioned `.wotmod` together with `SHA256SUMS.txt` in GitHub Releases.
-3. Releases use monotonically increasing patch numbers derived from the **Release workflow run number**: the first release is `v1.6.1`, the next is `v1.6.2`, and so on. Skipped versions are possible after a failed workflow run. Re-running a successful workflow does not replace an existing Release.
+1. Submit a PR to `main`. GitHub Actions runs unit tests, privacy checks and a deterministic build with **read-only** repository permissions.
+2. After review and merge, GitHub Actions builds and validates the `.wotmod`, transfers the verified files to a separate **write-scoped publishing job** using official `actions/upload-artifact` / `download-artifact`, and creates a GitHub Release with official `gh release create`.
+3. Only a push to `main` that changes Stay Sharp files (or its release/build machinery) triggers a Stay Sharp build and an incremented patch version. Session Stats language/configuration changes do not trigger this workflow. The new Release contains the rebuilt Stay Sharp and unchanged verified mod assets from the previous immutable Latest Release. Retrying a successful run verifies immutable assets without overwriting them; a failed run can leave a gap in release numbers.
 
-A manual Release workflow trigger is also available. The pipeline uses the repository-scoped `GITHUB_TOKEN` only; **no PAT or repository secret is required**. The repo is public, but no Release is published until this PR is merged.
+No custom HTTP client, third-party publication service or Java is involved; GitHub's own CLI and built-in `GITHUB_TOKEN` handle the release. Neither the workflow nor a separate recovery script deletes an existing Release. If publication is interrupted, check the draft manually; the pipeline fails safely instead of guessing what to remove.
+
+The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. Multiple mods are built separately. Shared GitHub Releases keep unchanged mod
+packages byte-for-byte: publish jobs use GitHub Actions `queue: max` to avoid
+simultaneous-merge races and skip obsolete same-mod builds. See
+[mod independence and concurrent merges](docs/MULTIMOD_RELEASES.md).
+
+See [build and release documentation](docs/BUILD_RELEASE.md).
+
+**Mandatory protection before merge:** configure the active GitHub tag
+ruleset `wotmod-release-tags` for `v*`, with **Restrict updates**, **Restrict
+deletions** and **no bypass actors**. The owner must also approve its exact
+revision using the two non-secret variables of the `wotmod-release` GitHub
+Environment, because Actions cannot reliably read the hidden bypass list.
+Without this verified configuration, publishing stops before creating a tag
+or Release. Details: [required release-tag protection](docs/BUILD_RELEASE.md#required-github-tag-protection-before-merging).
 
 ## Privacy and safety
 

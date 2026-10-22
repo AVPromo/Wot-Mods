@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 test -n "${PYTHON27:?Set PYTHON27 to CPython 2.7.18}"
-python3 -m unittest discover -s tests -v
 python3 -m unittest discover -s mods/sessionstats/tests -v
 "$PYTHON27" -B -m unittest discover -s mods/sessionstats/tests -v
 python3 mods/sessionstats/tools/make_preview.py
@@ -15,7 +14,6 @@ for test_file in ui_contract ui-wheel ui-footer ui-footer-activity ui-footer-com
   node "mods/sessionstats/tests/$test_file.cjs"
 done
 python3 mods/sessionstats/tools/build.py --python27 "$PYTHON27"
-python3 source/build_wotmod.py
 manifest="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sessionstats-reproducibility.XXXXXX")"
 python3 scripts/sessionstats/artifacts.py snapshot "$manifest"
 python3 mods/sessionstats/tools/build.py --python27 "$PYTHON27"
