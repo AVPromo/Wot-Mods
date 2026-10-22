@@ -169,11 +169,17 @@
         var found = findFeature();
         var nextId = found ? found.id : null;
         if (nextId !== resId) {
-            if (callbackId !== null && window.viewEnv && typeof window.viewEnv.removeDataChangedCallback === 'function') {
-                window.viewEnv.removeDataChangedCallback(callbackId, resId);
-            }
+            var previousCallback = callbackId;
+            var previousId = resId;
+            // Release ownership first: native cleanup may throw or deliver a
+            // synchronous update. Neither may keep us attached to a stale ID.
             callbackId = null;
             resId = nextId;
+            try {
+                if (previousCallback !== null && window.viewEnv && typeof window.viewEnv.removeDataChangedCallback === 'function') {
+                    window.viewEnv.removeDataChangedCallback(previousCallback, previousId);
+                }
+            } catch (error) { reportFailure('model cleanup'); }
         }
         // A rejected registration must be retried even when the subview ID stays
         // unchanged. Keep its model and the usable button while registration waits.

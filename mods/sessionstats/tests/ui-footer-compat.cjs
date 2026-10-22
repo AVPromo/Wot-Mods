@@ -50,7 +50,8 @@ async function fixture(browser, options = {}) {
       },
       removeDataChangedCallback(callbackID, id) {
         testModelCallbacks.push(['remove', id]);
-        if (options.cleanupFailure) throw new TypeError('model cleanup changed');
+        if (options.synchronousRemoval) emitChange();
+        if (options.cleanupFailure || options.rejectRemoval) throw new TypeError('model cleanup changed');
       }
     };
     window.subViews = {
@@ -127,6 +128,47 @@ async function fixture(browser, options = {}) {
       check('Cleanup removes the successfully retried callback for the current subview ('+mode+')',
         await retry.evaluate(()=>testModelCallbacks.filter(x=>x[0]==='remove' && x[1]===42).length===1));
       await retry.close();
+    }
+    for(const synchronousRemoval of [false,true]) {
+      const switched=await fixture(browser,{rejectRemoval:true,synchronousRemoval});
+      await switched.evaluate(()=>{
+        testEvents['viewEnv.onDataChanged'].push(()=>{nativeCalls++;});
+        testID=42;
+        testFeature={onAction:args=>testActions.push({id:42,...args}),
+          activity:JSON.stringify({pending:2,processing:false}),
+          appearance:'.grz-session-footer-button { color: rgb(23, 45, 67); }'};
+        emitChange();
+      });
+      check('Rejected old callback cleanup still switches to the new model (sync removal: '+synchronousRemoval+')',
+        await switched.locator('#grz-session-stats-footer-button').count()===1 &&
+        await switched.evaluate(()=>testRegistrationAttempts[42]===1 &&
+          document.getElementById('grz-session-stats-footer-button').getAttribute('aria-busy')==='true' &&
+          getComputedStyle(document.getElementById('grz-session-stats-footer-button')).color==='rgb(23, 45, 67)'));
+      await switched.locator('#grz-session-stats-footer-button').click();
+      await switched.evaluate(()=>{emitChange();emitChange();});
+      check('Retained callbacks do not retry stale cleanup or duplicate registration (sync removal: '+synchronousRemoval+')',
+        await switched.evaluate(()=>testModelCallbacks.filter(x=>x[0]==='remove' && x[1]===41).length===1 &&
+          testRegistrationAttempts[42]===1 && testActions.length===1 && testActions[0].id===42 && nativeCalls>=3));
+      await switched.evaluate(()=>{
+        testFeature=null;emitChange();
+      });
+      check('A disappearing model clears the optional button despite cleanup failure (sync removal: '+synchronousRemoval+')',
+        await switched.locator('#grz-session-stats-footer-button').count()===0 &&
+        await switched.locator('#grz-session-footer-appearance').count()===0);
+      await switched.evaluate(()=>{
+        testID=43;testFeature={onAction:args=>testActions.push({id:43,...args})};emitChange();flushFrames();
+      });
+      await switched.locator('#grz-session-stats-footer-button').click();
+      await switched.locator('#native-button').click();
+      check('Later footer models and native controls remain usable with one cleanup warning (sync removal: '+synchronousRemoval+')',
+        await switched.evaluate(()=>testRegistrationAttempts[43]===1 && testActions[1].id===43 &&
+          testWarnings.length===1 && testWarnings[0].includes('model cleanup') &&
+          document.querySelector('.SessionStats_base_original').textContent==='19'));
+      await switched.evaluate(()=>{GRZSessionFooter.destroy();emitChange();flushFrames();GRZSessionFooter.destroy();});
+      check('Destroy cleans only the current callback once after failed earlier removals (sync removal: '+synchronousRemoval+')',
+        await switched.evaluate(()=>[41,42,43].every(id=>testModelCallbacks.filter(x=>x[0]==='remove' && x[1]===id).length===1) &&
+          !document.getElementById('grz-session-stats-footer-button') && testWarnings.length===1));
+      await switched.close();
     }
     const synchronous=await fixture(browser,{synchronousModel:true});
     check('Synchronous footer model delivery cannot recursively duplicate registration',
