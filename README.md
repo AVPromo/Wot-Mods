@@ -5,7 +5,7 @@
 | Session Stats — WN8, XP, finances, session history | [mods/sessionstats](mods/sessionstats) | `sessionstats-v…` tags, ZIP with dependency and configuration |
 | Stay Sharp — Medkit Reminder | [source](source), description below | `v1.6.…` tags, standalone `.wotmod` |
 
-Both mods can be installed independently. [All releases](../../releases).
+Both mods can be installed independently. [Latest shared release snapshot](../../releases/latest). Unchanged packages are carried forward byte-for-byte; each mod builds independently. See [release flow](docs/MULTIMOD_RELEASES.md).
 Sources, tests and licenses are separate; the Session Stats license does not cover the medkit mod.
 Integration rules: [mods/sessionstats/README.md](mods/sessionstats/README.md).
 
@@ -48,11 +48,26 @@ See [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](
 
 ## Changes, reviews and releases
 
-1. Open a pull request against `main`. The **CI** workflow builds and tests the mod with a read-only token; it does **not** create Releases.
-2. Review and merge the PR. A separate **Release** workflow on each push to `main` rebuilds, reruns tests and privacy checks, then publishes a new versioned `.wotmod` together with `SHA256SUMS.txt` in GitHub Releases.
-3. Releases use monotonically increasing patch numbers derived from the **Release workflow run number**: the first release is `v1.6.1`, the next is `v1.6.2`, and so on. Skipped versions are possible after a failed workflow run. Re-running a successful workflow does not replace an existing Release.
+1. Submit a PR to `main`. GitHub Actions runs unit tests, privacy checks and a deterministic build with **read-only** repository permissions.
+2. After review and merge, GitHub Actions builds and validates the `.wotmod`, transfers the verified files to a separate **write-scoped publishing job** using official `actions/upload-artifact` / `download-artifact`, and creates a GitHub Release with official `gh release create`.
+3. Only a push to `main` that changes Stay Sharp files (or its release/build machinery) triggers a Stay Sharp build and an incremented patch version. Session Stats language/configuration changes do not trigger this workflow. The new Release contains the rebuilt Stay Sharp and unchanged verified mod assets from the previous immutable Latest Release. Retrying a successful run verifies immutable assets without overwriting them; a failed run can leave a gap in release numbers.
 
-A manual Release workflow trigger is also available. The pipeline uses the repository-scoped `GITHUB_TOKEN` only; **no PAT or repository secret is required**. The repo is public, but no Release is published until this PR is merged.
+No custom HTTP client, third-party publication service or Java is involved; GitHub's own CLI and built-in `GITHUB_TOKEN` handle the release. Neither the workflow nor a separate recovery script deletes an existing Release. If publication is interrupted, check the draft manually; the pipeline fails safely instead of guessing what to remove.
+
+The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. Multiple mods are built separately. Shared GitHub Releases keep unchanged mod
+packages byte-for-byte: publish jobs use GitHub Actions `queue: max` to avoid
+simultaneous-merge races and skip obsolete same-mod builds. See
+[mod independence and concurrent merges](docs/MULTIMOD_RELEASES.md).
+
+See [build and release documentation](docs/BUILD_RELEASE.md).
+
+**Mandatory protection before merge:** configure the active GitHub tag
+ruleset `wotmod-release-tags` for `v*`, with **Restrict updates**, **Restrict
+deletions** and **no bypass actors**. The owner must also approve its exact
+revision using the two non-secret variables of the `wotmod-release` GitHub
+Environment, because Actions cannot reliably read the hidden bypass list.
+Without this verified configuration, publishing stops before creating a tag
+or Release. Details: [required release-tag protection](docs/BUILD_RELEASE.md#required-github-tag-protection-before-merging).
 
 ## Privacy and safety
 

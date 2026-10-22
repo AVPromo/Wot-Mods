@@ -4,14 +4,14 @@ import argparse
 import json
 from pathlib import Path
 
-from release import ROOT, inputs, shared
+from release import ROOT, ValidationError, inputs, sha256
 
 
 def snapshot(directory):
     directory = Path(directory)
     version = json.loads((directory / 'BUILD.json').read_text(encoding='utf-8'))['version']
     files = inputs(directory, version)
-    return {name: shared.sha256(path) for name, path in sorted(files.items())}
+    return {name: sha256(path) for name, path in sorted(files.items())}
 
 
 def verify(directory, expected):
@@ -19,7 +19,7 @@ def verify(directory, expected):
     if actual != expected:
         changed = sorted(name for name in set(actual) | set(expected)
                          if actual.get(name) != expected.get(name))
-        raise shared.PublicationError('Release assets are not reproducible: ' + ', '.join(changed))
+        raise ValidationError('Release assets are not reproducible: ' + ', '.join(changed))
 
 
 def main():

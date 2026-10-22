@@ -3,6 +3,23 @@ name: Validate mod PR
 on:
   pull_request:
     branches: [main]
+    # CI for other mods is defined in their own workflows.
+    paths:
+      - 'source/**'
+      - 'assets/**'
+      - 'VERSION'
+      - 'scripts/release_version.py'
+      - 'scripts/release_snapshot.sh'
+      - 'scripts/privacy_audit.py'
+      - 'tests/test_mod.py'
+      - 'tests/test_packaging.py'
+      - 'tests/test_log_rotation.py'
+      - 'tests/test_release_pipeline.py'
+      - 'tests/test_release_workflow.py'
+      - 'tests/test_release_snapshot.py'
+      - 'tests/test_release_scoping.py'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
@@ -15,7 +32,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout reviewed source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Python and base version
