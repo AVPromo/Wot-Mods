@@ -5,7 +5,7 @@
     if (!root) { return; }
 
     var state = { scope: 'launch', group: 'vehicles', xp: 'base', payload: null,
-        dialog: false, bound: false, binding: null, connecting: false, callbackId: null, callbackRegistering: false, actionError: null,
+        dialog: false, bound: false, binding: null, retry: null, retryDelay: 100, actionError: null,
         nativeWidth: 0, nativeHeight: 0, nativeScale: 1, diagnostics: {}, dragging: false,
         scrollSpeed: 1, appearanceNode: null, appearanceCSS: '', destroyed: false,
         list: [], loadedCount: 40, renderedCount: 0 };
@@ -598,18 +598,36 @@
         }
     });
 
-    function readModel() {
-        if (state.destroyed || !state.bound) { return; }
-        // Optional Gameface registration can fail during readiness. Keep the
-        // engine listener and initial model usable; retry on the next update.
-        if (!state.callbackRegistering && state.callbackId === null && window.viewEnv && typeof window.viewEnv.addDataChangedCallback === 'function') {
-            state.callbackRegistering = true;
-            try {
-                var callbackId = window.viewEnv.addDataChangedCallback('model', 0, true);
-                if (callbackId !== undefined && callbackId !== null) { state.callbackId = callbackId; }
-            } catch (error) { /* A later model event or readiness pass can retry. */ }
-            finally { state.callbackRegistering = false; }
-        }
+    function isCurrent(attempt) {
+        return attempt && attempt.active && !state.destroyed && state.binding === attempt &&
+            window.engine === attempt.engine && window.viewEnv === attempt.viewEnv;
+    }
+    function removeModelCallback(attempt, callbackId) {
+        if (callbackId === null || callbackId === undefined) { return; }
+        try {
+            if (typeof attempt.viewEnv.removeDataChangedCallback === 'function') {
+                attempt.viewEnv.removeDataChangedCallback(callbackId, 0);
+            }
+        } catch (error) { /* Ownership was invalidated before native removal. */ }
+    }
+    function registerModelCallback(attempt) {
+        if (!isCurrent(attempt) || !state.bound || attempt.callbackRegistering || attempt.callbackId !== null) { return; }
+        attempt.callbackRegistering = true;
+        try {
+            if (typeof attempt.viewEnv.addDataChangedCallback === 'function') {
+                var callbackId = attempt.viewEnv.addDataChangedCallback('model', 0, true);
+                if (callbackId !== undefined && callbackId !== null) {
+                    if (isCurrent(attempt) && state.bound) { attempt.callbackId = callbackId; }
+                    else { removeModelCallback(attempt, callbackId); }
+                }
+            }
+        } catch (error) { /* The connection timer retries this optional registration. */ }
+        finally { attempt.callbackRegistering = false; }
+    }
+    function readModel(attempt) {
+        if (!isCurrent(attempt) || !state.bound) { return; }
+        registerModelCallback(attempt);
+        if (!isCurrent(attempt) || !state.bound) { return; }
         var model = window.model;
         if (model && model.payload !== undefined) { update(model.payload); }
     }
@@ -669,69 +687,114 @@
         invoke('viewport');
         queueResize();
     }
-    function releaseBinding(binding) {
-        if (!binding) { return; }
-        // Invalidate wrappers before native removal, which may throw or retain them.
-        binding.active = false;
+    function unsubscribe(attempt, listener) {
+        if (!listener || !listener.active) { return; }
+        listener.active = false;
         try {
-            if (typeof binding.engine.off === 'function') {
-                binding.engine.off('viewEnv.onDataChanged', binding.data);
+            if (typeof attempt.engine.off === 'function') {
+                attempt.engine.off(listener.name, listener.callback);
             }
-        } catch (error) { /* Attempt the scale listener independently. */ }
+        } catch (error) { /* Retained callbacks are inert before native removal. */ }
+    }
+    function subscribe(attempt, name, callback) {
+        var listener = {name:name, active:true, registered:false, signalled:false};
+        listener.callback = function () {
+            if (!listener.active || !isCurrent(attempt)) { return; }
+            // An API can deliver synchronously and then throw. Do not commit
+            // readiness/binding until the registration itself has succeeded.
+            if (!listener.registered) { listener.signalled = true; return; }
+            callback();
+        };
+        attempt.listeners.push(listener);
+        attempt.engine.on(name, listener.callback);
+        listener.registered = true;
+        return listener;
+    }
+    function releaseBinding(attempt) {
+        if (!attempt) { return; }
+        attempt.active = false;
+        var callbackId = attempt.callbackId, index;
+        attempt.callbackId = null;
+        for (index = 0; index < attempt.listeners.length; index += 1) {
+            unsubscribe(attempt, attempt.listeners[index]);
+        }
+        removeModelCallback(attempt, callbackId);
+    }
+    function cancelRetry() {
+        var retry = state.retry;
+        state.retry = null;
+        if (!retry) { return; }
+        retry.active = false;
+        try { window.clearTimeout(retry.id); }
+        catch (error) { /* A queued timer must still pass its ownership check. */ }
+    }
+    function scheduleRetry() {
+        if (state.destroyed || state.retry) { return; }
+        var retry = {active:true, id:null};
+        state.retry = retry;
+        var delay = state.retryDelay;
+        state.retryDelay = Math.min(2000, delay * 2);
         try {
-            if (typeof binding.engine.off === 'function') {
-                binding.engine.off('self.onScaleUpdated', binding.scale);
+            retry.id = window.setTimeout(function () {
+                if (!retry.active || state.retry !== retry || state.destroyed) { return; }
+                retry.active = false;
+                state.retry = null;
+                connectNative();
+            }, delay);
+        } catch (error) { retry.active = false; state.retry = null; }
+    }
+    function failBinding(attempt) {
+        if (state.binding !== attempt) { return; }
+        state.binding = null;
+        state.bound = false;
+        releaseBinding(attempt);
+        scheduleRetry();
+    }
+    function bindModel(attempt) {
+        if (!isCurrent(attempt) || !attempt.ready || state.bound || attempt.subscribing) { return; }
+        if (!attempt.domBuilt && !window.isDomBuilt) { scheduleRetry(); return; }
+        attempt.subscribing = true;
+        try {
+            unsubscribe(attempt, attempt.dom);
+            subscribe(attempt, 'viewEnv.onDataChanged', function () { readModel(attempt); });
+            if (!isCurrent(attempt)) { return; }
+            subscribe(attempt, 'self.onScaleUpdated', function () {
+                if (state.bound) { onScaleUpdated(); }
+            });
+            if (!isCurrent(attempt)) { return; }
+            state.bound = true;
+            if (document.documentElement.className.indexOf('ss-native-document') === -1) {
+                document.documentElement.className += ' ss-native-document';
             }
-        } catch (error) { /* Retained wrappers cannot act after invalidation. */ }
+            if (root.className.indexOf('is-native') === -1) { root.className += ' is-native'; }
+            nativeDiagnostic('dom_ready');
+            readModel(attempt);
+            if (!isCurrent(attempt)) { return; }
+            nativeDiagnostic('model_bound');
+            queueResize();
+            // Once connected, a cheap check notices a replaced bridge without
+            // re-reading/rendering the model or adding duplicate subscriptions.
+            state.retryDelay = 2000;
+            scheduleRetry();
+        } catch (error) { failBinding(attempt); }
+        finally { attempt.subscribing = false; }
     }
-    function bindModel() {
-        if (state.destroyed) { return; }
-        if (state.bound) { readModel(); queueResize(); return; }
-        if (state.binding) { return; }
-        if (!window.engine || !window.viewEnv || typeof window.engine.on !== 'function') {
-            state.connecting = false;
-            return;
-        }
-        var binding = {engine:window.engine, active:false};
-        binding.data = function () {
-            if (binding.active && state.binding === binding && !state.destroyed) { readModel(); }
-        };
-        binding.scale = function () {
-            if (binding.active && state.binding === binding && !state.destroyed) { onScaleUpdated(); }
-        };
-        state.binding = binding;
+    function afterEngineReady(attempt) {
+        if (!isCurrent(attempt)) { return; }
         try {
-            binding.engine.on('viewEnv.onDataChanged', binding.data);
-            binding.engine.on('self.onScaleUpdated', binding.scale);
-        } catch (error) {
-            state.binding = null;
-            state.bound = false;
-            state.connecting = false;
-            releaseBinding(binding);
-            return;
-        }
-        if (state.destroyed) { releaseBinding(binding); state.binding = null; return; }
-        binding.active = true;
-        state.bound = true;
-        if (document.documentElement.className.indexOf('ss-native-document') === -1) {
-            document.documentElement.className += ' ss-native-document';
-        }
-        if (root.className.indexOf('is-native') === -1) { root.className += ' is-native'; }
-        nativeDiagnostic('dom_ready');
-        readModel();
-        nativeDiagnostic('model_bound');
-        queueResize();
-    }
-    function afterEngineReady() {
-        if (state.destroyed) { return; }
-        try {
-            if (window.isDomBuilt) { bindModel(); }
-            else { window.engine.on('self.onDomBuilt', bindModel); }
-        } catch (error) {
-            state.connecting = false;
-            try { window.engine.off('self.onDomBuilt', bindModel); }
-            catch (ignored) { /* A retained readiness callback is idempotent. */ }
-        }
+            attempt.ready = true;
+            if (window.isDomBuilt) { bindModel(attempt); }
+            else {
+                attempt.dom = subscribe(attempt, 'self.onDomBuilt', function () {
+                    attempt.domBuilt = true;
+                    bindModel(attempt);
+                });
+                if (attempt.dom.signalled || window.isDomBuilt) {
+                    attempt.domBuilt = true;
+                    bindModel(attempt);
+                }
+            }
+        } catch (error) { failBinding(attempt); }
     }
     function cleanup() {
         if (state.destroyed) { return; }
@@ -743,25 +806,14 @@
         nodes.titlebar.removeEventListener('mousedown', beginNativeDrag);
         document.removeEventListener('mouseup', endNativeDrag);
         window.removeEventListener('blur', endNativeDrag);
-        // Invalidate local ownership before calling the disappearing bridge.
-        var binding = state.binding, callbackId = state.callbackId;
+        cancelRetry();
+        document.removeEventListener('DOMContentLoaded', connectNative);
+        window.removeEventListener('load', connectNative);
+        window.removeEventListener('beforeunload', cleanup);
+        var attempt = state.binding;
         state.binding = null;
-        state.callbackId = null;
-        state.callbackRegistering = false;
         state.bound = false;
-        state.connecting = false;
-        releaseBinding(binding);
-        // DOM readiness can be pending before the model has ever been bound.
-        try {
-            if (window.engine && typeof window.engine.off === 'function') {
-                window.engine.off('self.onDomBuilt', bindModel);
-            }
-        } catch (error) { /* Model callback removal remains independent. */ }
-        try {
-            if (callbackId !== null && window.viewEnv && typeof window.viewEnv.removeDataChangedCallback === 'function') {
-                window.viewEnv.removeDataChangedCallback(callbackId, 0);
-            }
-        } catch (error) { /* The destroyed document no longer owns this callback. */ }
+        releaseBinding(attempt);
     }
     window.GRZSessionStats = {
         update: update,
@@ -770,16 +822,46 @@
         destroy: cleanup
     };
     window.addEventListener('beforeunload', cleanup);
-    function connectNative() {
-        if (state.destroyed || state.connecting) { return; }
+    function connectNative(event) {
+        if (state.destroyed) { return; }
+        var attempt = state.binding;
         try {
-            if (window.engine && window.engine.whenReady && typeof window.engine.whenReady.then === 'function') {
-                state.connecting = true;
-                window.engine.whenReady.then(afterEngineReady, function () {
-                    state.connecting = false;
-                });
+            if (attempt && !isCurrent(attempt)) {
+                state.binding = null;
+                state.bound = false;
+                releaseBinding(attempt);
+                attempt = null;
             }
-        } catch (error) { state.connecting = false; }
+            if (attempt) {
+                if (state.bound && !event) {
+                    var previousId = attempt.callbackId;
+                    registerModelCallback(attempt);
+                    if (previousId === null && attempt.callbackId !== null) {
+                        readModel(attempt);
+                        queueResize();
+                    }
+                } else if (!state.bound && attempt.ready && (attempt.domBuilt || window.isDomBuilt)) { bindModel(attempt); }
+                scheduleRetry();
+                return;
+            }
+            var engine = window.engine, viewEnv = window.viewEnv;
+            if (!engine || !viewEnv || typeof engine.on !== 'function') { scheduleRetry(); return; }
+            var ready = engine.whenReady;
+            if (!ready || typeof ready.then !== 'function') { scheduleRetry(); return; }
+            attempt = {engine:engine, viewEnv:viewEnv, active:true, ready:false,
+                domBuilt:false, dom:null, listeners:[], subscribing:false,
+                callbackId:null, callbackRegistering:false};
+            state.binding = attempt;
+            state.nativeWidth = 0;
+            state.nativeHeight = 0;
+            // The timer also watches unresolved readiness/DOM phases. It never
+            // reattaches to the same promise, and catches bridge replacement.
+            scheduleRetry();
+            ready.then(function () { afterEngineReady(attempt); }, function () { failBinding(attempt); });
+        } catch (error) {
+            if (attempt && state.binding === attempt) { failBinding(attempt); }
+            else { scheduleRetry(); }
+        }
     }
     document.addEventListener('DOMContentLoaded', connectNative);
     window.addEventListener('load', connectNative);

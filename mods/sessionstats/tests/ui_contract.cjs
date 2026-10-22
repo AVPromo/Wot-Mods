@@ -87,6 +87,31 @@ async function nativeHost(browser, options) {
   const snapshot=JSON.parse(JSON.stringify(fixtures.normal));
   snapshot.viewport=options.viewport || {width:1440,height:900};
   await native.addInitScript(({snapshot,options})=>{
+    window.__grzLifecycleEvents=[];
+    document.addEventListener('DOMContentLoaded',()=>__grzLifecycleEvents.push('dom'));
+    window.addEventListener('load',()=>__grzLifecycleEvents.push('load'));
+    window.__grzNativeSetTimeout=window.setTimeout.bind(window);
+    window.__grzTimers=new Map();
+    window.__grzTimerSequence=0;
+    window.__grzRetryDelays=[];
+    window.__grzCancelledTimers=[];
+    if(!options.realTimers) {
+      window.setTimeout=function(callback,delay) {
+        const id=++__grzTimerSequence;
+        __grzRetryDelays.push(delay);__grzTimers.set(id,{callback,delay});return id;
+      };
+      window.clearTimeout=function(id) {
+        __grzCancelledTimers.push(id);
+        if(options.timerCleanupFailure) throw new Error('Timer removal rejected');
+        __grzTimers.delete(id);
+      };
+    }
+    window.__grzRunRetry=async function() {
+      const first=__grzTimers.entries().next();
+      if(first.done)throw new Error('Expected scheduled connection retry');
+      const [id,timer]=first.value;__grzTimers.delete(id);timer.callback();
+      await Promise.resolve();await Promise.resolve();return timer.delay;
+    };
     window.__grzCommands=[];
     window.__grzEvents={};
     window.__grzWindowEvents=[];
@@ -94,6 +119,8 @@ async function nativeHost(browser, options) {
     window.__grzEngineOn=[];
     window.__grzEngineOff=[];
     window.__grzRejectEngine=!!options.rejectEngine;
+    window.__grzRejectedCalls=0;
+    window.__grzReadySubscriptions=0;
     window.__grzStaleCallbacks=[];
     window.__grzRemovedCallbacks=[];
     window.isDomBuilt=!options.pendingDom;
@@ -107,12 +134,16 @@ async function nativeHost(browser, options) {
       }
     }};
     const engineReady=options.pendingEngine ? new Promise((resolve,reject)=>{window.__grzResolveEngine=resolve;window.__grzRejectReady=reject;}) : Promise.resolve();
-    window.engine={whenReady:engineReady,on:function(name,fn){
+    window.engine={whenReady:{then(resolve,reject){__grzReadySubscriptions++;return engineReady.then(resolve,reject);}},on:function(name,fn){
       window.__grzEngineOn.push(name);
-      if(__grzRejectEngine && name===options.rejectEngine && !options.rejectAfterRegister) throw new Error('Engine registration rejected');
+      const reject=__grzRejectEngine && name===options.rejectEngine;
+      if(reject && options.rejectOnce) __grzRejectEngine=false;
+      if(reject) __grzRejectedCalls++;
+      if(reject && !options.rejectAfterRegister) throw new Error('Engine registration rejected');
       window.__grzEvents[name]=fn;
-      if(__grzRejectEngine) window.__grzStaleCallbacks.push(fn);
-      if(__grzRejectEngine && name===options.rejectEngine) throw new Error('Engine registration rejected after subscribing');
+      if(reject || __grzRejectEngine) window.__grzStaleCallbacks.push(fn);
+      if(name==='self.onDomBuilt' && options.domSignalOnRegister) fn();
+      if(reject) throw new Error('Engine registration rejected after subscribing');
     },off:function(name){
       window.__grzEngineOff.push(name);
       if(options.teardown===name || options.teardown==='all') throw new Error('Native unsubscribe rejected');
@@ -144,11 +175,12 @@ async function nativeHost(browser, options) {
         window.__nativeSize=[w,h];
       };
     }
+    if(options.absentBridge) {window.__grzSavedBridge={engine,viewEnv};delete window.engine;delete window.viewEnv;}
     if(options.noFocus) { Object.defineProperty(HTMLElement.prototype,'focus',{value:undefined,configurable:true}); }
   },{snapshot,options});
   await serveUI(native);
   await native.goto('http://grz-session.test/SessionStats.html');
-  if(options.pendingEngine || options.rejectEngine) { await native.waitForFunction(()=>window.GRZSessionStats); }
+  if(options.pendingEngine || options.rejectEngine || options.absentBridge) { await native.waitForFunction(()=>window.GRZSessionStats); }
   else if(options.pendingDom) { await native.waitForFunction(()=>window.__grzEngineOn.includes('self.onDomBuilt')); }
   else { await native.waitForFunction(()=>window.__grzCommands.some(args=>args.action==='resize')); }
   return native;
@@ -528,39 +560,7 @@ async function nativeHost(browser, options) {
       __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
     await degraded.close();
   }
-  for(const rejectEngine of ['viewEnv.onDataChanged','self.onScaleUpdated']) {
-    for(const rejectAfterRegister of [false,true]) {
-      const failed=await nativeHost(browser,{rejectEngine,rejectAfterRegister,teardown:'all'});
-      check('Rejected engine subscription leaves the panel unbound ('+rejectEngine+', partial='+rejectAfterRegister+')',
-        await failed.evaluate(()=>!GRZSessionStats.getState().nativeBound && __grzHelperCalls.callback===0));
-      await failed.evaluate(()=>{__grzRejectEngine=false;window.dispatchEvent(new Event('load'));});
-      await failed.waitForFunction(()=>GRZSessionStats.getState().nativeBound && __grzCommands.some(x=>x.action==='resize'));
-      check('A later load retries both subscriptions and renders the initial model ('+rejectEngine+', partial='+rejectAfterRegister+')',
-        await failed.evaluate(()=>document.querySelector('#ss-summary .ss-kpi-value').textContent==='16' && __grzHelperCalls.callback===1));
-      check('Partially retained callbacks stay inert after a successful replacement ('+rejectEngine+', partial='+rejectAfterRegister+')',
-        await failed.evaluate(()=>{
-          const payload=JSON.parse(model.payload);
-          Object.assign(payload.scopes.launch.summary,{battles:0,observed_battles:0,missing_results:0,partial_results:0});
-          model.payload=JSON.stringify(payload);
-          const count=__grzCommands.length;
-          __grzStaleCallbacks.forEach(fn=>fn());
-          return __grzCommands.length===count && document.querySelector('#ss-summary .ss-kpi-value').textContent==='16';
-        }));
-      await failed.evaluate(()=>__grzEvents['viewEnv.onDataChanged']());
-      check('The recovered engine subscription receives subsequent model changes ('+rejectEngine+', partial='+rejectAfterRegister+')',
-        await failed.evaluate(()=>document.querySelector('#ss-summary .ss-kpi-value').textContent==='0'));
-      await failed.close();
-    }
-  }
-  const readyRetry=await nativeHost(browser,{pendingEngine:true});
-  await readyRetry.evaluate(async()=>{__grzRejectReady(new Error('Readiness rejected'));await Promise.resolve();await Promise.resolve();});
-  check('Rejected panel readiness is handled and leaves the panel unbound',
-    await readyRetry.evaluate(()=>!GRZSessionStats.getState().nativeBound && __grzHelperCalls.callback===0));
-  await readyRetry.evaluate(()=>{engine.whenReady=Promise.resolve();window.dispatchEvent(new Event('load'));});
-  await readyRetry.waitForFunction(()=>GRZSessionStats.getState().nativeBound);
-  check('A fresh readiness promise can reconnect after rejection',
-    await readyRetry.evaluate(()=>document.querySelector('#ss-summary .ss-kpi-value').textContent==='16'));
-  await readyRetry.close();
+  await require('./ui-connection.cjs')({browser,nativeHost,check});
   const loading=await nativeHost(browser,{pendingDom:true});
   check('Loading panel owns a DOM-ready listener before model binding',await loading.evaluate(()=>
     !GRZSessionStats.getState().nativeBound && __grzEngineOn.join(',')==='self.onDomBuilt'));
@@ -597,17 +597,17 @@ async function nativeHost(browser, options) {
   check('A live panel still binds and renders after deferred DOM readiness',await domReady.evaluate(()=>
     GRZSessionStats.getState().nativeBound && document.querySelector('#ss-summary .ss-kpi-value').textContent==='16'));
   await domReady.close();
-  for(const teardown of ['viewEnv.onDataChanged','self.onScaleUpdated','self.onDomBuilt','callback','all']) {
+  for(const teardown of ['viewEnv.onDataChanged','self.onScaleUpdated','callback','all']) {
     const degraded=await nativeHost(browser,{teardown,drag:'supported'});
     await degraded.locator('#ss-titlebar').dispatchEvent('mousedown',{button:0});
     await degraded.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
     check('Teardown attempts every native removal despite rejection ('+teardown+')',await degraded.evaluate(()=>
-      __grzEngineOff.join(',')==='viewEnv.onDataChanged,self.onScaleUpdated,self.onDomBuilt' &&
+      __grzEngineOff.join(',')==='viewEnv.onDataChanged,self.onScaleUpdated' &&
       __grzRemovedCallbacks.join(',')==='71' && !GRZSessionStats.getState().nativeBound &&
       !GRZSessionStats.getState().dragging && __grzWindowEvents[__grzWindowEvents.length-1].on===false));
     check('Repeated cleanup stays inert after rejected native removal ('+teardown+')',await degraded.evaluate(()=>{
       GRZSessionStats.destroy();window.dispatchEvent(new Event('beforeunload'));
-      return __grzEngineOff.length===3 && __grzRemovedCallbacks.length===1;
+      return __grzEngineOff.length===2 && __grzRemovedCallbacks.length===1;
     }));
     check('Retained native callbacks cannot render or send commands after cleanup ('+teardown+')',await degraded.evaluate(()=>{
       const commands=__grzCommands.length, registrations=__grzHelperCalls.callback;

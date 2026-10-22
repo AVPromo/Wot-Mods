@@ -173,3 +173,33 @@ Real Gameface/client validation remains separate from these Chromium doubles.
 The source branch was synchronized with accepted main after infrastructure
 PR #2 and Stay Sharp namespace PR #6. No candidate workflow replaces the
 accepted validation harness.
+
+## Review 5617307888: complete asynchronous connection lifecycle
+
+The previous recovery tests depended on a second synthetic load event. That
+could not recover a real document whose readiness promise settled after its
+normal load events. The panel now owns one retry/check timer: failures use
+100 ms exponential backoff capped at 2 seconds, and successful connections
+are checked every 2 seconds without re-rendering or re-subscribing. Pending
+promises are observed once per attempt. This also handles a late/missing or
+replaced engine/viewEnv and retries optional model callback registration.
+
+One attempt owns readiness, DOM-ready, data, scale and model subscriptions.
+DOM-ready callbacks use the same active/identity guards as data and scale;
+registration-time notifications are buffered until registration succeeds.
+Rollback invalidates ownership before each independent native removal. Late
+resolved/rejected promises and retained callbacks cannot modify replacement
+attempts. Callback IDs returned during destruction are removed using their
+original viewEnv. Replacement connections send fresh surface dimensions.
+Destroy invalidates/cancels the timer and removes document bootstrap handlers;
+even an already queued timer or failed native cancellation cannot reconnect.
+
+The existing panel suite imports ui-connection.cjs, with deterministic timer
+checks plus a real-timer integration case. The tests no longer synthesize
+another load to recover. They cover late transient/permanent failures,
+coalescing and capped backoff, stale/synchronous rejected DOM callbacks,
+replacement readiness and old promise settlement, missed DOM events, late
+bridge appearance, optional callback recovery, stable-connection no-ops,
+replacement sizing and destruction during registration or pending retries.
+All 207 panel checks pass locally. Two focused negative controls reproduce
+both findings with the previous JavaScript and pass with the corrected source.
