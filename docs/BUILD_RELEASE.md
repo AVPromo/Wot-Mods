@@ -46,12 +46,54 @@ Configure once in **Settings → Rules → Rulesets → New ruleset → New tag 
 - **Bypass actors:** none. Leave **Restrict creations** unchecked, because
   GitHub Actions needs to create new version tags.
 
-The publishing job checks these exact conditions with a **read-only**
-`gh api -X GET` call from GitHub's own CLI. This is not a custom HTTP client,
-PAT, outside API or third-party service. It will refuse to publish until
-the native repository protection has been enabled. GitHub's tag ruleset
-configuration requires an authorized repository administrator; the GitHub
-connector used for this PR cannot create or edit repository rulesets.
+The publishing job discovers candidate Rulesets with GitHub's native
+`GET /rulesets?targets=tag` filter (the listing omits `target`), then checks
+the full Ruleset using a **read-only** `gh api -X GET` call.
+
+**Bypass-list visibility:** GitHub deliberately omits `bypass_actors` unless
+the caller can modify that Ruleset. The scoped `GITHUB_TOKEN` has
+`contents: write`, but not Ruleset administration. Therefore **missing
+`bypass_actors` is NOT an empty list**. The publisher accepts either an
+explicitly returned `bypass_actors: []` or a *human-reviewed, pinned
+Ruleset revision*. There is no extra PAT, GitHub App or custom HTTP client.
+
+To approve a Ruleset without granting administrative credentials to Actions:
+
+1. As the repository owner, inspect **Settings → Rules → Rulesets →
+   `wotmod-release-tags`**. Confirm it is Active, targets `v*`, blocks
+   updates/deletion and contains **no bypass actors**. The owner is the
+   trusted authority for this initial verification.
+2. Find its numeric ID and last-updated timestamp using the owner's own
+   `gh` CLI login (on a trusted local computer):
+
+   ```sh
+   gh api 'repos/Szwarceneger16/WotMods/rulesets?targets=tag' \
+     --jq '.[] | select(.name == "wotmod-release-tags") | .id'
+   gh api 'repos/Szwarceneger16/WotMods/rulesets/REPLACE_ID' \
+     --jq '{id, updated_at, bypass_actors}'
+   ```
+
+   Only continue if the owner's response shows `bypass_actors: []`.
+3. Open **Settings → Environments**, create `wotmod-release`, restrict
+   deployments to `main`, and set these two *non-secret environment variables*:
+
+   - `WOTMOD_REVIEWED_RULESET_ID` = the numeric Ruleset ID.
+   - `WOTMOD_REVIEWED_RULESET_UPDATED_AT` = the exact `updated_at` string
+     returned by the owner-authorized API request.
+
+   Environment variables in a personally owned repository can only be
+   configured by the owner. The automatic release job references this
+   environment but requires **no manual approval for every release**.
+4. Any subsequent Ruleset change (including adding bypass actors) invalidates
+   this approval because GitHub updates `updated_at`; the publisher refuses
+   to proceed until the owner rechecks the full Ruleset and refreshes the
+   two environment variables. If GitHub omits the Ruleset timestamp, it
+   also refuses to publish.
+
+This is a human-admin trust anchor, not a way to infer hidden API fields.
+No program can verify the complete bypass list with an unprivileged token
+when GitHub deliberately redacts it. Administrators who can change Rulesets
+remain trusted and must not bypass their own controls during publication.
 
 The script also resolves the tag from the **remote Git server** immediately
 before and after publication and after downloading/verifying release files.

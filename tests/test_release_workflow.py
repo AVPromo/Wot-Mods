@@ -57,38 +57,81 @@ class GitHubNativeReleaseTests(unittest.TestCase):
     def test_protection_rules_checked_before_tag_or_release_creation(self):
         self.assertIn('wotmod-release-tags', WORKFLOW)
         self.assertIn('refs/tags/v*', WORKFLOW)
+        self.assertIn('environment: wotmod-release', WORKFLOW)
+        self.assertIn('WOTMOD_REVIEWED_RULESET_ID: ${{ vars.WOTMOD_REVIEWED_RULESET_ID }}', WORKFLOW)
+        self.assertIn('WOTMOD_REVIEWED_RULESET_UPDATED_AT: ${{ vars.WOTMOD_REVIEWED_RULESET_UPDATED_AT }}', WORKFLOW)
         self.assertLess(WORKFLOW.index('policy_ids='), WORKFLOW.index('git push origin'))
         self.assertLess(WORKFLOW.index('policy_ids='), WORKFLOW.index('gh release create'))
-        self.assertIn('(.bypass_actors // []) == []', WORKFLOW)
+        self.assertIn('if has("bypass_actors") then', WORKFLOW)
+        self.assertNotIn('(.bypass_actors // []) == []', WORKFLOW)
+        self.assertIn('.updated_at == $approved_at', WORKFLOW)
         self.assertIn('index("update")', WORKFLOW)
         self.assertIn('index("deletion")', WORKFLOW)
 
-    def test_ruleset_policy_matches_only_effective_immutable_tag_rules(self):
-        # Execute the actual jq policy used in the release workflow against
-        # positive and negative GitHub-style ruleset responses.
-        marker = "if ! printf '%s' \"$policy\" | jq -e '\n"
+    def test_ruleset_discovery_uses_server_tag_filter_not_hidden_summary_target(self):
+        start = WORKFLOW.index('policy_ids="$(gh api')
+        end = WORKFLOW.index('          if [[ ! "$policy_ids"', start)
+        listing = WORKFLOW[start:end]
+        self.assertIn('targets=tag', listing)
+        self.assertIn('includes_parents=true', listing)
+        self.assertIn('gh api --paginate -X GET', listing)
+        self.assertNotIn('.target == "tag"', listing)
+        expr = listing.split("--jq '", 1)[1].split("'", 1)[0]
+        summary = [
+            {'id': 42, 'name': 'wotmod-release-tags', 'enforcement': 'active'},
+            {'id': 91, 'name': 'another-tag-ruleset', 'enforcement': 'active'},
+            {'id': 33, 'name': 'wotmod-release-tags', 'enforcement': 'disabled'},
+        ]  # The GitHub list-rulesets endpoint does not provide .target.
+        result = subprocess.run(['jq', '-r', expr], input=json.dumps(summary),
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '42')
+
+    def test_ruleset_policy_requires_visible_empty_bypass_or_owner_reviewed_revision(self):
+        # Execute the exact jq predicate deployed by GitHub Actions.
+        marker = '--arg approved_at "${WOTMOD_REVIEWED_RULESET_UPDATED_AT:-}" ' + "'\n"
         self.assertIn(marker, WORKFLOW)
         predicate = WORKFLOW.split(marker, 1)[1].split("\n          ' >/dev/null", 1)[0]
-        ruleset = {
+        baseline = {
+            'id': 42, 'updated_at': '2026-10-22T09:15:00Z',
             'name': 'wotmod-release-tags', 'target': 'tag', 'enforcement': 'active',
             'conditions': {'ref_name': {'include': ['refs/tags/v*'], 'exclude': []}},
             'bypass_actors': [], 'rules': [{'type': 'update'}, {'type': 'deletion'}]
         }
-        def policy_ok(value):
-            proc = subprocess.run(['jq', '-e', predicate], input=json.dumps(value),
-                                  text=True, capture_output=True)
+
+        def accepted(value, approved_id='', approved_at=''):
+            proc = subprocess.run(['jq', '-e', '--arg', 'id', '42',
+                                   '--arg', 'approved_id', approved_id,
+                                   '--arg', 'approved_at', approved_at, predicate],
+                                  input=json.dumps(value), text=True, capture_output=True)
+            self.assertIn(proc.returncode, (0, 1), proc.stderr)
             return proc.returncode == 0
-        self.assertTrue(policy_ok(ruleset))
+
+        self.assertTrue(accepted(baseline))
         for changes in (
-            {'target': 'branch'}, {'enforcement': 'disabled'},
+            {'id': 43}, {'target': 'branch'}, {'enforcement': 'disabled'},
             {'conditions': {'ref_name': {'include': ['refs/tags/v2*'], 'exclude': []}}},
             {'conditions': {'ref_name': {'include': ['refs/tags/v*'], 'exclude': ['refs/tags/v1*']}}},
             {'bypass_actors': [{'actor_type': 'RepositoryRole', 'actor_id': 5, 'bypass_mode': 'always'}]},
+            {'bypass_actors': None},
             {'rules': [{'type': 'deletion'}]}, {'rules': [{'type': 'update'}]},
-            {'rules': [{'type': 'creation'}, {'type': 'update'}, {'type': 'deletion'}]}
+            {'rules': [{'type': 'creation'}, {'type': 'update'}, {'type': 'deletion'}]},
         ):
             with self.subTest(changes=changes):
-                self.assertFalse(policy_ok({**ruleset, **changes}))
+                self.assertFalse(accepted({**baseline, **changes}, '42', baseline['updated_at']))
+
+        hidden = dict(baseline)
+        del hidden['bypass_actors']
+        self.assertFalse(accepted(hidden), 'Redacted actors must not be assumed empty')
+        self.assertFalse(accepted(hidden, '42'), 'Missing approval timestamp must fail')
+        self.assertFalse(accepted(hidden, '', baseline['updated_at']), 'Missing approval ID must fail')
+        self.assertFalse(accepted(hidden, '43', baseline['updated_at']), 'Incorrect approval ID must fail')
+        self.assertFalse(accepted(hidden, '42', '2026-10-22T09:00:00Z'), 'Stale admin review must fail')
+        self.assertTrue(accepted(hidden, '42', baseline['updated_at']),
+                        'Exact owner-approved ruleset revision can pass without a PAT')
+        missing_timestamp = dict(hidden)
+        del missing_timestamp['updated_at']
+        self.assertFalse(accepted(missing_timestamp, '42', baseline['updated_at']))
 
     def test_live_remote_tag_checked_after_publication_and_final_verification(self):
         first = WORKFLOW.index('          check_remote_tag\n')

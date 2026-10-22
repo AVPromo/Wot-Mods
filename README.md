@@ -45,11 +45,13 @@ No custom HTTP client, third-party publication service or Java is involved; GitH
 
 The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. See [build and release documentation](docs/BUILD_RELEASE.md).
 
-**Mandatory protection before merge:** enable the active GitHub tag
+**Mandatory protection before merge:** configure the active GitHub tag
 ruleset `wotmod-release-tags` for `v*`, with **Restrict updates**, **Restrict
-deletions**, and **no bypass actors**. Without it, the publishing workflow
-intentionally stops **before creating a tag or Release**. Details:
-[required release-tag protection](docs/BUILD_RELEASE.md#required-github-tag-protection-before-merging).
+deletions** and **no bypass actors**. The owner must also approve its exact
+revision using the two non-secret variables of the `wotmod-release` GitHub
+Environment, because Actions cannot reliably read the hidden bypass list.
+Without this verified configuration, publishing stops before creating a tag
+or Release. Details: [required release-tag protection](docs/BUILD_RELEASE.md#required-github-tag-protection-before-merging).
 
 ## Privacy and safety
 

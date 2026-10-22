@@ -63,6 +63,10 @@ jobs:
     timeout-minutes: 12
     permissions:
       contents: write
+    # Environment configuration can be approved by the repository owner.
+    # The two non-secret variables below are an approval of one EXACT ruleset
+    # revision, used only when GitHub hides the bypass actor list from this token.
+    environment: wotmod-release
     env:
       RELEASE_VERSION: ${{ needs.build.outputs.version }}
       RELEASE_TAG: ${{ needs.build.outputs.tag }}
@@ -91,6 +95,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          WOTMOD_REVIEWED_RULESET_ID: ${{ vars.WOTMOD_REVIEWED_RULESET_ID }}
+          WOTMOD_REVIEWED_RULESET_UPDATED_AT: ${{ vars.WOTMOD_REVIEWED_RULESET_UPDATED_AT }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/main'
@@ -102,21 +108,37 @@ jobs:
           # tag AFTER publication, not while gh is uploading its draft assets.
           # A ruleset blocking updates and deletes (with no bypass actors)
           # ensures no other writer can retarget the tag mid-publication.
-          policy_ids="$(gh api -X GET "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true" \
-            --jq '.[] | select(.name == "wotmod-release-tags" and .target == "tag" and .enforcement == "active") | .id')"
-          if [[ ! "$policy_ids" =~ ^[0-9]+$ ]]; then
-            echo '::error::Missing active wotmod-release-tags ruleset. Protect refs/tags/v* against updates/deletions (no bypass), then rerun; no Release was created.' >&2
+          # The LIST endpoint contains summaries and does NOT expose target.
+          # Filter on the server with targets=tag; validate target in GET detail.
+          policy_ids="$(gh api --paginate -X GET "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true&targets=tag&per_page=100" \
+            --jq '.[] | select(.name == "wotmod-release-tags" and .enforcement == "active") | .id')"
+          if [[ ! "$policy_ids" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::error::Missing or ambiguous active wotmod-release-tags Ruleset for v* tags. Refusing to publish.' >&2
             exit 1
           fi
           policy="$(gh api -X GET "repos/$GITHUB_REPOSITORY/rulesets/$policy_ids")"
-          if ! printf '%s' "$policy" | jq -e '
+          # GitHub redacts bypass_actors unless the API caller can WRITE the
+          # Ruleset (different from contents:write). Never map absence to [].
+          # Without that field, require the repository OWNER to attest to one
+          # exact reviewed ruleset ID/revision using environment variables.
+          # A later edit (including adding a bypass) changes updated_at and
+          # invalidates that approval, without a PAT or external GitHub App.
+          if ! printf '%s' "$policy" | jq -e \
+            --arg id "$policy_ids" \
+            --arg approved_id "${WOTMOD_REVIEWED_RULESET_ID:-}" \
+            --arg approved_at "${WOTMOD_REVIEWED_RULESET_UPDATED_AT:-}" '
+            (.id | tostring) == $id and
             .name == "wotmod-release-tags" and .target == "tag" and .enforcement == "active" and
             .conditions.ref_name.include == ["refs/tags/v*"] and
             (.conditions.ref_name.exclude // []) == [] and
-            (.bypass_actors // []) == [] and
-            ([.rules[]?.type] | index("creation") == null and index("update") != null and index("deletion") != null)
+            ([.rules[]?.type] | index("creation") == null and index("update") != null and index("deletion") != null) and
+            (if has("bypass_actors") then
+               (.bypass_actors == [])
+             else
+               ($approved_id == $id and $approved_at != "" and .updated_at == $approved_at)
+             end)
           ' >/dev/null; then
-            echo '::error::Tag ruleset must target refs/tags/v*, be active, prohibit updates/deletion and have no bypass actors.' >&2
+            echo '::error::Unverified tag Ruleset. Require active v* update/deletion protection and either visible empty bypass_actors or owner-attested Ruleset ID+updated_at in environment wotmod-release.' >&2
             exit 1
           fi
 
