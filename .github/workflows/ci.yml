@@ -3,6 +3,23 @@ name: Validate mod PR
 on:
   pull_request:
     branches: [main]
+    # CI for other mods is defined in their own workflows.
+    paths:
+      - 'source/**'
+      - 'assets/**'
+      - 'VERSION'
+      - 'scripts/release_version.py'
+      - 'scripts/release_snapshot.sh'
+      - 'scripts/privacy_audit.py'
+      - 'tests/test_mod.py'
+      - 'tests/test_packaging.py'
+      - 'tests/test_log_rotation.py'
+      - 'tests/test_release_pipeline.py'
+      - 'tests/test_release_workflow.py'
+      - 'tests/test_release_snapshot.py'
+      - 'tests/test_release_scoping.py'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:

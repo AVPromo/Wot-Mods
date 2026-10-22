@@ -21,10 +21,11 @@ Local tests do not prove rendering correctness inside the game; test each new bu
 ## GitHub Actions: deliberately simple and GitHub-native
 
 - **PR CI:** `.github/workflows/ci.yml` checks source, privacy and builds. It has `contents: read` and **cannot publish** a release.
-- **Automatic Release:** `.github/workflows/release.yml` runs after each push to `main` (including a merged PR) or a manual dispatch. No third-party release platform, custom REST/HTTP client or Java.
+- **Automatic Release:** `.github/workflows/release.yml` runs only when **Stay Sharp-owned** source/assets/version/build files change on `main` (or manual dispatch). Changes confined to `mods/sessionstats/**` do **not** build or release Stay Sharp. No third-party release platform, custom REST/HTTP client or Java.
 - **Build job:** read-only checkout, unit tests, source/privacy scan, deterministic `.wotmod` + `SHA256SUMS.txt` validation. GitHub's first-party `actions/upload-artifact` preserves the verified output between jobs.
 - **Publish job:** only after a green build, and only on `main`, grants `contents: write`, downloads **that same** build with `actions/download-artifact`, verifies SHA-256 again, creates the Git tag pointing to the exact merge commit (if absent), and checks it.
-- **Release:** a single official `gh release create --verify-tag` uploads both files and publishes. The workflow then downloads the published assets and checks their bytes, filename set and SHA-256. Existing published assets are verified but never overwritten.
+- **Carry-forward:** before publication, `scripts/release_snapshot.sh` downloads the repository's previous **Latest immutable Release** with GitHub CLI, verifies its complete SHA-256 manifest, and copies unchanged assets from other mods byte-for-byte. It replaces only Stay Sharp's previous package and regenerates `SHA256SUMS.txt` for the entire set. It **never runs Session Stats' builder**.
+- **Release:** a single official `gh release create --verify-tag --latest` uploads the entire verified snapshot. The workflow then downloads all published assets and checks their bytes, filename set and SHA-256. Existing published assets are verified but never overwritten.
 - First-party GitHub Actions are pinned to their exact full commit hashes. The only credential is the ephemeral, repository-scoped `GITHUB_TOKEN`; the build job never receives a write-capable token. The publish job's checkout uses this token only to push the Git tag.
 - `concurrency` serializes releases without cancellation. No automation deletes, moves, modifies or retargets existing Releases.
 
@@ -124,3 +125,5 @@ The first merged workflow on `main` had run number 1, producing `v1.6.1`, but pu
 For now, this pipeline builds **Stay Sharp only**. The repo can contain other mods, but `/releases/latest` is a repository-wide pointer. A future multi-mod release workflow must be explicitly designed and reviewed before combining artifacts.
 
 WoT upgrades may change the Python interpreter, HUD, or private methods used by the mod; this pipeline cannot guarantee runtime compatibility with untested game updates.
+
+See [independent builds and shared immutable Release snapshots](MULTIMOD_RELEASES.md) for cross-mod concurrency and migration requirements. PR-only path-filter-skipped checks should not be configured as mandatory branch protection checks without an always-running gate.

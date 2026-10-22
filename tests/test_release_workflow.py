@@ -149,7 +149,7 @@ class GitHubNativeReleaseTests(unittest.TestCase):
     def test_asset_integrity_and_fail_closed_drafts(self):
         self.assertIn('sha256sum --check SHA256SUMS.txt', WORKFLOW)
         self.assertIn('gh release download', WORKFLOW)
-        self.assertIn('cmp -- "dist/$mod" "$remote/$mod"', WORKFLOW)
+        self.assertIn('cmp -- "dist/$name" "$remote/$name"', WORKFLOW)
         self.assertIn('isDraft', WORKFLOW)
         self.assertIn('draft)', WORKFLOW)
         self.assertIn('exit 1', WORKFLOW)
