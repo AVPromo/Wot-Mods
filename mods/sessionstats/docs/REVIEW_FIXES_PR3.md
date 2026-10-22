@@ -126,3 +126,23 @@ Account scopes and the optional durable installation scope:
   readiness and load events cannot create new subscriptions after destruction.
   Five browser checks cover pending subscription ownership/removal, retained
   callbacks, delayed engine readiness and normal deferred rendering.
+
+## Portable decoder regressions (review comment 4348237318)
+
+The original recursion fixture assumed that every decoder would reject an array
+nested 16,384 levels deep. CPython 3.14.4 accepts it, causing three tests to fail
+before reaching the fallback behavior. This was reproduced on that interpreter.
+
+The three fallback regressions now inject `RuntimeError` and, where available,
+`RecursionError` at `json.loads` for the selected catalog document only. They keep
+real file reads and decoding/validation boundaries, verify that injection occurred,
+and restore the decoder in `finally`. Other configuration and stored data continue
+through the original decoder. External fallback retains the selected bundled
+language; source fallback retains embedded English; Runtime Refresh preserves
+custom appearance, scroll speed, installation-tab state and account history.
+
+A separate real 16,384-level input checks bundled-message fallback whether a
+decoder rejects nesting or accepts the invalid non-string translation. The
+14-test localization suite passes on CPython 2.7.18, 3.12 and 3.14.4. A negative
+control removing the production `RuntimeError` handlers makes all three targeted
+fallback regressions fail. Production behavior and workflow files are unchanged.

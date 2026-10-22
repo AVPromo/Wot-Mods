@@ -3,6 +3,7 @@
 from __future__ import unicode_literals
 
 import copy
+from contextlib import contextmanager
 import io
 import json
 import logging
@@ -17,6 +18,12 @@ from grz_session_stats import localization as loc
 from grz_session_stats.appearance import validate_config
 from grz_session_stats.runtime import Runtime, GameAPI
 from test_runtime import FakeAPI, FakeWindow, Clock, EXPECTED
+
+DECODER_ERRORS = [RuntimeError]
+try:
+    DECODER_ERRORS.append(RecursionError)
+except NameError:
+    pass  # Python 2.7 reports decoder recursion as RuntimeError.
 
 
 class LocalizationTests(unittest.TestCase):
@@ -93,43 +100,68 @@ class LocalizationTests(unittest.TestCase):
         os.unlink(self.path)
         self.assertEqual(loc.Localizer('fr', self.path).text('refresh'), 'Actualiser')
 
-    def nested_catalog(self):
-        depth = max(16384, sys.getrecursionlimit() * 16)
+    @contextmanager
+    def failing_decoder(self, raw, error_type):
+        """Fail only this document at the real JSON decoder boundary."""
+        document = raw.decode('utf-8-sig')
+        previous = loc.json.loads
+        calls = []
+        def loads(value, *args, **kwargs):
+            if value == document:
+                calls.append(error_type)
+                raise error_type('synthetic decoder recursion')
+            return previous(value, *args, **kwargs)
+        loc.json.loads = loads
+        try:
+            yield calls
+        finally:
+            loc.json.loads = previous
+
+    def test_deep_catalog_uses_fallback_whether_decoder_accepts_or_rejects_nesting(self):
+        # Decoder limits differ: Python 3.14 accepts this depth. Either a decoder
+        # error or a parsed non-string translation must retain bundled messages.
+        depth = 16384
         raw = (b'{"schema_version":1,"languages":{"uk":{"title":' +
                b'[' * depth + b'"CATALOG_NESTED_SENTINEL"' + b']' * depth + b'}}}')
         self.assertLess(len(raw), loc.MAX_BYTES)
-        # Exercise the real decoder on both runtime interpreters. RecursionError
-        # is a RuntimeError subclass on Python 3; Python 2.7 uses RuntimeError.
-        with self.assertRaises(RuntimeError):
-            loc.decode(raw)
-        return raw
-
-    def test_external_decoder_recursion_retains_the_selected_bundled_language(self):
         with io.open(self.path, 'wb') as stream:
-            stream.write(self.nested_catalog())
+            stream.write(raw)
         translator = loc.Localizer('uk', self.path)
         self.assertEqual(translator.language, 'uk')
         self.assertEqual(translator.messages, self.catalog['uk'])
 
+    def test_external_decoder_recursion_retains_the_selected_bundled_language(self):
+        self.write({'uk': {'title': 'CATALOG_DECODER_SENTINEL'}})
+        with io.open(self.path, 'rb') as stream:
+            raw = stream.read()
+        for error_type in DECODER_ERRORS:
+            with self.failing_decoder(raw, error_type) as calls:
+                translator = loc.Localizer('uk', self.path, catalog=self.catalog)
+            self.assertEqual(calls, [error_type])
+            self.assertEqual(translator.language, 'uk')
+            self.assertEqual(translator.messages, self.catalog['uk'])
+
     def test_source_catalog_recursion_uses_the_embedded_english_fallback(self):
         import types
-        raw = self.nested_catalog()
+        source_path = os.path.join(os.path.dirname(loc.__file__), '..', '..', loc.FILENAME)
+        with io.open(source_path, 'rb') as stream:
+            raw = stream.read()
         resource_manager = types.ModuleType(str('ResMgr'))
         resource_manager.openSection = lambda unused: None
         previous_module = sys.modules.get('ResMgr')
-        previous_read = loc._read
         sys.modules['ResMgr'] = resource_manager
-        loc._read = lambda unused: loc.decode(raw)
         try:
-            self.assertEqual(loc.bundled_catalog(), {'en': loc.ENGLISH})
+            for error_type in DECODER_ERRORS:
+                with self.failing_decoder(raw, error_type) as calls:
+                    self.assertEqual(loc.bundled_catalog(), {'en': loc.ENGLISH})
+                self.assertEqual(calls, [error_type])
         finally:
-            loc._read = previous_read
             if previous_module is None:
                 del sys.modules['ResMgr']
             else:
                 sys.modules['ResMgr'] = previous_module
 
-    def test_nested_catalog_does_not_discard_valid_runtime_appearance_or_sessions(self):
+    def test_decoder_failure_does_not_discard_valid_runtime_appearance_or_sessions(self):
         config_path = os.path.join(self.directory, 'grz.sessionstats.json')
         config = {'language': 'uk', 'colors': {'window_border': '#123456'},
                   'scroll': {'speed_multiplier': 2}, 'sessions': {'instance_tab': True}}
@@ -148,18 +180,22 @@ class LocalizationTests(unittest.TestCase):
             installation = mod._instance_session
             self.assertIn('#123456', presentation['panel_css'])
             self.assertEqual(presentation['scroll_speed'], 2)
-            with io.open(self.path, 'wb') as stream:
-                stream.write(self.nested_catalog())
-            mod.on_action({'action': 'refresh'})
-            payload = mod.snapshot()
-            self.assertEqual(payload['appearance'], presentation)
-            self.assertEqual(payload['localization']['language'], 'uk')
-            self.assertEqual(payload['localization']['messages'], self.catalog['uk'])
-            self.assertIn('instance', payload['scopes'])
-            self.assertTrue(mod._instance_tab_enabled)
-            self.assertIs(mod._instance_session, installation)
-            self.assertIs(mod.active_service, service)
-            self.assertEqual(service._state, saved)
+            self.write({'uk': {'title': 'CATALOG_DECODER_SENTINEL'}})
+            with io.open(self.path, 'rb') as stream:
+                raw = stream.read()
+            for error_type in DECODER_ERRORS:
+                with self.failing_decoder(raw, error_type) as calls:
+                    mod.on_action({'action': 'refresh'})
+                    payload = mod.snapshot()
+                self.assertEqual(calls, [error_type])
+                self.assertEqual(payload['appearance'], presentation)
+                self.assertEqual(payload['localization']['language'], 'uk')
+                self.assertEqual(payload['localization']['messages'], self.catalog['uk'])
+                self.assertIn('instance', payload['scopes'])
+                self.assertTrue(mod._instance_tab_enabled)
+                self.assertIs(mod._instance_session, installation)
+                self.assertIs(mod.active_service, service)
+                self.assertEqual(service._state, saved)
         finally:
             mod.stop()
 
