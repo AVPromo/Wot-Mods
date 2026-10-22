@@ -166,7 +166,8 @@ bitwy rozpoczętej przed resetem nie trafia do świeżego ręcznego okresu.
 
 SPINNER I OCZEKUJĄCE WYNIKI
 Mały obracający się wskaźnik pojawia się nad słupkami ikony w garażu, gdy mod
-ma nierozliczone wyniki bieżącego konta albo właśnie przetwarza wynik lub bonus PD.
+czeka na wynik bitwy zaobserwowanej w bieżącym uruchomieniu albo właśnie
+przetwarza wynik lub bonus PD. Dotyczy wyłącznie bieżącego konta.
 Przycisk nadal otwiera statystyki i zachowuje małe WN8. Podpowiedź rozróżnia
 oczekiwanie od przetwarzania i podaje liczbę oczekujących wyników.
 
@@ -179,8 +180,12 @@ nie działa według sztucznego czasu. Krótkie przetwarzanie może być ledwo za
 Wskaźnik dotyczy kolejki konta, niezależnie od wybranej zakładki okresu.
 Ręczny reset nie kasuje oczekujących rozliczeń. Zmiana konta przełącza kolejkę;
 spóźniony callback poprzedniego konta nie uruchamia wskaźnika nowego konta.
-Po ponownym uruchomieniu zaległy wynik może nadal podtrzymywać spinner, jeżeli
-WoT nie udostępnia już jego pełnych danych. Nie jest to dowód zmiany formatu.
+Po ponownym uruchomieniu bez wejścia do nowej lub trwającej bitwy zaległy
+niepełny wpis nie podtrzymuje spinnera. Panel zachowuje liczbę brakujących
+wyników z wyjaśnieniem, a mod nadal próbuje je odzyskać z pamięci klienta.
+Przycisk „Odśwież” ponawia odczyt. Historia nie jest kasowana ani uznawana
+za kompletną tylko po to, żeby wyłączyć wskaźnik. Podczas przetwarzania
+odzyskanego wyniku spinner może na krótko pokazać rzeczywistą aktywność.
 Wyłączenie moda unieważnia jego stare callbacki i usuwa wskaźnik wraz z przyciskiem.
 
 KONTROLA FORMATU WYNIKÓW
@@ -334,6 +339,8 @@ PIERWSZE SPRAWDZENIE W GRZE
    wskaźnika, o ile nie oczekują inne wyniki.
 3. Zamknij i ponownie uruchom grę: „Od uruchomienia” ma 0 bitew, „Od resetu”
    zachowuje rozegrany wynik. Ręczny reset zeruje tylko drugi okres.
+   Jeśli pozostał niepełny wynik z wcześniejszego uruchomienia, sam ten wpis
+   nie powinien uruchamiać spinnera; panel pokaże wyjaśnienie braków.
 Jeżeli panel się nie otworzy, wynik się nie pojawi lub zobaczysz ostrzeżenie,
 zachowaj wskazany log moda wraz z kopiami po rotacji oraz game.log z tego
 uruchomienia (i python.log, jeżeli klient go tworzy). Gdy osobny log nie działa,
@@ -375,9 +382,11 @@ node tests/ui-footer-activity.cjs — spinner, stan kolejki, podpowiedź i clean
 node tests/ui-appearance.cjs — style z konfiguracji, fallback i mnożnik rolki.
 Testy Pythona obejmują także walidację JSON, zgodność wartości domyślnych ze
 stylem, ustalanie ścieżki paczki oraz przekazanie konfiguracji do panelu i stopki.
-Weryfikacja 0.2.7: 284/284 testów Pythona pod Pythonem 3 i 284/284 pod CPythonem
-2.7.18; konfiguracja wyglądu w UI 30/30. Domyślne obrazy panelu i ikony są
-pikselowo identyczne z obrazami ich statycznego stylu bazowego w tym samym teście.
+Weryfikacja źródeł po poprawkach PR #3: 302 testy pod Pythonem 3; ten sam zestaw
+pod CPythonem 2.7.18 z 4 pominięciami testów buildera wymagającego Pythona 3.
+Testy obejmują zachowanie spinnera po restarcie i odzyskiwanie starych wyników.
+Style i geometria domyślnego panelu i ikony są porównywane z bazowym wyglądem;
+kontrola rastra dopuszcza ograniczone różnice antyaliasingu między Chromium.
 Weryfikacja automatyczna nie jest testem działającego WoT.
 Paczka gry zawiera bajtkod Pythona 2.7. Nie należy zastępować go bajtkodem Pythona 3.
 Pliki BUILD.json, SHA256SUMS.txt i raporty w tests opisują rzeczywistą weryfikację.
