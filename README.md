@@ -66,7 +66,7 @@ As the repository is **public**, the **GitHub account that owns it, commits, PRs
 
 This project is not affiliated with Wargaming. World of Tanks and related marks are the property of their respective owners. No license for redistribution/modification of the source beyond GitHub's platform terms has been chosen yet; the owner can add a `LICENSE` file in a separate reviewed PR.
 
-New Stay Sharp releases use `staysharp-v<version>`. Historical `v*` tags remain
-unchanged and protected by the legacy ruleset. See the
+New Stay Sharp releases use `staysharp-v<version>`. The former `v*` publisher
+configuration is retired after the switch; no compatibility aliases are required. See the
 [namespace migration](docs/BUILD_RELEASE.md#migration-from-the-historical-stay-sharp-namespace)
 for the owner-managed settings required before this workflow is merged.

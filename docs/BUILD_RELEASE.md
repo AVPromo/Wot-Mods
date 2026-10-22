@@ -148,9 +148,8 @@ this guarantee does not hold. See [MULTIMOD_RELEASES.md](MULTIMOD_RELEASES.md).
 
 New runs use `staysharp-v<version>`, Ruleset `staysharp-release-tags`,
 Environment `staysharp-release`, and `STAYSHARP_REVIEWED_RULESET_*` variables.
-The package filename and version algorithm are unchanged. Snapshot comparison
-reads the primary package version, not the Release tag prefix, so releases
-with old `v*` tags remain valid carry-forward sources and cannot be downgraded.
+The package filename and version algorithm are unchanged. Snapshot comparison reads the primary package version rather than a
+Release tag prefix. There is no legacy publisher, alias or configuration fallback.
 
 Before merging this workflow migration:
 
@@ -163,13 +162,14 @@ Before merging this workflow migration:
 3. Inspect the new Ruleset and set its exact numeric ID and `updated_at` in
    Environment variables `STAYSHARP_REVIEWED_RULESET_ID` and
    `STAYSHARP_REVIEWED_RULESET_UPDATED_AT`. Do not copy the old ruleset's values.
-4. Keep `wotmod-release-tags` protecting historical `v*` tags. Do not move,
-   rename, delete or republish historical tags/releases. Keep its legacy
-   Environment while older release runs might still be in flight.
-5. Finish/reconcile old running publications, then review and merge the
-   migration. Restrict the legacy `wotmod-release` Environment to Branch `main`
-   as well if it is retained. After acceptance, synchronize open CI/source
-   branches onto main so they cannot restore the old publisher configuration.
+4. Finish or cancel old running publications, then review and merge the
+   migration. Once no old publisher is running, retire the old
+   `wotmod-release-tags` Ruleset targeting `v*` and delete the unused
+   `wotmod-release` Environment and its approval variables. Legacy settings
+   are not required by the new publisher.
+5. Synchronize open CI/source branches onto accepted main so they cannot
+   restore the old publisher configuration. Historical tags/releases need
+   no migration, aliases, renaming or republication.
 
 The repository-wide lock deliberately retains its generic name
 `wotmod-release-${{ github.repository }}`. Giving each mod a different lock

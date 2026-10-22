@@ -133,10 +133,10 @@ requiring a check that is intentionally skipped for unrelated mods.
 | Session Stats | `sessionstats-v*` | `sessionstats-release-tags` | `sessionstats-release` | `SESSIONSTATS_REVIEWED_RULESET_ID`, `SESSIONSTATS_REVIEWED_RULESET_UPDATED_AT` |
 
 Both Environments allow deployments only from **Branch `main`**. This is
-additional to the workflow's own main-ref checks. Keep the legacy
-`wotmod-release-tags` ruleset on `v*` for historical Stay Sharp tags; do not
-retarget or remove it as part of the migration. New versioned filenames stay
-unchanged, so carry-forward and stale-version detection work across tag prefixes.
+additional to the workflow's own main-ref checks. After the new workflow is
+accepted and old publishers are no longer running, retire the old
+`wotmod-release-tags` Ruleset and `wotmod-release` Environment. The new
+publisher has no fallback to legacy settings and needs no tag aliases.
 
 Separate mod namespaces do not mean separate publication locks. Every publisher
 must still use exactly `wotmod-release-${{ github.repository }}`. Concurrency
