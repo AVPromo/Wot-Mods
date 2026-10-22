@@ -163,14 +163,15 @@ class RuntimeHealthTests(unittest.TestCase):
         self.assertEqual(self.mod._processing, {})
         self.assertIn('Result normalized: source=event complete=True changed=True', self.log())
 
-    def test_pending_is_restored_after_runtime_restart_without_reset(self):
+    def test_pending_is_restored_after_runtime_restart_without_busy_footer(self):
         self.enter_battle()
         self.garage()
         manual_id = self.mod.active_service._state['current_manual_id']
         self.mod.stop()
         self.footer = ActivityFooter()
         self.mod = self.new_runtime()
-        self.assertEqual(self.footer.states[-1], (1, False))
+        self.assertEqual(self.footer.states[-1], (0, False))
+        self.assertEqual(self.mod.active_service.pending_arena_ids(), [ARENA_ID])
         self.assertEqual(self.mod.active_service._state['current_manual_id'], manual_id)
 
     def test_old_account_cache_result_does_not_animate_new_account(self):

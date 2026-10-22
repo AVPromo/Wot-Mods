@@ -17,8 +17,11 @@
   również w kopii źródeł. Historyczny changelog i dowody zgodności pozostają historyczne.
 - Manifest wewnątrz ZIP-a używa ścieżek względem korzenia rozpakowanej paczki;
   `sha256sum -c SHA256SUMS.txt` sprawdza wszystkie trzy pliki instalacyjne.
+- Historyczne niepełne wpisy pozostają w kolejce odczytu i historii, ale po
+  restarcie bez nowej bitwy nie utrzymują spinnera. Panel pokazuje wyjaśnienie.
+  Szczegóły i granice działania: [RESTORED_RESULTS_ACTIVITY.md](RESTORED_RESULTS_ACTIVITY.md).
 
-Weryfikacja: 291 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
+Weryfikacja: 302 testy na Pythonie 3; ten sam zestaw na Pythonie 2.7
 z czterema pominiętymi testami narzędzia pakującego wymagającego Pythona 3.
 85 kontroli panelu obejmuje trwały i przejściowy błąd rejestracji callbacku,
 synchroniczne wywołanie podczas rejestracji oraz spóźnione zdarzenia po zamknięciu.

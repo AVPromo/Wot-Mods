@@ -280,6 +280,8 @@ class Runtime(object):
         self._bonus_subscription = None
         self._bonus_account_key = None
         self._processing = {}
+        self._observed_arenas = set()
+        self._started_at = None
         self._footer_activity = None
         self._log_handle = None
         self.log_path = None
@@ -332,19 +334,29 @@ class Runtime(object):
                 pass
         self.monitor.flush_notice(self.api.notify)
 
+    def _pending_activity(self):
+        if not self.running or self.active_service is None or self.api.is_replay():
+            return set(), set()
+        pending = set(str(value) for value in self.active_service.pending_arena_ids())
+        # Restored incomplete records remain recoverable ledger data, but do
+        # not imply that this client has played a battle and is still waiting.
+        waiting = set(arena_id for arena_id in pending
+                      if (self.active_key, arena_id) in self._observed_arenas)
+        return pending, waiting
+
     def activity_status(self):
         if not self.running or self.active_service is None or self.api.is_replay():
             return (0, False)
-        pending = set(str(value) for value in self.active_service.pending_arena_ids())
+        unused_pending, waiting = self._pending_activity()
         # A battle still being played is not a result waiting in the garage.
         # Leaving it early makes it pending until WoT delivers the final result.
         if self.api.in_battle():
             context = self.api.battle_context()
             if isinstance(context, dict):
-                pending.discard(str(context.get('arena_id', '')))
+                waiting.discard(str(context.get('arena_id', '')))
         processing = (self._processing.get(self.active_key, 0) > 0 or
                       (self._bonus_callback_id is not None and self._bonus_account_key == self.active_key))
-        return (len(pending), bool(processing))
+        return (len(waiting), bool(processing))
 
     def _publish_activity(self):
         self._publish_appearance()
@@ -497,6 +509,8 @@ class Runtime(object):
                 LOG.exception('WN8 table load failed.')
         self.running = True
         self._lifecycle = object()
+        self._started_at = self.now()
+        self._observed_arenas.clear()
         self.compatibility_warnings.clear()
         self._diagnostics.clear()
         self._hotkey_held = False
@@ -655,6 +669,9 @@ class Runtime(object):
             if key not in self.services:
                 self.services[key] = self.service_factory(self.data_dir, key, LAUNCH_ID,
                                                          self.expected_table, now=self.now)
+                restored = len(self.services[key].pending_arena_ids())
+                if restored:
+                    LOG.info('Restored incomplete results: count=%s; background recovery remains active.', restored)
             self.active_key = key
             self.active_service = self.services[key]
             self._publish_activity()
@@ -689,6 +706,7 @@ class Runtime(object):
             self.contexts[(self.active_key, arena_id)] = context
             service.begin_battle(arena_id, started_at=context.get('started_at'),
                                  vehicle_id=context.get('vehicle_id'), map_id=context.get('map_id'), mode='random')
+            self._observed_arenas.add((self.active_key, arena_id))
             self._window_call('close')
             self._publish_activity()
         except Exception:
@@ -740,6 +758,12 @@ class Runtime(object):
                                   vehicle_resolver=self.api.vehicle_info, map_resolver=self.api.map_info)
         if record is None:
             return False
+        started_at = record.get('started_at')
+        if (started_at is not None and self._started_at is not None and
+                self._started_at <= started_at <= self.now()):
+            # A current result can arrive even when the avatar-ready event was
+            # missed. Replayed historical events must not revive waiting.
+            self._observed_arenas.add((account_key, record['arena_id']))
         if reusable is None:
             try:
                 # A cache callback can be older than the displayed result.
@@ -914,6 +938,12 @@ class Runtime(object):
         result = self.active_service.snapshot()
         result['appearance'] = dict(self._presentation)
         warnings = result.setdefault('warnings', [])
+        pending, waiting = self._pending_activity()
+        backlog = len(pending - waiting)
+        if backlog:
+            warnings.append('Niepełne wyniki wcześniejszych bitew: {0}. '
+                            'Historia została zachowana; mod nadal próbuje uzupełnić dane. '
+                            'Możesz też użyć przycisku Odśwież.'.format(backlog))
         try:
             from .visuals import enrich_snapshot
             ledger = getattr(self.active_service, '_state', {}).get('battles', {})

@@ -199,13 +199,20 @@ The grzSessionFooter child model exposes an activity string containing JSON:
 processing a boolean. UI validates shape and values; missing/malformed activity is idle.
 Only counts and state cross this bridge, never raw results or account identifiers.
 
-Pending means unresolved ledger records for the active account, excluding the current
-arena while the player is in that battle. An early return to the garage makes that known
-battle pending until WoT supplies usable data. A partial result may remain unresolved.
+Footer pending means unresolved records for battles observed in this runtime and active
+account, excluding the current arena while the player is in that battle. An early return
+to the garage makes that known battle pending until WoT supplies usable data. A result
+whose battle began during this runtime can establish activity if avatar-ready was missed.
+Reconnecting into an ongoing battle observes it again, even if it began before startup.
 Processing wraps result normalization/storage and scheduled native XP bonus refresh.
 Show the spinner when pending > 0 or processing; no artificial minimum busy duration.
-Manual reset changes the visible epoch, not the account queue. Persisted unresolved
-results can keep the indicator active after restart if the client no longer supplies them.
+Manual reset changes the visible epoch, not the account queue. Persisted incomplete
+records from earlier runtimes remain in the ledger and background cache recovery, but
+cannot keep the footer busy after a garage-only restart. The panel retains its complete
+unresolved count and explains these older incomplete records in a warning. Normalizing
+a recovered result briefly publishes actual processing, then returns to idle. No record
+is deleted, marked complete or assigned zero stats to clear the spinner. Restarting the
+same Runtime instance also clears its observed-battle set; history is not reset.
 Account switches select that account's queue; callbacks tied to an older account/lifecycle
 must not make a different account or later runtime busy. Stop publishes idle and removes
 the button. Recreated footer children receive the current state; unchanged model writes
