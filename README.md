@@ -43,7 +43,12 @@ See [independent builds and shared Release snapshots](docs/MULTIMOD_RELEASES.md)
 
 No custom HTTP client, third-party publication service or Java is involved; GitHub's own CLI and built-in `GITHUB_TOKEN` handle the release. Neither the workflow nor a separate recovery script deletes an existing Release. If publication is interrupted, check the draft manually; the pipeline fails safely instead of guessing what to remove.
 
-The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. See [build and release documentation](docs/BUILD_RELEASE.md).
+The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. Multiple mods are built separately. Shared GitHub Releases keep unchanged mod
+packages byte-for-byte: publish jobs use GitHub Actions `queue: max` to avoid
+simultaneous-merge races and skip obsolete same-mod builds. See
+[mod independence and concurrent merges](docs/MULTIMOD_RELEASES.md).
+
+See [build and release documentation](docs/BUILD_RELEASE.md).
 
 **Mandatory protection before merge:** configure the active GitHub tag
 ruleset `wotmod-release-tags` for `v*`, with **Restrict updates**, **Restrict
