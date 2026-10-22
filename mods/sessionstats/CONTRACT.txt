@@ -19,7 +19,8 @@ StatsService(data_dir, account_key, launch_id, expected_table, now=None)
   - account_key is stable REGION:DBID string, never display nickname.
   - launch_id is one UUID for this process, retained across reconnect/login.
   - expected_table is full XVM JSON with header/data or the parsed expected mapping.
-begin_battle(arena_id, started_at=None, vehicle_id=None, map_id=None, mode=None)
+begin_battle(arena_id, started_at=None, vehicle_id=None, map_id=None, mode=None,
+             vehicle_name=None, vehicle_tier=None, vehicle_type=None, map_name=None)
 record_result(record) -> bool changed (deduplicate/update by arena_id)
 result_context(arena_id) -> independent dict of known contextual metadata only
 reset_manual(now=None) -> new manual id
@@ -64,6 +65,10 @@ sequence. Within a supported shape, each valid currency remains independently us
 when another amount is missing. Partial finance must not discard valid combat or XP.
 Exclude replays and unsupported modes in adapter and service.
 Capture both session memberships on begin_battle. Late results update original sessions.
+At entry persist available own-vehicle name/tier/class and map name alongside IDs/time.
+Use the native descriptor and arena type; never persist the raw context or roster.
+Repeated avatar events/ticks only fill unknown fields, without duplicate records/writes
+or erasing confirmed results. Optional display metadata must not block the beginning.
 For previously unseen results use reliable started_at and saved epoch intervals; don't assign
 to current launch just because received now. Use returned battle start time in actual result.
 

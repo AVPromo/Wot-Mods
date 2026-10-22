@@ -80,6 +80,11 @@ JAK DZIAŁA PANEL
 • Zapis WN8: 1574, nie 1,6k. Wartość 805 pozostaje 805, a 10420 pozostaje 10420.
 • Puste wartości są oznaczone kreską. Niepełne dane mają licznik pokrycia,
   np. 15/16. Częściowa suma finansowa obejmuje wyłącznie potwierdzone kwoty.
+• Już po wejściu do bitwy zapisujemy dostępny czas, mapę oraz nazwę, poziom
+  i klasę własnego czołgu. Wpis pozostaje na liście po restarcie także bez
+  wyniku: znane nazwy są widoczne, brakujące statystyki mają kreski.
+  Później załadowane informacje uzupełniają ten sam wpis. Starsze wpisy
+  mogą nie mieć nazw, których poprzednia wersja nie zapisała.
 • W tym wydaniu liczone są standardowe bitwy losowe. Replaye i tryby specjalne
   nie są włączane do WN8 tego zakresu.
 
@@ -396,7 +401,7 @@ node tests/ui-footer-activity.cjs — spinner, stan kolejki, podpowiedź i clean
 node tests/ui-appearance.cjs — style z konfiguracji, fallback i mnożnik rolki.
 Testy Pythona obejmują także walidację JSON, zgodność wartości domyślnych ze
 stylem, ustalanie ścieżki paczki oraz przekazanie konfiguracji do panelu i stopki.
-Weryfikacja źródeł po poprawkach PR #3: 327 testów pod Pythonem 3; ten sam zestaw
+Weryfikacja źródeł po poprawkach PR #3: 335 testów pod Pythonem 3; ten sam zestaw
 pod CPythonem 2.7.18 z 4 pominięciami testów buildera wymagającego Pythona 3.
 Testy obejmują zachowanie spinnera po restarcie i odzyskiwanie starych wyników.
 Style i geometria domyślnego panelu i ikony są porównywane z bazowym wyglądem;

@@ -166,14 +166,29 @@ class GameAPI(object):
             return None
         vehicle = arena.vehicles.get(getattr(player, 'playerVehicleID', None), {})
         descriptor = vehicle.get('vehicleType')
-        vehicle_id = getattr(getattr(descriptor, 'type', None), 'compactDescr', None)
+        vehicle_type = getattr(descriptor, 'type', None)
+        vehicle_id = getattr(vehicle_type, 'compactDescr', None)
+        # Display metadata is optional during arena loading. Never let it
+        # prevent the durable beginning; later avatar events/ticks enrich it.
+        vehicle_metadata = {}
+        try:
+            vehicle_metadata = {
+                'vehicle_name': getattr(vehicle_type, 'shortUserString', None) or
+                                getattr(vehicle_type, 'userString', None),
+                'vehicle_tier': getattr(vehicle_type, 'level', None),
+                'vehicle_type': getattr(vehicle_type, 'classTag', None),
+            }
+        except Exception:
+            pass
         map_type = getattr(arena, 'arenaType', None)
-        return {
+        context = {
             'arena_id': str(arena_id), 'started_at': arena_start(arena_id),
             'account_dbid': self.account_dbid(), 'vehicle_id': vehicle_id,
             'map_id': getattr(map_type, 'geometryName', None),
             'map_name': getattr(map_type, 'name', None), 'mode': 'random',
         }
+        context.update(vehicle_metadata)
+        return context
 
     def vehicle_info(self, compact):
         from items.vehicles import getVehicleType
@@ -774,7 +789,9 @@ class Runtime(object):
             context['account_key'] = self.active_key
             self.contexts[(self.active_key, arena_id)] = context
             service.begin_battle(arena_id, started_at=context.get('started_at'),
-                                 vehicle_id=context.get('vehicle_id'), map_id=context.get('map_id'), mode='random')
+                                 vehicle_id=context.get('vehicle_id'), map_id=context.get('map_id'), mode='random',
+                                 vehicle_name=context.get('vehicle_name'), vehicle_tier=context.get('vehicle_tier'),
+                                 vehicle_type=context.get('vehicle_type'), map_name=context.get('map_name'))
             self._observed_arenas.add((self.active_key, arena_id))
             self._window_call('close')
             self._publish_activity()

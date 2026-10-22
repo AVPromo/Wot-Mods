@@ -21,7 +21,7 @@
   restarcie bez nowej bitwy nie utrzymują spinnera. Panel pokazuje wyjaśnienie.
   Szczegóły i granice działania: [RESTORED_RESULTS_ACTIVITY.md](RESTORED_RESULTS_ACTIVITY.md).
 
-Weryfikacja: 327 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
+Weryfikacja: 335 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
 z czterema pominiętymi testami narzędzia pakującego wymagającego Pythona 3.
 88 kontroli panelu obejmuje trwały i przejściowy błąd rejestracji callbacku,
 synchroniczne wywołanie podczas rejestracji oraz spóźnione zdarzenia po zamknięciu.
@@ -34,6 +34,10 @@ przed odbiorcą i potwierdzeniem strumienia, sprawiedliwą kolejkę, osobne opó
 cooldown/logowania i uzupełnianie nieznanych danych ze spóźnionych strumieni.
 Niepełne okresy i brakujące bitwy są jawne w panelu. Granice odzyskiwania
 i przypięty kod klienta: [OFFLINE_RESULT_RECOVERY.md](OFFLINE_RESULT_RECOVERY.md).
+Przy wejściu do bitwy utrwalamy także dostępne nazwy mapy i własnego czołgu,
+poziom i klasę. Brakujący wynik pozostaje dzięki temu rozpoznawalny po restarcie.
+Osiem testów obejmuje natywny deskryptor, późną gotowość metadanych, trwałość,
+deduplikację zapisów, ochronę potwierdzonych wyników i prywatność kontekstu.
 
 Porównanie rastra zachowuje limit 16 zmienionych pikseli; tolerancja kanału 6/255
 obejmuje zaobserwowane na Chromium 151 zaokrąglenie 10 pikseli z różnicą 5/255.

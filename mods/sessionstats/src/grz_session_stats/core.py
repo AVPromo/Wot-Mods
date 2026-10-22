@@ -341,12 +341,15 @@ class StatsService(object):
                 break
         return launch_id, manual_id
 
-    def begin_battle(self, arena_id, started_at=None, vehicle_id=None, map_id=None, mode=None):
+    def begin_battle(self, arena_id, started_at=None, vehicle_id=None, map_id=None, mode=None,
+                     vehicle_name=None, vehicle_tier=None, vehicle_type=None, map_name=None):
         if mode not in (None, 'random'):
             return False
         timestamp = self._time()
         record = {'arena_id': arena_id, 'started_at': timestamp if started_at is None else started_at,
-                  'vehicle_id': vehicle_id, 'map_id': map_id, 'mode': mode, 'complete': False}
+                  'vehicle_id': vehicle_id, 'map_id': map_id, 'mode': mode, 'complete': False,
+                  'vehicle_name': vehicle_name, 'vehicle_tier': vehicle_tier,
+                  'vehicle_type': vehicle_type, 'map_name': map_name}
         return self._apply(record, timestamp, is_result=False)
 
     def record_result(self, record):

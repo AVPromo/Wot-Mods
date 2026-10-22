@@ -8,6 +8,19 @@ porażką ani wynikiem liczbowym. Dopiero odebrane dane pozwalają go rozliczyć
 Wynik z rozpoznanym rozstrzygnięciem może wnosić potwierdzone statystyki,
 nawet jeśli inne pola są jeszcze niepełne. Brakujące pola nie stają się zerami.
 
+Już przy wejściu do bitwy zapisujemy dostępne dane rozpoznawcze: czas,
+identyfikator i nazwę mapy oraz identyfikator, nazwę, poziom i klasę własnego
+czołgu. Nazwy pochodzą z deskryptora pojazdu i typu areny klienta. Zapis nie
+czeka na koniec bitwy ani wyjście z gry. Jeśli arena nie jest jeszcze gotowa,
+następne zdarzenia awatara i odczyty co 5 sekund uzupełniają brakujące pola
+tego samego wpisu; identyczny odczyt nie powoduje kolejnego zapisu na dysk.
+Błąd opcjonalnej nazwy pojazdu nie blokuje zapisania początku bitwy.
+
+Po restarcie wpis zachowuje znaną mapę i czołg oraz nieznany wynik i kreski
+przy brakujących statystykach. Nie zapisujemy listy graczy, nicków ani surowego
+kontekstu areny. To rozszerzenie nie odtworzy nazw, których starsza wersja
+nie zdążyła zachować; mogą je uzupełnić późniejsze dane klienta lub wynik.
+
 Podsumowanie i grupy pokazują liczbę wyników względem wszystkich zarejestrowanych
 bitew, np. `20 / 21`. Brakująca bitwa pozostaje także na liście bitew z nieznanym
 wynikiem. Pokrycie WN8, PD i finansów uwzględnia pełną liczbę zapisanych bitew.
@@ -70,3 +83,6 @@ oryginalnego okresu, deduplikację, odczyt natywny bez zdarzeń, zapis przed
 odbiorcą, błędy i opakowania innych modów, zmianę konta, cooldown, kolejność
 prób oraz poprawne spóźnione strumienie. Testy nie emulują retencji serwera
 i nie zastępują próby w rzeczywistym kliencie WoT.
+Osobne testy początku bitwy sprawdzają zapis przed zamknięciem klienta,
+rozpoznawalny wpis po restarcie bez wyniku, późniejsze ładowanie metadanych,
+brak powtórnych zapisów i wykluczenie prywatnych pól kontekstu.
