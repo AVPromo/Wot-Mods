@@ -38,6 +38,41 @@ class BuildContracts(unittest.TestCase):
         content = (self.build.ROOT/'ZMIANY.txt').read_bytes()
         self.assertEqual(self.build.render_guide('ZMIANY.txt', content, '0.2.8', '2.5.0.0'), content)
 
+    def test_every_release_field_advances_again_from_a_stamped_source_bundle(self):
+        fields = {
+            'README_PL.txt': ('Version {version} ',),
+            'README.md': ('Version {version} source:',),
+            'CONTRACT.txt': ('IMPLEMENTATION CONTRACT v{version} ', " version: '{version}',"),
+            'docs/APPEARANCE_CONFIG.md': ('# Appearance and scrolling configuration — {version}\n',),
+        }
+        source_version = self.build.VERSION
+        guides = {name: (self.build.ROOT/name).read_bytes() for name in fields}
+        major, minor, patch = map(int, source_version.split('.'))
+        versions = ('%d.%d.%d' % (major, minor, patch + 1), '%d.0.0' % (major + 1))
+        try:
+            for version in versions:
+                guides = {name: self.build.render_guide(name, content, version, '2.5.0.0')
+                          for name, content in guides.items()}
+                for name, markers in fields.items():
+                    for marker in markers:
+                        self.assertIn(marker.format(version=version).encode('utf-8'), guides[name], name)
+                        self.assertNotIn(marker.format(version=self.build.VERSION).encode('utf-8'), guides[name], name)
+                # The extracted builder reads the new source/VERSION on rebuild.
+                self.build.VERSION = version
+        finally:
+            self.build.VERSION = source_version
+
+    def test_active_guides_keep_explicit_historical_version_evidence(self):
+        historical = {
+            'README.md': b'The user tested 0.2.4',
+            'README_PL.txt': b'Since 0.2.7,',
+            'CONTRACT.txt': b'Historical compatibility: upgrading from 0.2.6 to 0.2.7',
+        }
+        for name, marker in historical.items():
+            original = (self.build.ROOT/name).read_bytes()
+            self.assertIn(marker, original)
+            self.assertIn(marker, self.build.render_guide(name, original, '1.0.0', '2.5.0.0'))
+
     def test_default_guides_are_byte_identical(self):
         for name in self.build.RELEASE_GUIDES:
             content = (self.build.ROOT/name).read_bytes()

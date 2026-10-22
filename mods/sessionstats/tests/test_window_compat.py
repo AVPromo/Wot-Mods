@@ -80,6 +80,167 @@ class WindowCompatibilityTests(unittest.TestCase):
         self.assertFalse(self.window.is_open())
         self.assertEqual(self.window._events, [])
 
+    def test_failed_destroy_keeps_ownership_blocks_duplicate_open_and_allows_close_retry(self):
+        retained = RetainedEvent()
+        self.main.onSizeChanged = retained
+        self.assertTrue(self.window.open())
+        native, model = self.window._window, self.window._model
+        stale_event = retained.handlers[0]
+        stale_timer = self.timer.callbacks[self.window._watchdog_id][1]
+        original_destroy = native.destroy
+        attempts = []
+
+        def fail():
+            attempts.append(True)
+            raise RuntimeError('native surface was not released')
+
+        native.destroy = fail
+        self.addCleanup(setattr, native, 'destroy', original_destroy)
+        self.window.close()
+        self.assertIs(self.window._window, native)
+        self.assertTrue(self.window.is_open())
+        self.assertIsNotNone(native.proxy)
+        self.assertIsNone(self.window._model)
+        self.assertEqual(self.timer.callbacks, {})
+        self.assertEqual(self.window._events, [])
+        self.assertFalse(self.window.open())
+        self.assertIs(self.window._window, native)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(len(retained.handlers), 1)
+        native.shown = False
+        native._onReady()
+        stale_event()
+        stale_timer()
+        model.onAction({'action': 'reset'})
+        self.window.refresh()
+        self.window.resize(900, 800)
+        self.assertFalse(native.shown)
+        self.assertEqual(self.actions, [])
+        self.assertEqual(self.timer.callbacks, {})
+        self.assertIsNone(self.window._reported_size)
+        native.destroy = original_destroy
+        self.window.close()
+        self.assertIsNone(native.proxy)
+        self.assertIsNone(self.window._window)
+        self.assertFalse(self.window.is_open())
+        self.assertTrue(self.window.open())
+        current = self.window._window
+        model.onAction({'action': 'close'})
+        stale_event()
+        stale_timer()
+        self.assertIs(self.window._window, current)
+
+    def test_open_retries_failed_cleanup_before_creating_a_replacement(self):
+        self.assertTrue(self.window.open())
+        native = self.window._window
+        original_destroy = native.destroy
+
+        def fail():
+            raise RuntimeError('temporary destroy failure')
+
+        native.destroy = fail
+        self.addCleanup(setattr, native, 'destroy', original_destroy)
+        self.window.close()
+        native.destroy = original_destroy
+        self.assertTrue(self.window.open())
+        self.assertIsNone(native.proxy)
+        self.assertIsNot(self.window._window, native)
+        self.assertEqual(len(self.main.onSizeChanged.handlers), 1)
+
+    def test_destroy_throwing_after_release_does_not_keep_a_dead_handle(self):
+        self.assertTrue(self.window.open())
+        native = self.window._window
+        original_destroy = native.destroy
+
+        def release_then_fail():
+            original_destroy()
+            raise RuntimeError('destroy failed after releasing its surface')
+
+        native.destroy = release_then_fail
+        self.window.close()
+        self.assertIsNone(native.proxy)
+        self.assertIsNone(self.window._window)
+        self.assertFalse(self.window.is_open())
+        self.assertTrue(self.window.open())
+
+    def test_asynchronous_destroy_keeps_the_handle_until_native_release(self):
+        self.assertTrue(self.window.open())
+        native = self.window._window
+        original_destroy = native.destroy
+
+        def begin_destroy():
+            native.windowStatus = self.status.DESTROYING
+
+        native.destroy = begin_destroy
+        self.addCleanup(setattr, native, 'destroy', original_destroy)
+        self.window.close()
+        self.assertTrue(self.window.is_open())
+        self.assertIs(self.window._window, native)
+        self.assertFalse(self.window.open())
+        self.assertIs(self.window._window, native)
+        original_destroy()
+        self.assertFalse(self.window.is_open())
+        self.assertTrue(self.window.open())
+        self.assertIsNot(self.window._window, native)
+
+    def test_native_destroying_status_invalidates_actions_but_retains_the_surface(self):
+        self.assertTrue(self.window.open())
+        native, model = self.window._window, self.window._model
+        native.windowStatus = self.status.DESTROYING
+        native.onStatusChanged(self.status.DESTROYING)
+        self.assertIs(self.window._window, native)
+        self.assertTrue(self.window.is_open())
+        self.assertEqual(self.window._events, [])
+        self.assertEqual(self.timer.callbacks, {})
+        model.onAction({'action': 'reset'})
+        native.shown = False
+        native._onReady()
+        self.assertFalse(native.shown)
+        self.assertEqual(self.actions, [])
+        self.window.close()
+        self.assertIsNone(native.proxy)
+        self.assertFalse(self.window.is_open())
+
+    def test_destroy_cannot_reenter_close_or_create_another_window(self):
+        self.assertTrue(self.window.open())
+        native = self.window._window
+        original_destroy = native.destroy
+        attempts = []
+
+        def reenter():
+            attempts.append(True)
+            self.window.close()
+            self.assertFalse(self.window.open())
+            original_destroy()
+
+        native.destroy = reenter
+        self.window.close()
+        self.assertEqual(attempts, [True])
+        self.assertIsNone(self.window._window)
+        self.assertIsNone(native.proxy)
+
+    def test_failed_load_and_destroy_retains_the_partial_window_for_retry(self):
+        base = sys.modules['gui.impl.pub'].WindowImpl
+        original_load, original_destroy = base.load, base.destroy
+
+        def fail(*args):
+            raise RuntimeError('temporary native failure')
+
+        base.load = base.destroy = fail
+        try:
+            self.assertFalse(self.window.open())
+            native = self.window._window
+            self.assertIsNotNone(native)
+            self.assertIsNotNone(native.proxy)
+            self.assertTrue(self.window.is_open())
+            self.assertFalse(self.window.open())
+            self.assertIs(self.window._window, native)
+        finally:
+            base.load, base.destroy = original_load, original_destroy
+        self.assertTrue(self.window.open())
+        self.assertIsNone(native.proxy)
+        self.assertIsNot(self.window._window, native)
+
     def test_footer_wrapper_preserves_original_arguments_and_return_value(self):
         marker = object()
         received = []

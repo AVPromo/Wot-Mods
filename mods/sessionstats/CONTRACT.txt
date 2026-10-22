@@ -363,4 +363,5 @@ Outside .wotmod, beside it: mods/<active-version>/grz.sessionstats.json
   - distinct from res/gui/gen_resources/grz.sessionstats.json resource registration inside
     the archive and from the user's AppData config.json hotkey/footer settings.
 Data persisted outside mods/<version>. No automatic code downloads. No live-game test claimed.
-Upgrade 0.2.6 -> 0.2.7 requires no history reset or persisted-data migration.
+Historical compatibility: upgrading from 0.2.6 to 0.2.7 required no history reset
+or persisted-data migration.

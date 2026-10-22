@@ -3,13 +3,13 @@ Version 0.2.7 • 2026-10-21 • target: Wargaming EU 2.4.1.0
 
 RELEASE STATUS
 This installable .wotmod contains CPython 2.7.18 bytecode, a dedicated Gameface
-window, a battle-result adapter and persistent session storage. Version 0.2.7
-adds grz.sessionstats.json next to the .wotmod for colors, corner radii, opacity
+window, a battle-result adapter and persistent session storage. Since 0.2.7, it
+reads grz.sessionstats.json next to the .wotmod for colors, corner radii, opacity
 and scrolling speed. Bundled defaults preserve the panel, icon and wheel behavior.
 Each field is validated on load; errors go to the mod's own log. Result health
 checks, WoT warnings, the activity spinner and the integration safeguards from
 0.2.5/0.2.6 remain available. Automated checks cover the logic, package and simulated
-API failures. Version 0.2.7 has not been run in a live WoT client here; mocked
+API failures. This release has not been run in a live WoT client here; mocked
 interfaces cannot guarantee compatibility with future clients.
 This is not an official Wargaming product.
 

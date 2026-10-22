@@ -20,7 +20,14 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / 'VERSION').read_text(encoding='ascii').strip()
 ZIP_DATE = (2026, 10, 21, 0, 0, 0)
 MAGIC27 = b'\x03\xf3\r\n'
-RELEASE_GUIDES = {'README_PL.txt', 'README.md', 'CONTRACT.txt', 'docs/APPEARANCE_CONFIG.md'}
+# Only these release-identifying fields are stamped; historical prose is retained.
+RELEASE_GUIDES = {
+    'README_PL.txt': (r'(?m)^(Version )',),
+    'README.md': (r'(?m)^(Version )',),
+    'CONTRACT.txt': (r'(?m)^(GRZ SESSION STATS — IMPLEMENTATION CONTRACT v)',
+                     r"(?m)^( version: ')"),
+    'docs/APPEARANCE_CONFIG.md': (r'(?m)^(# Appearance and scrolling configuration — )',),
+}
 
 
 def put(archive, name, data):
@@ -42,8 +49,9 @@ def render_guide(relative, content, version, client_version):
     text = text.replace('grz.sessionstats_'+VERSION+'.wotmod', 'grz.sessionstats_'+version+'.wotmod')
     text = text.replace('wot-statystyki-sesji-v'+VERSION+'.zip', 'wot-statystyki-sesji-v'+version+'.zip')
     text = text.replace('mods/2.4.1.0/', 'mods/'+client_version+'/')
-    if relative == 'README_PL.txt':
-        text = re.sub(r'(?m)^Version '+re.escape(VERSION)+r'\b', 'Version '+version, text)
+    for prefix in RELEASE_GUIDES[relative]:
+        text = re.sub(prefix + re.escape(VERSION) + r'\b',
+                      lambda match: match.group(1) + version, text)
     return text.encode('utf-8')
 
 

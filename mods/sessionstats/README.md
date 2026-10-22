@@ -59,7 +59,7 @@ This license does not alter the terms of other mods in the repository.
 
 WoT interfaces may change. Health checks cannot guarantee detection of changed
 field meanings when types and structures remain the same. The user tested 0.2.4
-in the game; 0.2.7 was validated automatically and still needs a current-client test.
+in the game; this release was validated automatically and still needs a current-client test.
 
 ## Interface languages and optional configuration
 

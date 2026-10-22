@@ -151,7 +151,9 @@ class GenerationStore(object):
             except UnsupportedSchemaError:
                 self.read_only = True
                 raise
-            except (ValueError, TypeError, UnicodeError, IOError, OSError):
+            except (ValueError, TypeError, UnicodeError, IOError, OSError, RuntimeError):
+                # Python 2.7 reports decoder/encoder recursion as RuntimeError;
+                # Python 3 RecursionError is its subclass. Try an older backup.
                 damaged += 1
                 continue
             self.sequence = generation

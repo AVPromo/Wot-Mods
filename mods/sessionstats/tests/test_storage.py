@@ -11,6 +11,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 from grz_session_stats.storage import GenerationStore, StorageError, UnsupportedSchemaError, canonical_bytes
+from grz_session_stats import storage
+RECURSION_ERRORS = [RuntimeError]
+if sys.version_info[0] >= 3:
+    RECURSION_ERRORS.append(RecursionError)
 try:
     import builtins
 except ImportError:
@@ -59,6 +63,101 @@ class StorageTests(unittest.TestCase):
         with open(path, 'wb') as handle:
             handle.write(canonical_bytes(envelope))
         self.assertEqual(GenerationStore(self.directory).load(), self.payload(1))
+
+    def _recover_runtime_failure(self, boundary):
+        for error_type in RECURSION_ERRORS:
+            directory = os.path.join(self.directory, boundary + error_type.__name__)
+            writer = GenerationStore(directory)
+            writer.save(self.payload(1))
+            writer.save(self.payload(2))
+            with open(writer._files()[0][1], 'rb') as stream:
+                newest = stream.read().decode('utf-8')
+            calls = []
+            original = getattr(storage.json, 'loads') if boundary == 'decode' else storage.canonical_bytes
+
+            def fail_newest(value, *args, **kwargs):
+                if ((boundary == 'decode' and value == newest) or
+                        (boundary == 'checksum' and value == self.payload(2))):
+                    calls.append(error_type)
+                    raise error_type('simulated recursive generation')
+                return original(value, *args, **kwargs)
+
+            if boundary == 'decode':
+                storage.json.loads = fail_newest
+            else:
+                storage.canonical_bytes = fail_newest
+            recovered = GenerationStore(directory)
+            try:
+                self.assertEqual(recovered.load(), self.payload(1))
+            finally:
+                if boundary == 'decode':
+                    storage.json.loads = original
+                else:
+                    storage.canonical_bytes = original
+            self.assertEqual(calls, [error_type])
+            self.assertIsNotNone(recovered.warning)
+            self.assertFalse(recovered.read_only)
+            self.assertEqual(recovered.sequence, 1)
+            self.assertEqual(recovered.save(self.payload(3)), 3)
+            self.assertEqual(GenerationStore(directory).load(), self.payload(3))
+
+    def test_decoder_runtime_failure_recovers_an_older_generation_and_advances(self):
+        self._recover_runtime_failure('decode')
+
+    def test_checksum_runtime_failure_recovers_an_older_generation_and_advances(self):
+        self._recover_runtime_failure('checksum')
+
+    def test_real_deeply_nested_generation_recovers_without_assuming_a_decoder_depth_limit(self):
+        self.store.save(self.payload(1))
+        depth = 16384
+        raw = (b'{"storage_version":1,"generation":2,"payload_checksum":"damaged",'
+               b'"payload":{"schema_version":1,"value":' + b'[' * depth +
+               b'0' + b']' * depth + b'}}')
+        with open(os.path.join(self.directory, 'state-%020d.json' % 2), 'wb') as stream:
+            stream.write(raw)
+        recovered = GenerationStore(self.directory)
+        self.assertEqual(recovered.load(), self.payload(1))
+        self.assertIsNotNone(recovered.warning)
+        self.assertEqual(recovered.save(self.payload(3)), 3)
+
+    def test_only_recursive_generation_remains_read_only(self):
+        self.store.save(self.payload(1))
+        original = storage.json.loads
+
+        def fail(*args, **kwargs):
+            raise RuntimeError('simulated recursive generation')
+
+        storage.json.loads = fail
+        try:
+            self.assertRaises(StorageError, self.store.load)
+        finally:
+            storage.json.loads = original
+        self.assertTrue(self.store.read_only)
+        self.assertRaises(StorageError, self.store.save, self.payload(2))
+
+    def test_recursive_damage_does_not_bypass_an_older_unsupported_schema(self):
+        self.store.save(self.payload(1))
+        for generation, schema in ((2, 2), (3, 1)):
+            payload = self.payload(generation)
+            payload['schema_version'] = schema
+            envelope = {'storage_version': 1, 'generation': generation, 'payload': payload,
+                        'payload_checksum': hashlib.sha256(canonical_bytes(payload)).hexdigest()}
+            with open(os.path.join(self.directory, 'state-%020d.json' % generation), 'wb') as stream:
+                stream.write(canonical_bytes(envelope))
+        original = storage.canonical_bytes
+
+        def fail_newest(payload):
+            if payload.get('value') == 3:
+                raise RuntimeError('simulated recursive checksum')
+            return original(payload)
+
+        storage.canonical_bytes = fail_newest
+        try:
+            self.assertRaises(UnsupportedSchemaError, self.store.load)
+        finally:
+            storage.canonical_bytes = original
+        self.assertTrue(self.store.read_only)
+        self.assertRaises(StorageError, self.store.save, self.payload(4))
 
     def test_uncommitted_tempfile_is_ignored(self):
         self.store.save(self.payload(1))

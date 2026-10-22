@@ -182,6 +182,8 @@ class StatsWindow(object):
         self._snapshot = snapshot
         self._on_action = on_action
         self._window = None
+        self._closing = False
+        self._destroying = False
         self._view = None
         self._model = None
         self._parent = None
@@ -203,6 +205,9 @@ class StatsWindow(object):
         window = self._window
         if window is None:
             return False
+        if self._closing:
+            # A failed/asynchronous destroy still owns a native input surface.
+            return not self._released(window)
         try:
             from frameworks.wulf import WindowStatus
             return window.proxy is not None and window.windowStatus not in (
@@ -298,11 +303,27 @@ class StatsWindow(object):
             except (ImportError, AttributeError, RuntimeError, TypeError, ValueError):
                 pass
 
+    def _released(self, window):
+        try:
+            if window.proxy is None:
+                return True
+            from frameworks.wulf import WindowStatus
+            return window.windowStatus == WindowStatus.DESTROYED
+        except Exception:
+            # An unavailable native property is not confirmation of release.
+            return False
+
     def _discard(self):
+        self._invalidate()
+        self._window = None
+        self._closing = False
+
+    def _invalidate(self):
+        # Invalidate before native cancellation/unsubscription can reenter us.
+        self._generation += 1
         self._cancel_watchdog()
         self._detach()
-        self._generation += 1
-        self._window = self._view = self._model = self._parent = None
+        self._view = self._model = self._parent = None
         self._reported_size = self._native_size = None
         self._published_viewport = self._center_signature = None
         self._expected_position = None
@@ -437,7 +458,7 @@ class StatsWindow(object):
                 self._keep_visible()
 
     def _on_ready(self, native):
-        if native is not self._window or not self.is_open():
+        if native is not self._window or self._closing or not self.is_open():
             return False
         self._log_once('native_ready', logging.INFO, 'GRZ UI: native window ready.')
         self._center('ready', force=True)
@@ -495,9 +516,12 @@ class StatsWindow(object):
         if native is not self._window:
             return
         from frameworks.wulf import WindowStatus
-        if status in (WindowStatus.DESTROYING, WindowStatus.DESTROYED):
+        if status == WindowStatus.DESTROYED:
             self._log_once('native_released', logging.INFO, 'GRZ UI: native window released.')
             self._discard()
+        elif status == WindowStatus.DESTROYING:
+            self._closing = True
+            self._invalidate()
 
     def _handle_action(self, generation, arg):
         if generation != self._generation or not self.is_open():
@@ -529,6 +553,12 @@ class StatsWindow(object):
             self._on_action(arg)
 
     def open(self):
+        if self._destroying:
+            return False
+        if self._closing or (self._window is not None and not self.is_open()):
+            self.close()
+            if self._window is not None:
+                return False
         if self.is_open():
             self.refresh()
             from frameworks.wulf import WindowStatus
@@ -575,7 +605,7 @@ class StatsWindow(object):
             LOG.exception('Could not update the statistics view model.')
 
     def resize(self, width, height):
-        if not self.is_open():
+        if self._closing or not self.is_open():
             return
         size = _dimensions((width, height))
         if size is None:
@@ -589,12 +619,22 @@ class StatsWindow(object):
             self.refresh()
 
     def close(self):
-        # Destruction releases the native window and its input surface. A
-        # hidden loaded window would still participate in native window rules.
-        window = self._window if self.is_open() else None
-        self._discard()
-        if window is not None:
-            try:
-                window.destroy()
-            except Exception:
-                LOG.exception('Could not destroy the statistics window.')
+        # Keep ownership until native release is confirmed. Retrying close (or
+        # opening later) must not orphan a visible window after destroy raises.
+        if self._destroying:
+            return
+        window = self._window
+        self._closing = window is not None
+        self._destroying = True
+        try:
+            self._invalidate()
+            if window is not None and not self._released(window):
+                try:
+                    window.destroy()
+                except Exception:
+                    LOG.exception('Could not destroy the statistics window; cleanup will be retried.')
+        finally:
+            if window is None or self._released(window):
+                self._window = None
+                self._closing = False
+            self._destroying = False
