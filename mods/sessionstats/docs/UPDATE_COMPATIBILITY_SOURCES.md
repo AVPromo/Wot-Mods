@@ -1,60 +1,107 @@
-# Odporność na aktualizacje WoT — audyt źródeł
+# WoT update resilience — source audit
 
-Data odczytu: **20 października 2026 r.** Punktem odniesienia jest działająca u użytkownika wersja moda **0.2.4**. Audyt dotyczy ograniczania zależności od klienta i skutków ich zmiany; nie jest deklaracją zgodności z niewydanymi wersjami WoT.
+Read on **2026-10-20**, using the user's working **0.2.4** as baseline. This audit
+limits client dependencies and the consequences of their changes; it does not
+claim compatibility with unreleased WoT versions.
 
-## Wniosek
+## Findings
 
-Można zwiększyć odporność na brak pojedynczej funkcji, usunięcie pomocnika grafiki, zmianę opcjonalnego kontrolera oraz błędy podczas otwierania lub zamykania okna. Najmniej utrzymania wymaga zachowanie oddzielnego rdzenia obliczeń i zapisu oraz kilku małych adapterów klienta. Działający panel nie wymaga przepisania na inny silnik ani zastępowania go kopią natywnego panelu.
+Resilience can improve for missing functions, removed image helpers, changed optional
+controllers and window-open/close failures. A separate calculation/storage core
+with small client adapters minimizes maintenance. The working panel does not need
+a different engine or a copy of the native panel.
 
-Nie da się na podstawie obecnych źródeł zagwarantować działania po zmianie formatu wyników bitew, protokołu Wulf/Gameface albo środowiska wykonującego bajtkod. Takie zmiany mogą wymagać dostosowania odpowiedniego adaptera lub ponownej kompilacji. Wykrycie dostępności metody ogranicza awarie strukturalne, lecz samo nie dowodzi zachowania jej znaczenia.
+Current sources cannot guarantee operation after changes to battle-result formats,
+Wulf/Gameface protocols or the bytecode runtime. Those may require adapter updates
+or recompilation. Method availability detects structural failures but does not prove
+unchanged meaning.
 
-## Źródła
+## Sources
 
-Pliki klienta odczytano z publicznego odwzorowania `izeberg/wot-src`, commit **`5e721e36891c80d8d51a431164960c863641ee63`**, gałąź klienta wskazana w wcześniejszej dokumentacji projektu jako **2.4.1.5493**. Jest to materiał do weryfikacji faktycznych kontraktów, a nie oficjalny stabilny SDK Wargaming.
+Client mirror `izeberg/wot-src`, commit **`5e721e36891c80d8d51a431164960c863641ee63`**,
+identified in earlier project documentation as client **2.4.1.5493**. These establish
+actual contracts, not an official stable Wargaming SDK.
 
-| Źródło | Potwierdzone zachowanie | Znaczenie dla moda |
+| Source | Verified behavior | Consequence for the mod |
 | --- | --- | --- |
-| [Loader gui/mods](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/mods/__init__.py) | Rozpoznaje moduły `mod_*.pyc` w wydaniu produkcyjnym i wywołuje `init`/`fini`. `_callModMethod` przechwytuje `AttributeError`, a import modułu w `_findValidMODs` — `ImportError`. | Własna kontrola błędów na wejściu i wyjściu jest uzasadniona. Nie należy zakładać, że wywołujący otoczy każdy błąd moda pełną izolacją. |
-| [Event.py](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/Event.py) | Zwykły `Event` ponownie zgłasza wyjątek słuchacza, a `SafeEvent` ma odmienną obsługę. | Kod moda powinien sam izolować swoje granice wywołań; nie należy zakładać, że każde zdarzenie klienta jest `SafeEvent`. |
-| [PlayerEvents.py](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/PlayerEvents.py) | Zawiera zdarzenia konta, wejścia do bitwy i `onBattleResultsReceived`, z których korzysta adapter. | Subskrypcje są mniejszą powierzchnią zmian niż podmienianie dużych metod klienta. Uszkodzona opcjonalna subskrypcja nie powinna blokować pozostałych. |
-| [LobbyFooter](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/lobby/page/lobby_footer.py) | Stopka jest `ViewComponent`; rejestruje własne dzieci, w tym natywne statystyki sesji. | Mały własny komponent jest rozsądny, ale ścieżka klasy i jej cykl życia pozostają zależnościami klienta. Skrót do oddzielnego okna ogranicza skutki zmiany stopki. |
-| [Oficjalny support: problemy związane z modyfikacjami](https://wargaming.net/support/en/products/wot/article/15252/) | Opisuje problemy wywoływane przez mody i uruchomienie czystego klienta w trybie bez modów, bez resetowania ustawień. | Źródło nie daje obietnicy niezmienności wykorzystanych wewnętrznych interfejsów. Kontrola w przeglądarce nie zastępuje uruchomienia moda w nowym kliencie. |
+| [gui/mods loader](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/mods/__init__.py) | Production recognizes `mod_*.pyc` and calls `init`/`fini`. `_callModMethod` catches `AttributeError`; `_findValidMODs` imports catch `ImportError`. | Guard entry/exit locally; do not assume the caller isolates every mod failure. |
+| [Event.py](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/Event.py) | Ordinary `Event` rethrows listener exceptions; `SafeEvent` differs. | Isolate mod callback boundaries; not every client event is `SafeEvent`. |
+| [PlayerEvents.py](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/PlayerEvents.py) | Provides account, battle-entry and `onBattleResultsReceived` events used by the adapter. | Subscriptions expose less change surface than replacing large methods. One optional failure should not block the rest. |
+| [LobbyFooter](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/lobby/page/lobby_footer.py) | A `ViewComponent` registering children including native session statistics. | A small component is appropriate, but class paths/lifecycle remain dependencies. The separate-window shortcut limits footer-change effects. |
+| [Official support: modification-related issues](https://wargaming.net/support/en/products/wot/article/15252/) | Describes mod-related problems and clean-client launch without mods or resetting settings. | It does not promise stable internals. Browser checks do not replace testing in the updated client. |
 
-Identyfikatory odczytanych plików: loader `736f2c29ff76644d6cf705b9011389b6136e391d`; `Event.py` `085542140af9e7821f9bd0058242f72e58ab8c80`; `PlayerEvents.py` `9f856791d624bdb147004c5ca0591df43b7049a1`; `LobbyFooter` `c3673d182cfda5711151fdc5b8543051ef3be570`.
+Reviewed blob IDs: loader `736f2c29ff76644d6cf705b9011389b6136e391d`;
+`Event.py` `085542140af9e7821f9bd0058242f72e58ab8c80`;
+`PlayerEvents.py` `9f856791d624bdb147004c5ca0591df43b7049a1`;
+`LobbyFooter` `c3673d182cfda5711151fdc5b8543051ef3be570`.
 
-## Priorytety poprawy
+## Improvement priorities
 
-1. **Odbiór i zapis wyników niezależny od opcjonalnego UI.** Brak przycisku, importu okna, pomocnika miniatur lub sygnału klawiatury nie powinien sam zatrzymywać usług statystyk, jeśli ich właściwe źródło nadal działa.
-2. **Kontrola każdej granicy klienta osobno.** Podłączanie, wywoływanie i odłączanie słuchaczy oraz operacje okna powinny mieć odrębne ścieżki błędów. Błąd jednego elementu nie powinien przerywać sprzątania pozostałych ani wypływać do natywnego dispatchera.
-3. **Zasoby przez nazwy i identyfikatory klienta.** Obecne używanie własnego rejestru zasobów i rozwiązywanie miniatur w adapterze jest korzystniejsze niż utrwalanie numerycznych identyfikatorów zasobów. Awaria jednej rodziny grafik nie powinna wyłączać pozostałych.
-4. **Zachowanie znaczenia danych.** Nieznana lub niepełna dana pozostaje nieznana. Mechanizm zgodności nie może zastępować brakujących kosztów zerem, dowolnie interpretować nowej krotki lub wpisywać domyślnego wyniku bitwy.
-5. **Sprawdzanie dostępnych możliwości zamiast listy numerów wersji.** Zmieniony numer klienta nie oznacza automatycznie niezgodności wszystkich elementów. Z drugiej strony sama obecność starej nazwy metody nie dowodzi, że jej argumenty i wynik mają niezmienione znaczenie.
+1. **Result receipt/storage independent of optional UI.** A missing button, window
+   import, thumbnail helper or keyboard signal should not stop statistics if their
+   actual result source still works.
+2. **Guard each client boundary separately.** Listener attachment/calls/removal and
+   window operations need independent failure paths. One failure must neither
+   prevent other cleanup nor escape into the native dispatcher.
+3. **Use named client resources.** Dedicated registration and thumbnail adapters
+   avoid fixed numeric resource IDs. One image family's failure should not disable
+   the others.
+4. **Preserve data meaning.** Unknown/partial data stays unknown. Compatibility
+   handling must not replace missing costs with zero, guess new tuples or invent
+   a battle outcome.
+5. **Check capabilities rather than version lists.** A new client number does not
+   invalidate everything; an existing method name alone does not prove unchanged
+   argument/result semantics.
 
-## Kolejność walut: pozostaje jawny kontrakt wyniku
+## Currency ordering remains an explicit result contract
 
-Ponownie sprawdzono [gui/shared/money.py](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/money.py), blob `751c6da56b3560f3f0198c860efdd6bc4d95cafb`. `Currency.ALL` wymienia waluty modelu `Money`, lecz **nie deklaruje pozycji w polach wyniku bitwy `autoLoadCost`, `autoEquipCost` ani `autoEquipBoostersCost`**. Nie ma podstaw, aby traktować to wyliczenie jako metadane tych trzech pól.
+Rechecked [gui/shared/money.py](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/money.py),
+blob `751c6da56b3560f3f0198c860efdd6bc4d95cafb`. `Currency.ALL` lists the `Money`
+model currencies but **does not define positions in battle-result `autoLoadCost`,
+`autoEquipCost` or `autoEquipBoostersCost`**. It is not metadata for those fields.
 
-Aktualny [natywny czytnik ekonomii wyników](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/battle_results/reusable/economics_records.py), blob `da97053f85b1faa329971e775c9daf6154469c7e`, wprost używa indeksów:
+The [native result-economy reader](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/battle_results/reusable/economics_records.py),
+blob `da97053f85b1faa329971e775c9daf6154469c7e`, uses explicit indexes:
 
-| Pole | Indeks 0 | Indeks 1 | Indeks 2 |
+| Field | Index 0 | Index 1 | Index 2 |
 | --- | --- | --- | --- |
-| `autoLoadCost` | kredyty | złoto | nie jest odczytywany |
-| `autoEquipCost` | kredyty | złoto | obligacje (`crystal`) |
+| `autoLoadCost` | Credits | Gold | Not read |
+| `autoEquipCost` | Credits | Gold | Bonds (`crystal`) |
 
-Odczyt znajduje się w liniach 61–71 i 95–98 przypiętego pliku. [Deklaracja wyniku po stronie wspólnego kodu](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/battle_results_common.py), blob `a8476aed85f0cfce21e6a3c9fb267e6cc533ae21`, definiuje `autoLoadCost` jako krotkę z domyślnym `(0, 0)`, a `autoEquipCost` i `autoEquipBoostersCost` jako krotki z `(0, 0, 0)`; nie dostarcza nazwanych pozycji dla zewnętrznego adaptera.
+These reads are at lines 61–71 and 95–98. The [shared result declaration](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/battle_results_common.py),
+blob `a8476aed85f0cfce21e6a3c9fb267e6cc533ae21`, defines `autoLoadCost` as a tuple
+defaulting to `(0, 0)` and `autoEquipCost`/`autoEquipBoostersCost` defaulting to
+`(0, 0, 0)` without named adapter positions.
 
-Dlatego zachowujemy znany kontrakt natywnego czytnika. Powiązanie go z `Currency.ALL` stworzyłoby dodatkowe założenie zamiast faktycznie usuwać zależność. Zmiana semantyki pól finansowych lub ich serializacji pozostaje realną granicą zgodności, wymagającą sprawdzenia nowego kodu klienta i rozliczenia konkretnego wyniku. Obecne nazwy pól, formuły i kolejność walut nie są automatycznie zgadywane.
+Keep this known native-reader contract. Mapping it to `Currency.ALL` would add an
+assumption instead of removing a dependency. Changed financial semantics or
+serialization still require reviewing new client code and a concrete settlement.
+Field names, formulas and currency ordering are not automatically guessed.
 
-## Ładowanie po zmianie numeru klienta
+## Loading after a client-version change
 
-Zestaw instalacyjny umieszcza pliki `.wotmod` w `mods/<wersja klienta>/`; zapis statystyk leży osobno w AppData. Zmiana aktywnego katalogu wersji i zgodność kodu to dwie różne kwestie. Przeniesienie paczki może rozwiązać wyłącznie pierwszą z nich.
+The installer places `.wotmod` files in `mods/<client_version>/`; statistics remain
+in AppData. Active-folder selection and code compatibility are separate: moving
+a package addresses only folder selection.
 
-Oficjalna [instrukcja modyfikacji z 17 grudnia 2018 r.](https://worldoftanks.eu/pl/news/general-news/dress-up-santa-vs-krampus/) pokazuje instalację w wersjonowanym podkatalogu `Mods`. Oficjalny [opis techniczny 9.15.1](https://worldoftanks.eu/en/news/general-news/update-9151-technical-aspect/) dokumentuje historyczny przykład zmiany interfejsu, po której przenoszenie starych modów mogło powodować niestabilność. To **dowody historyczne**, nie instrukcja określająca numer bieżącego klienta w październiku 2026 r.
+The official [modification guide dated 2018-12-17](https://worldoftanks.eu/pl/news/general-news/dress-up-santa-vs-krampus/)
+shows a versioned `Mods` subdirectory. The official [9.15.1 technical article](https://worldoftanks.eu/en/news/general-news/update-9151-technical-aspect/)
+records an interface change after which moving old mods could cause instability.
+These are **historical evidence**, not instructions specifying the current October
+2026 client version. The original Polish source URL is retained as evidence.
 
-Nie wprowadzamy obchodzenia mechanizmu ładowania przez modyfikowanie podstawowych ścieżek gry ani automatycznego aktywowania paczki w każdym przyszłym kliencie. Pozostaje instalacja dla faktycznie używanej wersji i krótka weryfikacja po większej aktualizacji.
+The mod does not bypass loading through core path modifications or activate itself
+automatically in every future client. Install for the actual version and perform
+a short check after major updates.
 
-## OpenWG i granice sprawdzenia
+## OpenWG and validation limits
 
-Dołączony OpenWG Gameface **1.2.2** zachowuje przypiętą wersję i źródła zapisane w `third_party/openwg/`. Wykorzystuje się go do przycisku garażu; oddzielne okno nie powinno wymagać tego modułu. Utrzymywana wspólna biblioteka zmniejsza ilość własnego kodu integracyjnego, ale nie stanowi gwarancji zgodności z przyszłymi zmianami WoT. Audyt nie wymaga zmiany tej działającej zależności.
+Bundled OpenWG Gameface **1.2.2** retains the pinned version/sources in
+`third_party/openwg/`. It supports the garage button; the separate window should
+not require it. A maintained shared library reduces custom integration code but
+does not guarantee future compatibility. This audit does not require replacing
+the working dependency.
 
-Testy nieobecnych metod, odrzuconych subskrypcji i błędów opcjonalnych elementów mogą sprawdzić zaprojektowane ścieżki awaryjne. Nie są emulatorem wszystkich przyszłych aktualizacji. Nie uruchamiano tutaj nowej wersji klienta WoT, nie wykonywano bitew ani nie weryfikowano niewydanego formatu wyników.
+Tests for missing methods, rejected subscriptions and optional failures validate
+specific fallback paths, not all future updates. No new live client, battles or
+unreleased result format were tested here.

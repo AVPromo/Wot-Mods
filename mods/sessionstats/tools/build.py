@@ -43,7 +43,7 @@ def render_guide(relative, content, version, client_version):
     text = text.replace('wot-statystyki-sesji-v'+VERSION+'.zip', 'wot-statystyki-sesji-v'+version+'.zip')
     text = text.replace('mods/2.4.1.0/', 'mods/'+client_version+'/')
     if relative == 'README_PL.txt':
-        text = re.sub(r'(?m)^Wersja '+re.escape(VERSION)+r'\b', 'Wersja '+version, text)
+        text = re.sub(r'(?m)^Version '+re.escape(VERSION)+r'\b', 'Version '+version, text)
     return text.encode('utf-8')
 
 

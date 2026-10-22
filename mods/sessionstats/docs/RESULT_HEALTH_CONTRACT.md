@@ -1,98 +1,84 @@
-# Kontrola formatu wyników — kontrakt 0.2.6
+# Result-format health check — contract 0.2.6
 
-## Co sprawdza kontrola
+## Checked data
 
-`health.inspect_result(results, context=None, random_bonus_type=1)` jest funkcją
-bez I/O i bez importów klienta WoT. Zwraca listę wpisów
-`{code, path, expected, actual}`, nie zmieniając przekazanego wyniku.
+`health.inspect_result(results, context=None, random_bonus_type=1)` performs no I/O
+and imports no WoT client code. It returns `{code, path, expected, actual}` entries
+without modifying the supplied result. The caller excludes transport errors and
+"not ready yet" responses; waiting alone is not evidence of a format change.
 
-Kontrola dotyczy dostarczonej odpowiedzi z wynikiem. Warstwa wywołująca pomija
-odpowiedzi „jeszcze niegotowe” i błędy transportu; samo oczekiwanie na wynik
-nie jest dowodem zmiany formatu.
+Checks include:
 
-Sprawdzane są:
+- Root result type and `common`, `personal`, `avatar` containers, plus present
+  `players`, `vehicles` and `avatars` containers.
+- Adapter-required identifiers, outcome, WN8, XP, currencies, costs and deductions;
+  types, nonnegative relevant values and supported team numbers.
+- New field names in the envelope, common, avatar, vehicle and player records.
+  The catalog is pinned to reviewed client definitions; the first post-update
+  result does not automatically become a new baseline.
+- Two-element `autoLoadCost` and three-element `autoEquipCost` /
+  `autoEquipBoostersCost`, including bonds at the verified equipment-cost position.
+- Vehicle identity and known directive-cost splits already included in automatic
+  equipment resupply.
 
-- Typ głównego wyniku oraz kontenerów `common`, `personal`, `avatar`,
-  a także obecnych kontenerów `players`, `vehicles` i `avatars`.
-- Wymagane przez adapter identyfikatory, pola wyniku, WN8, PD, walut,
-  kosztów i potrąceń; rodzaje danych, nieujemność właściwych wartości
-  i obsługiwane numery drużyn.
-- Nowe nazwy pól w kopercie, common, avatar, pojazdach i rekordach graczy.
-  Katalog jest przypięty do odczytanych definicji klienta. Pierwszy wynik
-  po aktualizacji nie staje się automatycznie „nową prawdą”.
-- Krotki `autoLoadCost` o dwóch elementach i `autoEquipCost` /
-  `autoEquipBoostersCost` o trzech elementach, również obligacje na
-  potwierdzonej pozycji kosztu wyposażenia.
-- Zgodność tożsamości pojazdu oraz znanego podziału kosztów dyrektyw
-  zawartych już w automatycznym uzupełnieniu wyposażenia.
+The catalog contains 20 common names, 62 avatar names, 249 combined vehicle-record
+names and seven player names, combined from applicable `BATTLE_RESULTS`,
+`BATTLE_PASS_RESULTS` and `random` categories. It does not require every field:
+most are unused by the mod or conditional. Scalar-type validation covers fields
+read by the adapter; other names serve new-field detection.
 
-Katalog obejmuje 20 nazw w common, 62 w avatar, 249 w połączonych rekordach
-pojazdów oraz 7 w danych gracza. Jest to suma odpowiednich kategorii
-`BATTLE_RESULTS`, `BATTLE_PASS_RESULTS` i rozszerzenia `random`.
-Nie wymaga obecności wszystkich tych pól: większość nie jest używana
-przez mod albo występuje warunkowo. Kontrola typów skalarnych dotyczy pól
-czytanych przez adapter; katalog pozostałych pól służy wykrywaniu nowych nazw.
+Changed damage, XP, outcome, player count, dynamic record identifiers, absent unused
+optional fields and a list replacing an equivalent supported expense tuple do not
+trigger alarms. Unused player/avatar/vehicle maps validate key types without assuming
+positivity: client `convertToFullForm` does not guarantee positive keys for every
+record. The player's accountDBID, arenaUniqueID and typeCompDescr must still be
+positive. A missing deduction multiplier is an alarm only for a nonzero deduction;
+a malformed present multiplier remains an incompatibility. Recognized results from
+another account, replays and other supported modes are outside this random-battle
+scope and excluded from its checks.
 
-Nie generują alarmu sama zmiana obrażeń, PD, wyniku bitwy, liczby graczy,
-identyfikatorów w mapach rekordów, brak nieużywanego pola opcjonalnego ani
-użycie listy zamiast krotki z tym samym obsługiwanym układem kosztów.
-W nieużywanych mapach graczy, avatarów i pojazdów sprawdzany jest typ klucza,
-bez zakładania dodatniego znaku: źródłowe `convertToFullForm` nie gwarantuje
-dodatnich wartości dla wszystkich takich rekordów. Własne accountDBID,
-arenaUniqueID i typeCompDescr nadal muszą być dodatnie.
-Brak mnożnika potrącenia jest alarmem tylko przy niezerowym potrąceniu;
-wadliwy obecny mnożnik jest nadal widoczną niezgodnością.
-Prawidłowo rozpoznany wynik innego konta, replay i obsługiwane przez klienta
-inne tryby są wyłączone z kontroli dotyczącej naszego zakresu bitew losowych.
+## Partial-result storage
 
-## Zapis częściowego wyniku
+An unused new field does not by itself prevent normalization of known data. Unknown
+numeric types remain unknown. Changed-length currency tuples are not read using
+old indexes because positional meanings cannot be confirmed. With known length and
+positions, one unavailable amount does not erase other confirmed currencies.
+Financial failures do not erase valid combat results or XP.
 
-Nowe nieużywane pole samo nie blokuje znormalizowania znanych danych.
-Nieznany typ liczby pozostaje nieznany. Nie odczytujemy znanych indeksów
-z wydłużonej albo skróconej krotki walut: nie da się wówczas potwierdzić,
-że pozycje zachowały znaczenie.
+## Diagnostics
 
-Jeżeli długość i pozycje są znane, ale jedna konkretna kwota jest niedostępna,
-pozostałe potwierdzone waluty zachowują niezależne wartości. Awaria części
-finansowej nie usuwa poprawnie odczytanego wyniku walki ani PD.
+At most 32 entries are returned, with fixed text and inspected-field/record limits.
+Entries contain schema paths and type/shape or consistency descriptions, without
+statistic values, account/player/vehicle numbers, nicknames or full raw results.
+Dynamic record keys become `<record>` or `vehicle`. Invalid, oversized and non-field
+keys are masked.
 
-## Zakres diagnostyki
+The function sends no notifications, writes no files and does not determine pending
+counts. Notifications, deduplication/rate limits, dedicated logging and button
+activity belong to runtime.
 
-Lista zawiera najwyżej 32 wpisy, ze stałymi limitami długości tekstu i
-liczby przeglądanych pól/rekordów. Zawiera wyłącznie ścieżkę schematu i
-opis typu/kształtu lub niespójności. Nie zawiera wartości statystyk, numeru
-konta, numerów graczy/pojazdów, nicków ani całego surowego wyniku.
-Dynamiczne klucze rekordów są reprezentowane jako `<record>` lub `vehicle`.
-Niepoprawne, bardzo długie i niepasujące do nazw pól klucze są maskowane.
+## Limits
 
-Funkcja nie wysyła komunikatów, nie zapisuje plików i nie ustala liczby
-oczekujących wyników. Powiadomienia, ograniczenie ich powtarzania,
-własny log moda oraz stan przycisku należą do warstwy runtime.
+Changed numeric meaning with unchanged field names, types and valid ranges cannot
+be established from payload alone. Checks do not prove unchanged internals of unused
+nested extensions or detect removal of unused optional fields. Major protocol
+changes still require comparison with a native battle report. New fields can be
+harmless extensions; warnings indicate deviation from the verified contract, not
+that all statistics are wrong.
 
-## Granice
+## Sources read on 2026-10-21
 
-Zmiana znaczenia liczby przy identycznych nazwach, typach i poprawnych
-zakresach nie może zostać wykazana z samego payloadu. Kontrola nie dowodzi
-też niezmienności wnętrz nieużywanych zagnieżdżonych rozszerzeń ani usunięcia
-nieużywanego pola opcjonalnego. Nie zastępuje porównania z natywnym raportem
-po dużej zmianie protokołu. Nowe pole może być nieszkodliwym rozszerzeniem;
-ostrzeżenie sygnalizuje zmianę względem sprawdzonego kontraktu, nie dowodzi
-błędu wszystkich statystyk.
+Shared public `izeberg/wot-src` mirror commit:
+`5e721e36891c80d8d51a431164960c863641ee63` (client 2.4.1.5493).
+These verify implementation rather than declare a stable SDK.
 
-## Źródła odczytane 21.10.2026
-
-Wspólny commit: `5e721e36891c80d8d51a431164960c863641ee63` w publicznym
-odwzorowaniu kodu klienta `izeberg/wot-src` (gałąź 2.4.1.5493).
-Odczyt służy weryfikacji faktycznej implementacji, nie deklaracji stabilnego SDK.
-
-- [Definicje pól i kosztów](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/battle_results_common.py),
+- [Field and expense definitions](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/battle_results_common.py),
   blob `a8476aed85f0cfce21e6a3c9fb267e6cc533ae21`.
-- [Składanie schematu według kategorii](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/__init__.py).
-- [Przypisanie trybu losowego do rozszerzenia random](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/battle_results_constants.py).
-- [Dodatkowe pole trybu losowego](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/random.py),
+- [Category-based schema assembly](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/__init__.py).
+- [Random-mode extension assignment](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/battle_results_constants.py).
+- [Additional random-mode field](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/battle_results/random.py),
   blob `60149af5c3da7728bc294a5a75d9f77aacfea9a4`.
-- [Budowanie pełnej koperty i dynamicznych map rekordów](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client_common/shared_utils/account_helpers/BattleResultsCache.py),
-  blob `f2f88011e792c06d332f73ac3aa237c567d8567f`, funkcja `convertToFullForm`.
-- [Nazwy sekcji używane przez UI klienta](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/battle_results/settings.py),
+- [Full envelope and dynamic record maps](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client_common/shared_utils/account_helpers/BattleResultsCache.py),
+  blob `f2f88011e792c06d332f73ac3aa237c567d8567f`, function `convertToFullForm`.
+- [Section names used by client UI](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/battle_results/settings.py),
   blob `63e443d35b0f11a7c5fa3caf172b401792949e5f`.
-

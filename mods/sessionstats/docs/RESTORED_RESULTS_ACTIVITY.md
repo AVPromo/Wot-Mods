@@ -1,26 +1,23 @@
-# Spinner po ponownym uruchomieniu gry
+# Spinner after restarting the game
 
-Przyczyną stałego oczekiwania bez rozegrania nowej bitwy było utożsamienie
-nierozliczonych wpisów dziennika z bieżącą aktywnością klienta. Wpis rozpoczętej
-bitwy może pozostać niepełny po zamknięciu gry. Jeśli klient nie udostępnia jej
-wyniku w cache, taki wpis sam nie znika przy następnym uruchomieniu.
+Persistent waiting without a new battle was caused by treating unsettled journal
+entries as current client activity. A battle-entry record can remain incomplete
+after shutdown. If the client cache cannot supply its result, that entry does
+not disappear on the next launch.
 
-Przycisk w garażu sygnalizuje teraz oczekiwanie na wyniki bitew zaobserwowanych
-w bieżącym uruchomieniu oraz faktyczne przetwarzanie wyniku lub premii PD.
-Wcześniejsze niepełne wpisy pozostają w historii i w kolejce odczytu cache.
-Panel pokazuje ich liczbę z wyjaśnieniem; przycisk Odśwież ponawia odczyt.
-Udane odzyskanie rozlicza wynik zwykłą ścieżką, z zachowaniem deduplikacji.
-Nie ma migracji schematu, usuwania historii ani uznawania braków za zera.
+The garage button now indicates waiting for battles observed during the current
+launch and actual result/XP-bonus processing. Older incomplete entries remain in
+history and the recovery queue. The panel explains their count; Refresh retries
+reads. Successful recovery follows normal settlement and deduplication. No schema
+migration, history deletion or replacement of unknown values with zero is involved.
 
-Odzyskiwanie i jawne pokrycie statystyk opisuje
-[OFFLINE_RESULT_RECOVERY.md](OFFLINE_RESULT_RECOVERY.md). Wskaźnik aktywności
-nie jest miarą kompletności danych. Ta jest pokazywana osobno jako liczba
-odebranych wyników względem wszystkich zarejestrowanych bitew.
+[OFFLINE_RESULT_RECOVERY.md](OFFLINE_RESULT_RECOVERY.md) describes recovery and
+explicit statistical coverage. Activity is separate from completeness, which is
+shown as received results divided by all recorded battles.
 
-Testy obejmują restart bez nowej bitwy, niegotowy cache, odzyskanie starego
-wyniku, nową bitwę obok zaległości, ręczne odświeżenie i reset zakresu,
-ponowny start tej samej instancji, reconnect do trwającej bitwy oraz stary
-lub bieżący wynik dostarczony bez zdarzenia avatar-ready.
+Tests cover restart without a new battle, unavailable cache, old-result recovery,
+a new battle alongside backlog, manual refresh/reset, restarting the same runtime,
+reconnection to an ongoing battle and old/current results without avatar-ready.
 
-Zgłoszenie odtworzono na syntetycznych danych testowych. Logów, zrzutów
-ekranu, identyfikatorów konta i prywatnej historii gracza nie dodano do repo.
+The issue was reproduced with synthetic fixtures. No private logs, screenshots,
+account identifiers or player history were added to the repository.

@@ -1,81 +1,78 @@
-STATYSTYKI SESJI 0.2.3 — SKŁADNIKI ZEWNĘTRZNE I ŹRÓDŁA
-20.10.2026
+SESSION STATS 0.2.3 — THIRD-PARTY COMPONENTS AND SOURCES
+2026-10-20
 
 1. OpenWG Gameface 1.2.2
-Autorzy: Andrii Andrushchyshyn, Mikhail Paulyshka i współtwórcy OpenWG.
-Licencja MIT; pełne oryginalne zawiadomienie jest w source/third_party/openwg/LICENSE.
-Dołączona paczka net.openwg.gameface_1.2.2.wotmod pochodzi z wydania autora i nie
-została zmodyfikowana. Umożliwia załadowanie przycisku wewnątrz stopki garażu.
-Wydanie: https://gitlab.com/openwg/wot.gameface/-/releases/v1.2.2
-Źródła: https://gitlab.com/openwg/wot.gameface/-/tree/v1.2.2
+Authors: Andrii Andrushchyshyn, Mikhail Paulyshka and OpenWG contributors.
+MIT license; complete original notice: source/third_party/openwg/LICENSE.
+Bundled net.openwg.gameface_1.2.2.wotmod is the author's unmodified release.
+It enables loading the button inside the garage footer.
+Release: https://gitlab.com/openwg/wot.gameface/-/releases/v1.2.2
+Source: https://gitlab.com/openwg/wot.gameface/-/tree/v1.2.2
 Commit: ca0d87251e68aec578d2bf3356c004236a5e406b
 SHA-256: 2bb65f28663e3ab34b5a1102a1bbd1f6e17a65e1f6a898a8645c4ab732b50184
 
-2. WN8 — wartości oczekiwane XVM, wariant Wargaming
-Publikator danych: zespół XVM, modxvm.com.
-Tabela: https://modxvm.com/en/wn8-expected-values/
-Plik: https://static.modxvm.com/wn8-data-exp/json/wg/wn8exp.json
-Wersja pobrana 20.10.2026: 2026-10-19, 999 pojazdów.
+2. WN8 — XVM expected values, Wargaming variant
+Data publisher: XVM team, modxvm.com.
+Table: https://modxvm.com/en/wn8-expected-values/
+File: https://static.modxvm.com/wn8-data-exp/json/wg/wn8exp.json
+Downloaded on 2026-10-20: version 2026-10-19, 999 vehicles.
 SHA-256: 00ac1b79966f3243c8f9ee3f7a9fee8b83edcb03ee9c9f137f7b2914b0fc69ff
-Nie zastosowano wariantu Lesta ani przelicznika dwucyfrowej skali XVM.
-Opis formuły autorów WN8, zachowany przez społeczność Korean Random:
+Neither the Lesta variant nor XVM's two-digit rating conversion is used.
+WN8 authors' formula explanation preserved by the Korean Random community:
 https://koreanrandom.com/forum/topic/81531-wn8-a-detailed-article-about-the-rating-and-its-formula-from-its-developers/
-WN8 nie jest oficjalnym wskaźnikiem Wargaming.
+WN8 is not an official Wargaming rating.
 
-3. Integracja klienta — źródła techniczne
-Zanju WoT Mods, przemyslaw-zan i współtwórcy, GPL-3.0:
+3. Client integration — technical sources
+Zanju WoT Mods, przemyslaw-zan and contributors, GPL-3.0:
 https://github.com/przemyslaw-zan/zanju-wot-mods
 docs/reference/runtime-layout-and-packaging.md
 docs/reference/gameface-mod-widgets.md
 mods/campaign-tracker/src/zanju_ct/gameface/card_window.py
 mods/directives-helper/src/zanju_dh/gameface/bar_probe_inject.py
-Wzorce okna Wulf, rejestracji zasobów oraz własnego komponentu w stopce zostały
-przystosowane do tego moda. Nowy kod, kompletne źródła i skrypt budowy są dołączone
-na warunkach GPL-3.0; tekst licencji znajduje się w LICENSE.txt.
+Wulf-window, resource-registration and dedicated-footer patterns were adapted
+for this mod. New code, complete source and builder are included under GPL-3.0;
+the license text is in LICENSE.txt.
 
-Wotstat Analytics, autorzy projektu wotstat:
+Wotstat Analytics, wotstat project authors:
 https://github.com/wotstat/wotstat-analytics
-Źródło do sprawdzenia kształtu zdarzenia wyniku bitwy i pól rozliczeń.
-Kod tego moda nie wysyła danych do Wotstat ani żadnej usługi analitycznej.
+Used to verify battle-result event shapes and settlement fields. This mod sends
+no data to Wotstat or any analytics service.
 
-Mirror kodu klienta, izeberg/wot-src, gałąź EU (2.4.1.5493):
+Client-code mirror, izeberg/wot-src, EU branch (2.4.1.5493):
 https://github.com/izeberg/wot-src/tree/EU
-Sprawdzone kontrakty: gui/battle_results/components/details.py, service.py,
+Reviewed contracts: gui/battle_results/components/details.py, service.py,
 reusable/economics_records.py, reusable/personal.py, stats_ctrl.py,
 frameworks/wulf/__init__.py, frameworks/wulf/windows_system/window.py,
 frameworks/wulf/windows_system/windows_area.py, frameworks/wulf/gui_application.py,
-skeletons/gui/impl.py oraz gui/impl/pub/window_impl.py.
-Służył do weryfikacji wewnętrznego API, zasad rozliczeń i cyklu życia okna.
-Kod klienta nie jest dołączony. Wewnętrzne API może zmienić się w aktualizacji.
+skeletons/gui/impl.py and gui/impl/pub/window_impl.py.
+Used to verify internal APIs, settlement rules and window lifecycle. Client code
+is not bundled. Internal APIs can change in updates.
 
-Gameface, dokumentacja producenta Coherent Labs:
+Gameface, official Coherent Labs documentation:
 https://docs.coherent-labs.com/cpp-gameface/content_development/supported_features_tables/htmlelements/
 https://docs.coherent-labs.com/cpp-gameface/what_is_gfp/htmlfeaturesupport/
 https://docs.coherent-labs.com/cpp-gameface/content_development/tailwindsupport/
 https://docs.coherent-labs.com/cpp-gameface/content_development/supported_features_tables/cssproperties/
-Sprawdzono częściowe wsparcie button oraz różnice układu tekstu i domyślnych
-wartości flex względem przeglądarki. Panel definiuje układ i etykiety jawnie.
-W 0.2.2 usunięto currentColor z tła słupków ikony: dokumentacja producenta
-wprost wskazuje brak obsługi tego słowa kluczowego dla koloru tła.
-Aktualna dokumentacja Gameface nie potwierdza wersji silnika w danym WoT;
-przeglądarka i symulacje API nie zastępują sprawdzenia w rzeczywistym kliencie.
-Szczegółowe źródła kontraktów okna: source/docs/UI_0.2.1_SOURCE_EVIDENCE.md
-oraz source/docs/UI_0.2.2_SOURCE_EVIDENCE.md.
+Reviewed partial button support and text-layout/default-flex differences from
+browsers. Panel layout and labels are explicit. Version 0.2.2 removed currentColor
+from icon-bar backgrounds because the vendor documents it as unsupported there.
+Current documentation does not establish the engine version inside a particular
+WoT build; browsers and API simulations do not replace a real-client test.
+Window contracts: source/docs/UI_0.2.1_SOURCE_EVIDENCE.md and
+source/docs/UI_0.2.2_SOURCE_EVIDENCE.md.
 
-Mirror zasobów klienta, Kurzdor/wot.assets, wydanie 2.4.1.0 #977:
+Client-resource mirror, Kurzdor/wot.assets, release 2.4.1.0 #977:
 https://github.com/Kurzdor/wot.assets/tree/3605bd36c53d10c16be5d93f5414aa5fd129e84e
-Commit z 16.10.2026: 3605bd36c53d10c16be5d93f5414aa5fd129e84e.
-Sprawdzono zdarzenie GFViewEventProxy MOVE w tutorial.js i MembersWindow.js,
-natywne użycie loadera img:// oraz rejestr i katalog grafik pojazdów i map.
-Źródła służą weryfikacji adapterów; grafiki gry nie są dołączone do wydania.
-Kontrakty miniatur i dokładne źródła: source/docs/VISUALS_0.2.2_SOURCE_EVIDENCE.md.
-W 0.2.3 sprawdzono kierunek przewijania w InfoView.js oraz przekazywanie
-DOM deltaY w dołączonym React w InfoView.html z tego samego commitu.
-Dokładny łańcuch źródeł i granice weryfikacji, w tym flagi cancelable:
-source/docs/WHEEL_0.2.3_SOURCE_EVIDENCE.md.
+Commit dated 2026-10-16: 3605bd36c53d10c16be5d93f5414aa5fd129e84e.
+Reviewed GFViewEventProxy MOVE in tutorial.js/MembersWindow.js, native img://
+loading and vehicle/map image registries. These verify adapters; game artwork is
+not redistributed. Thumbnail contracts: source/docs/VISUALS_0.2.2_SOURCE_EVIDENCE.md.
+Version 0.2.3 checked InfoView.js wheel direction and bundled React's DOM deltaY
+forwarding in InfoView.html at the same commit. Exact source chain and validation
+limits, including cancelable flags: source/docs/WHEEL_0.2.3_SOURCE_EVIDENCE.md.
 
-4. Zasoby i nazwy gry
-World of Tanks jest grą Wargaming. Mod używa fontów dostępnych w uruchomionym
-kliencie gry. Miniatury odwołują się do zasobów pojazdów i map zainstalowanych
-w kliencie. Nie dołącza skopiowanych fontów, grafik garażu ani plików klienta.
-Przykładowe wyniki w PODGLAD.html są syntetyczne i nie są statystykami użytkownika.
+4. Game resources and names
+World of Tanks is a Wargaming game. The mod uses fonts supplied by the running
+client. Thumbnails reference vehicle/map resources installed in the client.
+Copied fonts, garage artwork and client files are not bundled. PODGLAD.html
+examples are synthetic and are not the user's statistics.

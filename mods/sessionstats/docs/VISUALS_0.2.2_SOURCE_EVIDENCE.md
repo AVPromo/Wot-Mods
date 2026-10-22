@@ -1,56 +1,58 @@
-# Miniatury 0.2.2: identyfikatory i zasoby klienta
+# Thumbnails 0.2.2 — identifiers and client resources
 
-Sprawdzono 20 października 2026 r. Implementacja: `visuals.py`, wywoływana
-wyłącznie podczas budowania snapshotu dla UI. Nie zmienia schematu zapisu ani
-obliczeń. Czyta istniejące identyfikatory pojazdu i geometrii mapy, także ze starych
-rekordów. Nazwy wyświetlane służą tylko opisowi grafiki.
+Reviewed on 2026-10-20. `visuals.py` runs only when constructing UI snapshots. It
+changes neither storage nor calculations, and reads existing vehicle/map-geometry
+identifiers, including old records. Display names describe images only.
 
-## Wersje i potwierdzone API
+## Versions and verified API
 
-Publiczna kopia kodu klienta: `izeberg/wot-src`, commit
-`5e721e36891c80d8d51a431164960c863641ee63`; odczytane `.version_name`:
-`2.4.1.5493`. Nie jest to deklaracja stabilnego API dla modów.
+Client mirror: `izeberg/wot-src`, commit
+`5e721e36891c80d8d51a431164960c863641ee63`; `.version_name`: `2.4.1.5493`.
+This is not a stable mod API declaration.
 
-| Element | Potwierdzone zachowanie i źródło |
+| Element | Verified behavior and source |
 | --- | --- |
-| Zapisane numeryczne `typeCompDescr` | [getVehicleType](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/items/vehicles.py#L3165-L3171) rozpoznaje całkowity deskryptor typu i odczytuje pojazd z cache. [VehicleType](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/items/vehicles.py#L1971-L1974) zachowuje `name` i `compactDescr`. Resolver konwertuje zapis dziesiętny na liczbę i wymaga zgodności zwróconego deskryptora, aby błędne bity ID nie wskazały innego czołgu. |
-| Ikona pojazdu | [getIconPath](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/gui_items/Vehicle.py#L2244-L2249) używa `R.images.gui.maps.icons.vehicle.dyn(...)`, `exists()` i `backport.image`. [getIconResourceName](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/gui_items/Vehicle.py#L2280-L2281) dostarcza klucz zasobu z technicznej nazwy pojazdu. Wariant `vehicle.small` jest tylko alternatywną ikoną tego samego czołgu; nie używamy `noImage`. |
-| Miniatura mapy | [getArenaImage](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/utils/functions.py#L185-L192) wybiera `R.images.gui.maps.icons.map`, opcjonalne `dyn(subdir)`, a następnie `num(geometryName)`. [Natywna lista treningów](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/trainings_list_base.py) używa wariantu `small`. Resolver robi to samo; domyślna ikona tej samej geometrii jest alternatywą przy braku miniatury. |
-| Rejestr i ścieżka | [R](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/gen/resources/__init__.py) pochodzi z menedżera zasobów `GuiApplication`. [backport.image](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/backport/backport_r.py#L52-L53) deleguje do `wulf.getImagePath`; [getAbsoluteUrl](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/utils/functions.py#L232-L233) zamienia względny prefiks `../` na `img://gui/`. |
-| Sprawdzenie lokalnego pliku | [Natywny ekran wczytywania](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/game_loading/state_machine/states/slide.py#L36-L37) używa `ResMgr.isFile`. Resolver sprawdza ścieżkę zwróconą przez rejestr i, jeśli logiczny PNG nie istnieje, plik DDS o tej samej nazwie. Emituje URL tylko po pozytywnym odczycie istnienia pliku. |
+| Stored numeric `typeCompDescr` | [getVehicleType](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/items/vehicles.py#L3165-L3171) resolves an integer type descriptor from cache. [VehicleType](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/common/items/vehicles.py#L1971-L1974) retains `name`/`compactDescr`. The resolver converts decimal text to an integer and requires descriptor agreement so malformed ID bits cannot select another vehicle. |
+| Vehicle icon | [getIconPath](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/gui_items/Vehicle.py#L2244-L2249) uses `R.images.gui.maps.icons.vehicle.dyn(...)`, `exists()` and `backport.image`. [getIconResourceName](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/gui_items/Vehicle.py#L2280-L2281) supplies a key from the technical vehicle name. `vehicle.small` is an alternative image of the same vehicle; `noImage` is unused. |
+| Map thumbnail | [getArenaImage](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/utils/functions.py#L185-L192) selects `R.images.gui.maps.icons.map`, optional `dyn(subdir)`, then `num(geometryName)`. The [native training list](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/trainings_list_base.py) uses `small`. The resolver follows this, falling back to the same geometry's default image. |
+| Registry and path | [R](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/gen/resources/__init__.py) comes from `GuiApplication`'s resource manager. [backport.image](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/backport/backport_r.py#L52-L53) delegates to `wulf.getImagePath`; [getAbsoluteUrl](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/utils/functions.py#L232-L233) replaces relative `../` with `img://gui/`. |
+| Local-file check | The [native loading screen](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/game_loading/state_machine/states/slide.py#L36-L37) uses `ResMgr.isFile`. The resolver checks the registry path and, when the logical PNG is absent, a same-name DDS. URLs are emitted only after a positive existence check. |
 
-## Rzeczywiste grafiki i loader
+## Actual images and loader
 
-Katalog zasobów: `Kurzdor/wot.assets`, commit
-`3605bd36c53d10c16be5d93f5414aa5fd129e84e`; odczytane
+Resource mirror: `Kurzdor/wot.assets`, commit
+`3605bd36c53d10c16be5d93f5414aa5fd129e84e`;
 [.metadata_version](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/.metadata_version):
 `2.4.1.0 #977`.
 
-- [map/small/01_karelia.png](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/maps/icons/map/small/01_karelia.png): nagłówek PNG potwierdza 100×60; domyślne [map/01_karelia.png](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/maps/icons/map/01_karelia.png) ma 300×300. W pierwszej kolejności wybieramy mały wariant.
-- Istnieją dokładne ścieżki [vehicle/uk-GB31_Conqueror_Gun.png](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/maps/icons/vehicle/uk-GB31_Conqueror_Gun.png) oraz [vehicle/small/uk-GB31_Conqueror_Gun.png](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/maps/icons/vehicle/small/uk-GB31_Conqueror_Gun.png). Nazw ścieżek nie tworzymy ręcznie; pobieramy wynik `R` i backport.
-- [Natywny Gameface maps_training_result/bundle.js](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/mono/maps_training/maps_training_result/bundle.js) ustawia `backgroundImage` z `img://gui/maps/icons/map/screen/…dds`. Potwierdza to natywny schemat i obsługę DDS. Nie zastępujemy go loaderem `coui://`.
+- [map/small/01_karelia.png](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/maps/icons/map/small/01_karelia.png)
+  has a 100×60 PNG header; default [map/01_karelia.png](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/maps/icons/map/01_karelia.png)
+  is 300×300. Prefer the small variant.
+- Exact [vehicle/uk-GB31_Conqueror_Gun.png](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/maps/icons/vehicle/uk-GB31_Conqueror_Gun.png)
+  and [vehicle/small/uk-GB31_Conqueror_Gun.png](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/maps/icons/vehicle/small/uk-GB31_Conqueror_Gun.png)
+  exist. Paths come from `R`/backport rather than manual construction.
+- Native [Gameface maps_training_result/bundle.js](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/mono/maps_training/maps_training_result/bundle.js)
+  assigns `backgroundImage` from `img://gui/maps/icons/map/screen/…dds`, confirming
+  the native scheme and DDS support. It is not replaced with a `coui://` loader.
 
-Grafiki sprawdzono jako materiał referencyjny. Żaden obraz klienta nie został
-dołączony do paczki moda. Kod gry nie wykonuje żądań sieciowych po obrazy.
+Images were inspected as references only. No client artwork is bundled; runtime
+performs no image-network requests.
 
-## Kontrakt i odporność
+## Contract and resilience
 
-`row.visual` zawiera `kind`, `src` i `alt`. Dozwolone rodziny to wyłącznie
-`img://gui/maps/icons/vehicle/` i `img://gui/maps/icons/map/`; brak lub błąd
-zasobu oznacza brak pola `visual`, z zachowaniem nazwy i statystyk. Dla bitwy
-preferowany jest zapisany pojazd, a następnie jej własna mapa. Nie dopasowujemy
-grafiki według nazwy i nie korzystamy z grafiki innego rekordu. Błędy jednego
-obrazu nie przerywają przetwarzania sąsiednich wierszy. Nieudane odczyty mogą
-zostać ponowione w kolejnym snapshotcie po gotowości zasobów.
+`row.visual` has `kind`, `src` and `alt`. Allowed families are exclusively
+`img://gui/maps/icons/vehicle/` and `img://gui/maps/icons/map/`. Missing/invalid
+resources omit `visual` while preserving names/statistics. A battle prefers its
+stored vehicle, then its own map. Images are neither matched by display name nor
+borrowed from another record. One image failure does not interrupt adjacent rows.
+Failed reads can retry in later snapshots after resources become ready.
 
-## Weryfikacja
+## Verification
 
-`tests/test_visuals.py`: 21 testów na Pythonie 3 i Pythonie 2.7.18. Obejmują
-numeryczne deskryptory, nieprawidłowe aliasowanie ID, wariant small mapy,
-brak węzła lub pliku, PNG/DDS, odrzucone URL, późniejszą dostępność zasobów,
-starsze rekordy oraz snapshot Runtime bez zmiany historii i statystyk.
+`tests/test_visuals.py`: 21 tests on Python 3 and 2.7.18 cover numeric descriptors,
+invalid ID aliasing, small maps, missing nodes/files, PNG/DDS, rejected URLs, late
+resource readiness, old records and Runtime snapshots without history/stat changes.
 
-To testy kodu z zastępczymi obiektami zasobów zgodnymi z odczytanym API.
-Nie uruchamiają natywnego loadera C++ ani aktualnego klienta WoT. Wyświetlenie
-każdej miniatury i faktyczne mapowanie zasobów w instalacji gracza wymagają
-jeszcze sprawdzenia wersji 0.2.2 w grze.
+Resource doubles match the reviewed API without running the native C++ loader or
+current WoT client. Every thumbnail's display and actual resource mapping still
+required an in-game 0.2.2 check at this historical checkpoint.

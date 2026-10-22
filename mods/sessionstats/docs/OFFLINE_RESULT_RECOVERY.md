@@ -1,88 +1,79 @@
-# Wynik bitwy po wyłączeniu klienta
+# Battle results after client shutdown
 
-## Co jest liczone
+## What counts
 
-Początek bitwy jest zapisywany trwale razem z identyfikatorem bitwy, kontem,
-regionem i przynależnością do obu okresów. Sam początek nie jest zwycięstwem,
-porażką ani wynikiem liczbowym. Dopiero odebrane dane pozwalają go rozliczyć.
-Wynik z rozpoznanym rozstrzygnięciem może wnosić potwierdzone statystyki,
-nawet jeśli inne pola są jeszcze niepełne. Brakujące pola nie stają się zerami.
+Battle entry is persisted with battle/account/region identity and period membership.
+An entry alone is neither a victory, a defeat nor a numeric result. Received data
+is required for settlement. A recognized outcome can contribute confirmed statistics
+even while other fields remain incomplete. Missing fields do not become zero.
 
-Już przy wejściu do bitwy zapisujemy dostępne dane rozpoznawcze: czas,
-identyfikator i nazwę mapy oraz identyfikator, nazwę, poziom i klasę własnego
-czołgu. Nazwy pochodzą z deskryptora pojazdu i typu areny klienta. Zapis nie
-czeka na koniec bitwy ani wyjście z gry. Jeśli arena nie jest jeszcze gotowa,
-następne zdarzenia awatara i odczyty co 5 sekund uzupełniają brakujące pola
-tego samego wpisu; identyczny odczyt nie powoduje kolejnego zapisu na dysk.
-Błąd opcjonalnej nazwy pojazdu nie blokuje zapisania początku bitwy.
+Entry immediately saves available identifying metadata: time, map identifier/name,
+and the player's vehicle identifier/name/tier/class. Names come from the vehicle
+descriptor and client arena type. Saving waits for neither battle end nor shutdown.
+If the arena is not ready, later avatar events and five-second polls fill missing
+fields in the same entry. Identical reads do not produce further disk writes.
+An optional vehicle-name failure does not block saving the battle entry.
 
-Po restarcie wpis zachowuje znaną mapę i czołg oraz nieznany wynik i kreski
-przy brakujących statystykach. Nie zapisujemy listy graczy, nicków ani surowego
-kontekstu areny. To rozszerzenie nie odtworzy nazw, których starsza wersja
-nie zdążyła zachować; mogą je uzupełnić późniejsze dane klienta lub wynik.
+After restart, known map/vehicle names remain visible with an unknown outcome and
+dashes for missing statistics. Player lists, nicknames and raw arena context are
+not saved. This cannot reconstruct names an older version never preserved; later
+client metadata or results may fill them.
 
-Podsumowanie i grupy pokazują liczbę wyników względem wszystkich zarejestrowanych
-bitew, np. `20 / 21`. Brakująca bitwa pozostaje także na liście bitew z nieznanym
-wynikiem. Pokrycie WN8, PD i finansów uwzględnia pełną liczbę zapisanych bitew.
-Procent wygranych i średnie dotyczą potwierdzonych danych; panel jawnie oznacza
-niepełny zakres. Wynik odebrany następnego dnia uzupełnia pierwotną bitwę i okres,
-zamiast tworzyć drugą bitwę albo trafiać do nowego uruchomienia.
+Summary/group coverage shows received results against all recorded battles, for
+example `20 / 21`. The missing battle remains in the list with an unknown outcome.
+WN8, XP and financial coverage use every recorded battle as the denominator. Win
+rate and averages use confirmed data; the panel explicitly marks incomplete scopes.
+A result received the next day fills the original battle and period without creating
+a duplicate or assigning it to the new launch.
 
-## Odczyt klienta i serwera
+## Client and server reads
 
-Zweryfikowana ścieżka klienta 2.4.1.5493, commit
-`5e721e36891c80d8d51a431164960c863641ee63`:
+Verified client 2.4.1.5493, commit `5e721e36891c80d8d51a431164960c863641ee63`:
 
 - [BattleResultsCache.get](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client_common/shared_utils/account_helpers/BattleResultsCache.py)
-  najpierw sprawdza lokalny plik, a gdy go nie ma, używa natywnego polecenia
-  `CMD_REQ_BATTLE_RESULTS`. Jest to ścieżka klienta, bez własnego HTTP/API,
-  tokenów, zewnętrznej usługi ani procesu działającego po zamknięciu gry.
-- Ten sam kod czyści standardowy katalog wyników w konstruktorze cache.
-  Sam plik klienta nie stanowi trwałego archiwum moda.
-- Po odebraniu strumienia klient zapisuje swój cache, wywołuje callback,
-  a następnie wysyła `CMD_BATTLE_RESULTS_RECEIVED`. Dodatkowy obserwator
-  zapisuje znormalizowane dane moda przed oryginalnym callbackiem i tym
-  potwierdzeniem. Obejmuje też odczyt zlecony przez interfejs gry lub inny mod,
-  gdy zwykłe zdarzenie wyniku nie zostanie dostarczone do naszego adaptera.
+  first checks a local file, then uses native `CMD_REQ_BATTLE_RESULTS` if absent.
+  This is the client's own path, without custom HTTP/API, tokens, an external
+  service or a process running after game shutdown.
+- The same cache constructor clears the standard result directory. A client cache
+  file alone is not a durable mod archive.
+- On receiving a stream, the client writes its cache, invokes the callback and then
+  sends `CMD_BATTLE_RESULTS_RECEIVED`. An additional observer stores normalized
+  mod data before the original callback and acknowledgment. It also covers requests
+  made by the game interface or another mod when our normal result event is missing.
 - [BattleResultsGetter](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/shared/gui_items/processors/common.py)
-  używa tej samej metody `battleResultsCache.get` dla interfejsu WoT.
+  uses the same `battleResultsCache.get` method for the WoT interface.
 
-Obserwator zachowuje argumenty, wynik wywołania i oryginalnego odbiorcę.
-Błąd obserwatora nie blokuje odbiorcy. Własne zapytania nie są przetwarzane
-podwójnie. Odpowiedź jest związana z kontem i cyklem życia w chwili zlecenia;
-callback starego uruchomienia nie modyfikuje nowego. Usuwanie obserwatora
-nie nadpisuje opakowania zainstalowanego później przez inny mod.
+The observer preserves arguments, return values and the original consumer. Observer
+failure does not block that consumer. Mod-owned requests are not processed twice.
+Responses retain the account/lifecycle captured on dispatch; old-runtime callbacks
+cannot modify a new runtime. Removing the observer does not overwrite a wrapper
+installed later by another mod.
 
-## Kolejka odzyskiwania
+## Recovery queue
 
-Po zalogowaniu odczytywane są wszystkie zachowane niepełne wpisy. Zapytania
-pozostają szeregowe, z pierwszeństwem bieżących bitew i najwcześniej należnych
-prób. Stary błąd nie powinien stale wyprzedzać jeszcze niesprawdzonych wyników.
-Cooldown współdzielonego cache, niegotowe konto i rozłączenie nie zwiększają
-wykładniczego opóźnienia konkretnej bitwy; limit żądań dostaje dłuższą przerwę.
-Zwykły błąd odczytu pozostawia wpis i ponowienia z ograniczonym backoffem.
+Login loads every preserved incomplete entry. Requests remain serial, prioritizing
+current battles and the earliest due attempts. An old error should not continually
+precede untried results. Shared-cache cooldown, an unready account and disconnection
+do not increase a battle's exponential backoff; request limits receive a longer
+pause. Ordinary read errors retain the entry and bounded retries.
 
-Poprawny strumień przychodzący po wygaśnięciu naszego żądania nadal może
-uzupełnić nieznane dane, ale nie zmienia nowszych potwierdzonych wartości
-ani nie usuwa tokenu nowszego zapytania. To uzupełnienie ma `reconcile=False`.
-Diagnostyka raportuje stany i znane kody klienta, bez numerów kont i bitew,
-surowych odpowiedzi ani dowolnych nieznanych wartości liczbowych.
+A valid stream arriving after our request expires can still fill unknown data,
+but cannot change newer confirmed values or remove a newer request's token. This
+fill uses `reconcile=False`. Diagnostics contain states and known client codes,
+without account/battle numbers, raw responses or arbitrary unknown numeric values.
 
-## Granice i weryfikacja
+## Limits and verification
 
-Mod nie działa po zamknięciu klienta. Nierozliczona bitwa czeka na następne
-logowanie, a następnie korzysta z powyższego odczytu serwerowego. Kod klienta
-nie stanowi gwarancji czasu przechowywania wyniku po stronie serwera.
-Jeśli WoT nie udostępnia już danych, nie da się obiecać ich pełnego odtworzenia.
-Taki wpis pozostaje jawną luką. Nie zastępujemy go zgadywaną porażką ani
-różnicą salda kredytów, na które wpływają także inne operacje.
+The mod does not run after client shutdown. Unsettled battles wait for the next
+login and then use the native server-read path above. Client code does not guarantee
+server retention time. If WoT no longer supplies a result, complete recovery cannot
+be promised. The entry stays an explicit gap; it is not replaced by a guessed defeat
+or a credit-balance difference affected by unrelated transactions.
 
-Testy na syntetycznym transporcie obejmują zamknięcie przed końcem bitwy,
-odebranie wyniku po zalogowaniu do nowego uruchomienia, przynależność do
-oryginalnego okresu, deduplikację, odczyt natywny bez zdarzeń, zapis przed
-odbiorcą, błędy i opakowania innych modów, zmianę konta, cooldown, kolejność
-prób oraz poprawne spóźnione strumienie. Testy nie emulują retencji serwera
-i nie zastępują próby w rzeczywistym kliencie WoT.
-Osobne testy początku bitwy sprawdzają zapis przed zamknięciem klienta,
-rozpoznawalny wpis po restarcie bez wyniku, późniejsze ładowanie metadanych,
-brak powtórnych zapisów i wykluczenie prywatnych pól kontekstu.
+Synthetic transport tests cover shutdown before battle end, recovery after login
+into a new launch, original-period membership, deduplication, native reads without
+events, writes before consumers, failures/other-mod wrappers, account changes,
+cooldown, retry order and valid late streams. They do not emulate server retention
+or replace a live WoT test. Separate battle-entry tests cover saving before shutdown,
+recognizable entries without results after restart, late metadata, no duplicate
+writes and exclusion of private context fields.

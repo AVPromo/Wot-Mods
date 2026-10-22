@@ -318,7 +318,7 @@ class ServiceTests(unittest.TestCase):
         old_manual = self.service._state['current_manual_id']
         original = self.service.store.save
         def fail(unused):
-            raise StorageError('Test: zapis niedost\u0119pny.')
+            raise StorageError('Test: storage unavailable.')
         self.service.store.save = fail
         self.assertFalse(self.service.record_result(result()))
         self.assertEqual(self.summary()['battles'], 0)

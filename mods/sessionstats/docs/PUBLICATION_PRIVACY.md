@@ -1,26 +1,25 @@
-# Audyt publikacji źródeł 0.2.7
+# Source publication audit — 0.2.7
 
-Import obejmuje kod, zasoby UI, publiczną tabelę oczekiwanych wartości WN8,
-testy, syntetyczny podgląd, dokumentację oraz niezmienioną zależność OpenWG.
-Nie importowano prywatnej instalacji gry, stanu konta, historii bitew, logów,
-zrzutów ekranu, dumpów, plików autoryzacji ani konfiguracji użytkownika.
-Dołączony JSON to wbudowane ustawienia domyślne.
+The import contains code, UI resources, the public WN8 expected-values table,
+tests, synthetic previews, documentation and the unchanged OpenWG dependency.
+No private game installation, account state, battle history, logs, screenshots,
+dumps, authentication files or personal configuration were imported. The included
+configuration JSON contains built-in defaults.
 
-Identyfikatory w fixture'ach są syntetyczne: np. `DEMO:100`, małe numery kont
-w testach i sekwencyjne numery bitew z generatora. Publiczne deskryptory typów
-czołgów w tabeli WN8 nie identyfikują kont graczy.
-Nazwy autorów i odnośniki w materiałach zewnętrznych są wymaganymi informacjami
-o pochodzeniu/licencji, nie danymi właściciela tego repozytorium.
+Fixture identifiers are synthetic: for example `DEMO:100`, small account numbers
+in tests and sequential battle numbers from the generator. Public vehicle-type
+descriptors in the WN8 table do not identify player accounts. Third-party author
+names and links provide required attribution/licensing, not private details of
+the repository owner.
 
-Kontrola obejmuje źródła i dokumentację, rozwinięte archiwa, teksty w bajtkodzie
-Pythona 2.7 oraz wirtualne ścieżki kompilacji. Testy diagnostyki sprawdzają
-pomijanie nicków, numerów kont i surowych raportów w komunikatach healthchecku.
-Automatyczny skan wzorców jest dodatkową kontrolą; nie dowodzi anonimizacji
-dowolnego nieznanego formatu danych.
+Checks cover source and documentation, expanded archives, Python 2.7 bytecode
+strings and virtual compilation paths. Diagnostic tests verify that health-check
+messages omit nicknames, account numbers and raw reports. Pattern scans provide
+an additional check, not proof of anonymization for every unknown data format.
 
-Mod zapisuje lokalne statystyki rozdzielone według konta. Takiej historii nie wolno
-dołączać do PR ani Releases. Lokalny log ma rotację i nie jest wysyłany przez mod.
+The mod stores account-separated statistics locally. Such history must not be
+included in PRs or Releases. Local logs rotate and are not uploaded by the mod.
 
-Repozytorium jest publiczne. Jego właściciel, publiczna tożsamość GitHub,
-autorzy commitów i historia PR/Actions pozostają widoczne na zasadach GitHub.
-Publikacja kodu nie ukrywa tych metadanych konta.
+This repository is public. Its owner, public GitHub identity, commit authors and
+PR/Actions history remain visible under GitHub's platform behavior. Publishing
+code does not hide this account metadata.

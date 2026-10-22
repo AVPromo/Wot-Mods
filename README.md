@@ -1,13 +1,13 @@
-# World of Tanks — mody
+# World of Tanks — mods
 
-| Mod | Źródła i instrukcja | Wydania |
+| Mod | Source and instructions | Releases |
 |---|---|---|
-| Session Stats — WN8, PD, finanse, historia sesji | [mods/sessionstats](mods/sessionstats) | Tagi `sessionstats-v…`, ZIP z zależnością i konfiguracją |
-| Stay Sharp — Medkit Reminder | [source](source), opis poniżej | Tagi `v1.6.…`, samodzielny `.wotmod` |
+| Session Stats — WN8, XP, finances, session history | [mods/sessionstats](mods/sessionstats) | `sessionstats-v…` tags, ZIP with dependency and configuration |
+| Stay Sharp — Medkit Reminder | [source](source), description below | `v1.6.…` tags, standalone `.wotmod` |
 
-Oba mody można instalować niezależnie. [Wszystkie wydania](../../releases).
-Źródła, testy i licencje są rozdzielone; licencja statystyk nie obejmuje apteczki.
-Zasady integracji: [mods/sessionstats/README.md](mods/sessionstats/README.md).
+Both mods can be installed independently. [All releases](../../releases).
+Sources, tests and licenses are separate; the Session Stats license does not cover the medkit mod.
+Integration rules: [mods/sessionstats/README.md](mods/sessionstats/README.md).
 
 # Stay Sharp — Medkit Reminder for World of Tanks
 

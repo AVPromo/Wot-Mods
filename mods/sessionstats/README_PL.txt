@@ -1,120 +1,135 @@
-STATYSTYKI SESJI — MOD DO WORLD OF TANKS PC
-Wersja 0.2.7 • 21.10.2026 • cel: Wargaming EU 2.4.1.0
+SESSION STATS — WORLD OF TANKS PC MOD
+Version 0.2.7 • 2026-10-21 • target: Wargaming EU 2.4.1.0
 
-STATUS WYDANIA
-To instalacyjny mod .wotmod z kodem skompilowanym do Pythona 2.7.18, własnym oknem
-Gameface, adapterem wyników oraz trwałym zapisem obu sesji. Wydanie 0.2.7 dodaje
-plik grz.sessionstats.json obok .wotmod: kolory, zaokrąglenia, przezroczystość
-i szybkość przewijania. Dołączone wartości domyślne zachowują obecny wygląd
-panelu i ikony oraz tempo rolki. Każde pole jest sprawdzane przy odczycie,
-a błędy trafiają do własnego logu moda. Działają nadal healthcheck wyników,
-ostrzeżenia WoT, spinner oczekiwania i zabezpieczenia integracji z 0.2.5/0.2.6.
-Logika, paczka i scenariusze awarii API są sprawdzane automatycznie.
-Wydania 0.2.7 nie uruchamiano tutaj w działającym WoT; testy symulowanych
-interfejsów nie gwarantują zgodności z przyszłym klientem.
-Nie jest to oficjalny produkt Wargaming.
+RELEASE STATUS
+This installable .wotmod contains CPython 2.7.18 bytecode, a dedicated Gameface
+window, a battle-result adapter and persistent session storage. Version 0.2.7
+adds grz.sessionstats.json next to the .wotmod for colors, corner radii, opacity
+and scrolling speed. Bundled defaults preserve the panel, icon and wheel behavior.
+Each field is validated on load; errors go to the mod's own log. Result health
+checks, WoT warnings, the activity spinner and the integration safeguards from
+0.2.5/0.2.6 remain available. Automated checks cover the logic, package and simulated
+API failures. Version 0.2.7 has not been run in a live WoT client here; mocked
+interfaces cannot guarantee compatibility with future clients.
+This is not an official Wargaming product.
 
-AKTUALIZACJA Z 0.2.6 LUB WCZEŚNIEJSZEJ WERSJI
-Przy zamkniętej grze usuń poprzedni plik grz.sessionstats_0.2.6.wotmod
-(lub starszą wersję tego samego moda) z aktywnego katalogu mods
-i wstaw zamiast niego grz.sessionstats_0.2.7.wotmod z tej paczki. Obok niego
-umieść dołączony grz.sessionstats.json. W aktywnym katalogu mods powinna
-pozostać jedna wersja grz.sessionstats.
-Dołączony OpenWG 1.2.2 jest taki sam jak poprzednio — pozostaw jedną kopię.
-Format historii nie zmienia się. Aktualizacja nie wymaga resetowania danych.
+UPDATING FROM 0.2.6 OR EARLIER
+Close the game, remove grz.sessionstats_0.2.6.wotmod (or an older version of this
+mod) from the active mods directory and replace it with grz.sessionstats_0.2.7.wotmod
+from this package. Place grz.sessionstats.json beside it. Keep only one active
+version of grz.sessionstats. Bundled OpenWG 1.2.2 is unchanged; keep one copy.
+The history format is unchanged. Updating does not require a data reset.
 
-Nazwa pliku wyglądu nie zawiera numeru wydania. Przy kolejnych aktualizacjach
-zachowaj swój grz.sessionstats.json zamiast nadpisywać go domyślnym plikiem
-z nowej paczki. Mod tylko go czyta, nie nadpisuje go ani nie dopisuje pól.
-Po zmianie katalogu wersji gry przenieś własny JSON razem z paczką moda.
+The configuration filename has no release number. Preserve your own
+grz.sessionstats.json instead of overwriting it with the new package's defaults.
+The mod only reads it; it never overwrites it or inserts fields. When moving to
+a new client-version directory, move your JSON together with the mod package.
 
-SZYBKA INSTALACJA
-1. Zamknij World of Tanks.
-2. Rozpakuj ZIP w dowolnym miejscu.
-3. Z zestawu skopiuj katalog mods do głównego katalogu World of Tanks, tego
-   z plikiem WorldOfTanks.exe. Dla wersji 2.4.1.0 powinny powstać:
+QUICK INSTALLATION
+1. Close World of Tanks.
+2. Extract the ZIP anywhere.
+3. Copy the included mods directory into the World of Tanks root containing
+   WorldOfTanks.exe. For client 2.4.1.0, the installed files should include:
    mods/2.4.1.0/grz.sessionstats_0.2.7.wotmod
    mods/2.4.1.0/grz.sessionstats.json
+   mods/2.4.1.0/grz.sessionstats.languages.json
    mods/2.4.1.0/net.openwg/net.openwg.gameface_1.2.2.wotmod
-   Jeżeli masz już własny grz.sessionstats.json, zachowaj go przy kopiowaniu.
-4. Jeżeli masz już OpenWG Gameface 1.2.2 lub nowszy z paczki modów, zachowaj jedną
-   kopię tej biblioteki. Wtedy wystarczy skopiować paczkę grz.sessionstats
-   oraz dołączyć JSON, jeżeli nie masz jeszcze własnego pliku.
-   Przy starszym OpenWG zastąp tylko jego plik nowszą dołączoną wersją.
-5. Uruchom grę i wejdź do garażu. Użyj ikony trzech słupków z małym WN8
-   w prawym górnym rogu w stopce garażu lub
-   naciśnij Ctrl+F10. Skrót otwiera/zamyka okno; Esc i krzyżyk również je zamykają.
-   Okno można przeciągać lewym przyciskiem myszy za pasek tytułu.
+   Preserve your existing configuration and language overrides when copying.
+4. If another mod pack already provides OpenWG Gameface 1.2.2 or newer, retain
+   one copy of that library. Install the grz.sessionstats package and any desired
+   JSON overrides. Replace an older OpenWG file with the included newer version.
+5. Start the game and enter the garage. Click the three-bar icon with a small
+   WN8 label in the upper-right garage footer, or press Ctrl+F10. The shortcut
+   toggles the window; Esc and the close button also close it. Drag the title
+   bar with the left mouse button to move the window.
 
-Nie instaluj niczego do res_mods. Folder source, PODGLAD.html, README i pliki
-licencji nie muszą znajdować się w katalogu gry. Nie musisz instalować Pythona.
+Nothing belongs in res_mods. The source directory, PODGLAD.html, README and
+license files do not need to be in the game directory. Python is not required
+on the player's computer.
 
-Jeżeli nazwa aktywnego katalogu mods jest inna niż 2.4.1.0, pliki .wotmod trafiają
-do katalogu wersji Twojego klienta, a grz.sessionstats.json bezpośrednio obok
-grz.sessionstats_0.2.7.wotmod. Samo przeniesienie plików nie potwierdza ich
-zgodności z nową wersją gry. Ten adapter oparto na interfejsach gałęzi 2.4.1.
+If the active mods directory is not 2.4.1.0, use your client's version directory
+for the .wotmod files and place grz.sessionstats.json directly beside
+grz.sessionstats_0.2.7.wotmod. Moving files alone does not establish compatibility
+with a new client. This adapter uses interfaces from the 2.4.1 branch.
 
-JAK DZIAŁA PANEL
-• Na górze: liczba zakończonych bitew, win rate i pełna liczba WN8.
-• Dwie zakładki okresu: „Od uruchomienia” oraz „Od resetu”.
-  Both belong to the active account. The optional installation tab has its
-  own persistent manual reset and is hidden by default.
-• Domyślnie „Bazowe PD”. „Otrzymane PD” przełącza wszystkie widoczne statystyki
-  doświadczenia na wartości z premiami przyznanymi przez grę.
-• Podsumowanie i szczegóły są widoczne od razu. Poniżej są Czołgi / Mapy / Bitwy.
-  Czołgi są wybrane przy otwarciu. Cały panel przewijasz w dół; nie ma akordeonów.
-  Rolka ma standardowy kierunek: w dół przesuwa do dalszych wyników,
-  w górę wraca do wcześniejszych. Przy domyślnym mnożniku 1.0 krok zwykłej rolki
-  w kliencie odpowiada ćwierci widocznej wysokości listy, również przy małych
-  wartościach wejściowych. Szybkość można zmienić w JSON bez zmiany kierunku.
-  Zestawienia mają większy tekst, łagodne krawędzie i dyskretne podziały wierszy.
-• Przy nazwach pojazdów i map są ich miniatury z lokalnych zasobów gry.
-  Nie trzeba pobierać dodatkowej paczki grafik. Jeśli klient nie ma danego
-  zasobu, pozostaje poprawna nazwa i wynik, bez podstawiania innej ilustracji.
-• Dla całego okresu i każdego czołgu oraz mapy: min/średnia/max PD
-  i min/średnia/max WN8 pojedynczych bitew.
-• W „Bitwy”: pojedynczy wynik PD i WN8 oraz zwycięstwo, porażka albo remis.
-  Nie ma powtarzania jednego wyniku w trzech kolumnach ani win rate jednej bitwy.
-• W każdym zestawieniu: wolne PD, przychód/koszty/netto kredytów i obligacji.
-  Złoto pojawia się, jeśli wynik potwierdza związany z bitwą przepływ.
-• Główne WN8 jest obliczane ze zsumowanych wyników i oczekiwanych wartości
-  poszczególnych pojazdów. Średnia WN8 bitew jest osobną miarą w szczegółach.
-• Zapis WN8: 1574, nie 1,6k. Wartość 805 pozostaje 805, a 10420 pozostaje 10420.
-• Puste wartości są oznaczone kreską. Niepełne dane mają licznik pokrycia,
-  np. 15/16. Częściowa suma finansowa obejmuje wyłącznie potwierdzone kwoty.
-• Już po wejściu do bitwy zapisujemy dostępny czas, mapę oraz nazwę, poziom
-  i klasę własnego czołgu. Wpis pozostaje na liście po restarcie także bez
-  wyniku: znane nazwy są widoczne, brakujące statystyki mają kreski.
-  Później załadowane informacje uzupełniają ten sam wpis. Starsze wpisy
-  mogą nie mieć nazw, których poprzednia wersja nie zapisała.
-• W tym wydaniu liczone są standardowe bitwy losowe. Replaye i tryby specjalne
-  nie są włączane do WN8 tego zakresu.
+LANGUAGES AND OPTIONAL FILES
+English is the default interface language. English, Russian, French, Polish,
+German, Spanish and Ukrainian catalogs are included inside the .wotmod during
+the build. Select a language in grz.sessionstats.json, for example:
+{"language": "pl"}
+The neighboring grz.sessionstats.languages.json is an optional editable override.
+If it is absent or invalid, the mod uses its bundled catalogs. Individual missing
+translations fall back to English; an English dictionary is also embedded in
+Python code for use if the bundled resource cannot be read. Deleting or omitting
+the external language file therefore does not prevent the mod from starting.
+Map and vehicle names supplied by the game retain the client's own localization.
+See source/docs/LANGUAGES.md for catalog keys, placeholders and custom languages.
 
-WYGLĄD I PRZEWIJANIE — grz.sessionstats.json
-Plik leży obok .wotmod w aktywnym katalogu mods, np.:
+The main grz.sessionstats.json is also optional. It may contain only the fields
+you want to change, including partial nested sections. Missing fields use defaults;
+{} is valid. For example, {"language": "fr", "scroll": {"speed_multiplier": 1.5}}
+changes the language and wheel speed while preserving all other defaults.
+
+HOW THE PANEL WORKS
+• The header shows completed battles, win rate and the full WN8 number.
+• Two default period tabs: "Since launch" and "Since reset". Both belong to the
+  active account. The optional installation tab has its own persistent manual
+  reset and is hidden by default.
+• "Base XP" is selected initially. "Received XP" switches all visible experience
+  statistics to the values including bonuses awarded by the game.
+• Summary and details are visible immediately. Vehicles / Maps / Battles appear
+  below, with Vehicles selected on opening. Scroll the whole panel vertically;
+  there are no accordions. Wheel down moves toward later results; wheel up moves
+  back. At multiplier 1.0, a regular in-game wheel step moves one quarter of the
+  visible list height, including small native input values. JSON changes speed
+  without changing direction. Tables use larger text, soft edges and subtle rows.
+• Vehicle and map names have thumbnails from local game resources. No additional
+  image pack is required. Missing images leave the correct name and statistics
+  visible without substituting unrelated artwork.
+• Each period, vehicle and map shows minimum/average/maximum XP and individual
+  battle WN8.
+• Battles show one XP value, one WN8 value and victory, defeat or draw. A single
+  result is not repeated across three columns; individual battles have no win rate.
+• Every grouping includes free XP and credit/bond income, costs and net amounts.
+  Gold appears when the result confirms a battle-related transaction.
+• Headline WN8 uses summed results and the expected values of each vehicle.
+  Average individual-battle WN8 is a separate detail metric.
+• WN8 is written as 1574, not 1.6k. Values such as 805 and 10420 remain unabbreviated.
+• Unknown values use a dash. Partial data shows coverage, for example 15/16.
+  Partial financial totals contain only confirmed amounts.
+• On battle entry, available time, map, vehicle name, tier and class are saved.
+  The entry survives restarts even without a result: known names remain visible,
+  while missing statistics use dashes. Later metadata fills the same entry.
+  Older entries may lack names that earlier versions did not save.
+• This release counts standard random battles. Replays and special modes are
+  excluded from WN8 for this scope.
+
+APPEARANCE AND SCROLLING — grz.sessionstats.json
+The file sits beside the .wotmod in the active mods directory, for example:
 mods/2.4.1.0/grz.sessionstats.json
-Dołączony pełny plik zawiera 140 ustawień kolorów, 12 promieni zaokrąglenia,
-3 ustawienia opacity i mnożnik przewijania. Wartości domyślne zachowują obecny
-układ, odstępy, wygląd tabel, ikony, spinnera i szybkość rolki.
+The full supplied file contains 140 color settings, 12 corner radii, 3 opacity
+settings and a scrolling multiplier. Defaults preserve layout, spacing, tables,
+icons, the spinner and wheel speed.
 
-Sekcje pliku:
+Configuration sections:
+• language: interface language code; "en" by default.
 • sessions.instance_tab: true displays the durable installation tab;
   false (default) keeps it hidden. Only JSON booleans are accepted.
-  The option controls visibility; hiding it does not interrupt collection.
-• colors: kolory tekstu, tła, linii, cieni, gradientów i stanów kontrolek.
-  Obsługiwane są #RGB, #RRGGBB, #RRGGBBAA, rgb(...), rgba(...) i transparent.
-  Kanały RGB mają zakres 0–255, alpha w rgba ma zakres 0–1.
-• radii: promienie od 0 do 24, bez jednostek. Podążają za skalą UI gry;
-  przy skali bazowej jedna jednostka odpowiada jednemu pikselowi.
-• opacity: window, garage_button i disabled_controls, każda wartość od 0 do 1.
-  1 oznacza pełną widoczność. opacity.window wpływa także na tekst i kontrolki.
-  Aby zmienić tylko tło okna, użyj koloru rgba w colors.window_background.
-• scroll.speed_multiplier: liczba od 0.1 do 8; domyślnie 1.0.
-  1.5 zwiększa krok rolki o połowę, 2.0 podwaja go, 0.5 zmniejsza o połowę.
-  Dotyczy przewijania w grze; podgląd HTML używa natywnej rolki przeglądarki.
+  Visibility does not interrupt collection.
+• colors: text, backgrounds, lines, shadows, gradients and control states.
+  Accepted formats: #RGB, #RRGGBB, #RRGGBBAA, rgb(...), rgba(...) and transparent.
+  RGB channels range from 0 to 255; rgba alpha ranges from 0 to 1.
+• radii: unitless values from 0 to 24. They follow the game's UI scale; one unit
+  equals one pixel at the base scale.
+• opacity: window, garage_button and disabled_controls, each from 0 to 1.
+  1 means fully visible. opacity.window also affects text and controls. To change
+  only the window background, use rgba in colors.window_background.
+• scroll.speed_multiplier: number from 0.1 to 8, default 1.0. Values 1.5, 2.0
+  and 0.5 increase the wheel step by half, double it and halve it respectively.
+  This affects in-game scrolling; HTML previews use the browser's native wheel.
 
-Możesz edytować pełny plik lub zostawić tylko zmieniane pola. Przykład własnych
-ustawień — pozostałe wartości będą domyślne:
+Edit the complete file or retain only changed fields. Example overrides, with
+all other fields taking their defaults:
 {
   "schema_version": 1,
   "colors": {
@@ -132,40 +147,40 @@ ustawień — pozostałe wartości będą domyślne:
     "speed_multiplier": 1.5
   }
 }
-Zapisz plik w UTF-8; BOM jest obsługiwany. JSON wymaga cudzysłowów i kropki
-w liczbach dziesiętnych. Nie dodawaj komentarzy ani przecinka po ostatnim polu.
-Pełne opisy pól i przykłady: source/docs/APPEARANCE_CONFIG.md.
+Save as UTF-8; a BOM is supported. JSON requires double quotes and decimal points.
+Do not add comments or a trailing comma. Full field descriptions and examples:
+source/docs/APPEARANCE_CONFIG.md.
 
-Konfiguracja jest czytana przy starcie moda, przy otwarciu panelu i po kliknięciu
-„Odśwież”. Po zapisaniu JSON wystarczy odświeżyć panel albo otworzyć go ponownie.
-Mod nie sprawdza pliku w każdej klatce ani przy każdym tyknięciu swojego zegara.
+Configuration is read at mod startup, when opening the panel and after clicking
+"Refresh". Save the JSON, then refresh or reopen the panel. The mod does not
+inspect the file every frame or on every timer tick.
 
-Brak pliku daje pełne ustawienia domyślne. Błędna składnia JSON, kodowanie,
-powtórzona nazwa pola, NaN/Infinity, plik większy niż 128 KiB, zły typ głównego
-obiektu lub nieobsługiwana schema_version również przywracają cały wygląd.
-Błędne pole przywraca tylko swoją wartość domyślną; reszta poprawnych zmian działa.
-Sekcja o złym typie wraca do wartości domyślnych tej sekcji. Nieznane pola są
-pomijane i zgłaszane w logu. Pominięte pola oraz pusty obiekt {} są prawidłowe
-i korzystają z wartości domyślnych. Wartości logiczne nie zastępują liczb.
+A missing file uses all defaults. Invalid JSON syntax/encoding, duplicate keys,
+NaN/Infinity, files larger than 128 KiB, an invalid root type or an unsupported
+schema_version also restore all defaults. An invalid field restores only its own
+default; other valid changes remain active. An incorrectly typed section restores
+that section's defaults. Unknown fields are ignored and logged. Omitted fields
+and {} are valid. Boolean values cannot substitute for numeric settings.
 
-Błędy odczytu i walidacji mają prefiks CONFIG w session-stats.log. Błąd składni
-zawiera linię i kolumnę, jeżeli parser je podaje; błędne pole ma nazwę i powód.
-Surowy JSON i wartości użytkownika nie trafiają do logu. Nieustalona jednoznacznie
-lokalizacja paczki daje CONFIG_PATH i ustawienia domyślne. Mod nie wybiera
-najwyższego numeru katalogu mods ani JSON obok starej kopii z innej wersji gry.
-Zmiana nazwy .wotmod lub kilka jego aktywnych kopii może uniemożliwić ustalenie
-pliku; zachowaj nazwę z paczki i jedną kopię moda. Jeżeli sam moduł konfiguracji
-jest niedostępny, pozostają statyczne style i domyślna rolka z paczki.
+Read/validation errors use the CONFIG prefix in session-stats.log. Syntax errors
+include line and column when available; invalid fields include their names and
+reasons. Raw JSON and user values are not logged. An ambiguous package location
+produces CONFIG_PATH diagnostics and defaults. The mod does not choose the highest
+mods version or JSON beside an old copy from another client version. Renaming
+the .wotmod or keeping several active copies can prevent file discovery; retain
+the supplied filename and one copy. If the configuration module itself is
+unavailable, the bundled static styles and default wheel behavior remain usable.
 
-DWA NIEZALEŻNE OKRESY
-Oba okresy i ręczny reset są osobne dla każdego konta oraz regionu. Po zmianie
-konta panel pokazuje jego własną historię. Po powrocie poprzedni zakres wraca.
-Wyzerowanie konta B nie zeruje konta A. Historia nie jest łączona między kontami.
-„Od uruchomienia” zaczyna nowy okres w nowym procesie gry. Powrót z bitwy do
-garażu i ponowne połączenie z serwerem w tym samym procesie nie zerują go.
-„Od resetu” trwa przez kolejne uruchomienia aż do ręcznego wyzerowania.
-Przycisk „Wyzeruj zakres” jest dostępny w „Od resetu” i prosi o potwierdzenie.
-Nie zeruje okresu „Od uruchomienia”; północ również niczego nie resetuje.
+TWO INDEPENDENT ACCOUNT PERIODS
+Both periods and the manual reset are separate for every account and region.
+Switching accounts displays that account's history; returning restores the earlier
+account's scope. Resetting account B does not reset account A. Their histories
+are not combined.
+"Since launch" starts a new period in a new game process. Returning from battle
+to the garage or reconnecting within the same process does not reset it.
+"Since reset" persists across game launches until manually reset. Its "Reset period"
+button asks for confirmation. It does not reset "Since launch"; midnight does
+not reset either period.
 
 OPTIONAL INSTALLATION SESSION
 To display the third tab, add this section to grz.sessionstats.json:
@@ -185,256 +200,248 @@ No account-history migration or reset is required. Older account archives
 without installation provenance are not automatically imported.
 Details: source/docs/ACCOUNT_SESSIONS.md.
 
-Przynależność bitwy do obu okresów jest utrwalana przy wejściu do bitwy.
-Wynik otrzymany później uzupełnia właściwy okres. Powtórzony wynik aktualizuje
-rekord, zamiast dopisywać drugą bitwę. Późniejszy bonus PD nie zwiększa licznika.
-Gdy brakuje wyniku, mod próbuje odczytać go z dostępnej pamięci wyników klienta.
-Klient może nie udostępnić starego wyniku po restarcie; mod nie dopisze wtedy
-domniemanej porażki. Nie importuje historii z Tomonika ani bitew sprzed instalacji.
+A battle's period membership is saved on entry. A late result fills the correct
+period. A repeated result updates the existing record instead of adding another
+battle. A later XP bonus does not increment the battle count. Missing results
+are retried through the client's available result cache. The client may no longer
+provide an old result after a restart; the mod does not invent a defeat. It does
+not import Tomonik history or battles played before installation.
 
-Odczyt korzysta także z natywnego zapytania WoT do serwera, gdy brak lokalnego
-wyniku. Gra może być wyłączona w chwili zakończenia bitwy: zapisany początek
-pozostaje w kolejce i jest rozliczany po następnym zalogowaniu, jeśli serwer
-udostępni wynik. Mod dodatkowo przechwytuje poprawne wyniki odczytywane przez
-sam interfejs klienta, zanim klient potwierdzi ich odbiór. Błędy wspólnego cache
-i niegotowe konto mają osobne ponowienia, a stare braki nie blokują nowych bitew.
+When a local result is missing, recovery also uses WoT's native server request.
+The game may be closed when the battle ends: its saved entry remains queued and
+is reconciled after the next login if the server supplies the result. The mod
+also captures valid results read by the client's own interface before the client
+acknowledges receipt. Shared-cache failures and accounts that are not ready have
+separate retries; old gaps do not block new battles.
 
-Niepełny okres pokazuje np. „Bitwy z wynikiem: 20 / 21”. Brakująca bitwa jest
-widoczna na liście jako nieznany wynik, a pokrycie WN8, PD i finansów obejmuje
-wszystkie zarejestrowane bitwy. Procenty, średnie i sumy dotyczą odebranych danych.
-Wynik odzyskany później uzupełnia pierwotną bitwę i okres, bez duplikowania.
-Gdy serwer nie udostępnia już danych, nie obiecujemy ich odtworzenia; luka
-pozostaje jawna. Szczegóły: source/docs/OFFLINE_RESULT_RECOVERY.md.
+An incomplete period shows, for example, "Battles with results: 20 / 21". The
+missing battle remains in the list with an unknown outcome. WN8, XP and financial
+coverage use all recorded battles as the denominator. Percentages, averages and
+sums describe received data. A recovered result fills the original battle and
+period without duplication. If the server no longer supplies it, recovery cannot
+be promised; the gap stays explicit. See source/docs/OFFLINE_RESULT_RECOVERY.md.
 
-Reset rozpoczyna nowy widoczny okres i zachowuje stary dziennik na dysku. Wynik
-bitwy rozpoczętej przed resetem nie trafia do świeżego ręcznego okresu.
+Resetting starts a new visible period and preserves the old journal on disk.
+A battle started before the reset does not enter the new manual period.
 
-SPINNER I OCZEKUJĄCE WYNIKI
-Mały obracający się wskaźnik pojawia się nad słupkami ikony w garażu, gdy mod
-czeka na wynik bitwy zaobserwowanej w bieżącym uruchomieniu albo właśnie
-przetwarza wynik lub bonus PD. Dotyczy wyłącznie bieżącego konta.
-Przycisk nadal otwiera statystyki i zachowuje małe WN8. Podpowiedź rozróżnia
-oczekiwanie od przetwarzania i podaje liczbę oczekujących wyników.
+SPINNER AND PENDING RESULTS
+A small spinner appears above the garage icon's bars while waiting for a result
+from a battle observed during the current launch, or while processing a result
+or XP bonus. It concerns only the active account. The button still opens the
+panel and retains the small WN8 label. Its tooltip distinguishes waiting from
+processing and reports the pending count.
 
-Samo uczestniczenie w bieżącej bitwie nie oznacza oczekującego wyniku.
-Jeśli wrócisz do garażu przed jej końcem, znana modowi bitwa pozostaje oczekująca
-do czasu udostępnienia wyniku przez WoT. Niepełny wynik może nadal oczekiwać
-na uzupełnienie. Spinner gaśnie, gdy kolejka jest pusta i przetwarzanie zakończone;
-nie działa według sztucznego czasu. Krótkie przetwarzanie może być ledwo zauważalne.
+Being in a current battle is not itself a pending result. If you return to the
+garage before it ends, the observed battle remains pending until WoT supplies
+the result. Partial results can remain pending for completion. The spinner stops
+when the queue is empty and processing is complete, without an artificial timeout.
+Brief processing can be barely noticeable.
 
-Wskaźnik dotyczy kolejki konta, niezależnie od wybranej zakładki okresu.
-Ręczny reset nie kasuje oczekujących rozliczeń. Zmiana konta przełącza kolejkę;
-spóźniony callback poprzedniego konta nie uruchamia wskaźnika nowego konta.
-Po ponownym uruchomieniu bez wejścia do nowej lub trwającej bitwy zaległy
-niepełny wpis nie podtrzymuje spinnera. Panel zachowuje liczbę brakujących
-wyników z wyjaśnieniem, a mod nadal próbuje je odzyskać z pamięci klienta.
-Przycisk „Odśwież” ponawia odczyt. Historia nie jest kasowana ani uznawana
-za kompletną tylko po to, żeby wyłączyć wskaźnik. Podczas przetwarzania
-odzyskanego wyniku spinner może na krótko pokazać rzeczywistą aktywność.
-Wyłączenie moda unieważnia jego stare callbacki i usuwa wskaźnik wraz z przyciskiem.
+Activity follows the account's queue regardless of the selected period tab.
+Manual reset does not discard pending settlements. Account changes switch queues;
+a late callback from the old account cannot activate the new account's spinner.
+After restarting without entering a new or ongoing battle, an old incomplete
+entry does not keep the spinner active. The panel retains the missing count and
+explanation while background recovery continues. "Refresh" retries reads. History
+is neither deleted nor marked complete merely to stop the spinner. Processing a
+recovered result can briefly display real activity. Stopping the mod invalidates
+old callbacks and removes the indicator with its button.
 
-KONTROLA FORMATU WYNIKÓW
-Healthcheck porównuje odebrany wynik ze sprawdzonym kontraktem klienta.
-Sprawdza nazwy pól, typy i kształt kontenerów, wymagane dane używane przez mod,
-zakresy właściwych liczb oraz znany układ kosztów kredytów, obligacji i złota.
-Sprawdza także wybrane zgodności identyfikatorów i rozliczenia dyrektyw.
-Nowe nazwy pól porównuje ze stałym katalogiem; pierwszy wynik po aktualizacji
-nie staje się automatycznie nowym wzorcem.
+RESULT FORMAT HEALTH CHECK
+The health check compares received results against a verified client contract:
+field names, types, container shapes, required data, relevant numeric ranges and
+the known credit/bond/gold expense layout. It also checks selected identifier
+relationships and directive settlements. New field names are compared against a
+fixed catalog; the first result after an update does not become a new baseline.
 
-Przy niezgodności pojawia się ostrzeżenie systemowe WoT z nazwami problematycznych
-pól i ścieżką logu. Komunikaty są wysyłane w garażu, bez przerywania bitwy.
-Ta sama kombinacja kodu, ścieżki oraz oczekiwanego i otrzymanego typu/kształtu
-jest zapisywana i zgłaszana raz na uruchomienie moda. Nowe problemy są grupowane;
-próby wysłania ostrzeżenia o wynikach dzieli co najmniej 60 sekund.
-Jeśli system powiadomień jest chwilowo niedostępny, komunikat czeka na kolejną
-próbę. Panel zachowuje informację o wykrytym problemie w tym uruchomieniu.
+Incompatibilities produce a WoT system warning identifying problematic fields
+and the log location. Messages are delivered in the garage without interrupting
+battle. Each combination of code, path, expected and actual type/shape is logged
+and reported once per mod launch. New problems are grouped; result-warning
+attempts are at least 60 seconds apart. If notifications are temporarily unavailable,
+the message waits for another attempt. The panel retains the detected issue
+for the current launch.
 
-Ostrzeżenie nie oznacza, że wszystkie statystyki są błędne. Znane poprawne dane
-mogą zostać zapisane mimo nowego nieużywanego pola lub częściowego rozliczenia.
-Nieznany układ krotki kosztów nie jest zgadywany na podstawie starych indeksów.
-Przy znanym układzie brak jednej kwoty nie usuwa innych potwierdzonych walut.
-Zwykłe oczekiwanie na wynik oraz odpowiedź „jeszcze niegotowy” nie wywołują
-alarmu o formacie. Zmiana wartości obrażeń czy PD również nie jest takim alarmem.
+A warning does not mean every statistic is wrong. Known valid data can still be
+stored despite an unused new field or partial settlement. Unknown expense-tuple
+layouts are not guessed using old indexes. With a known layout, one missing
+amount does not discard other confirmed currencies. Normal waiting and a
+"not ready yet" response do not trigger a format warning; changed damage or XP
+values alone do not trigger one either.
 
-Zakres kontroli ma granice: zmiany znaczenia przy tych samych nazwach, typach
-i dopuszczalnych wartościach nie da się wykryć z samego wyniku. Nieużywane pola
-wewnętrznych rozszerzeń nie mają pełnej walidacji, a brak nieużywanego pola
-opcjonalnego nie jest alarmem. Po dużej zmianie klienta nadal potrzebne jest
-porównanie z natywnym raportem. Szczegóły: source/docs/RESULT_HEALTH_CONTRACT.md.
+The check has limits: changed meanings with unchanged names, types and valid
+ranges cannot be detected from the result alone. Unused extension internals are
+not fully validated; missing unused optional fields are not an alarm. Major
+client changes still require comparison with a native battle report. Details:
+source/docs/RESULT_HEALTH_CONTRACT.md.
 
-LOG MODA
-Standardowa ścieżka na Windows:
+MOD LOG
+Standard Windows location:
 %APPDATA%/grz_wot_session_stats/logs/session-stats.log
 
-Plik jest w UTF-8. Wpisy zawierają czas UTC, poziom, wersję moda oraz diagnostykę,
-np. zmianę liczby oczekujących wyników i kod/ścieżkę/typ problemu healthchecka.
-Wpisy CONFIG opisują odczyt i walidację wyglądu, a CONFIG_PATH problemy
-z ustaleniem ścieżki JSON obok aktywnej paczki moda.
-Kontrola zapisuje metadane schematu, bez surowych wyników, nicków, identyfikatorów
-kont i wartości statystyk. Własny log zachowuje typ wyjątku i miejsca w kodzie,
-bez treści wyjątku, która mogłaby zawierać dane wyniku.
+The UTF-8 log records UTC timestamps, severity, mod version and diagnostics such
+as pending-count changes or health-check codes/paths/types. CONFIG entries describe
+configuration reads and validation; CONFIG_PATH describes discovery of the JSON
+beside the active package. Health diagnostics contain schema metadata without
+raw results, nicknames, account identifiers or statistic values. Exception logging
+keeps exception types and code locations, omitting messages that could contain
+result data.
 
-Rotacja: około 1 MiB na plik oraz trzy kopie session-stats.log.1, .2 i .3 —
-około 4 MiB dla tej rodziny logu. Równoległe klienty korzystają z krótkiej
-nieblokującej blokady pliku; chwilowe zajęcie blokady nie zatrzymuje gry.
-Jeżeli środowisko nie udostępnia modułu blokad, używany jest osobny plik
-session-stats-<PID>.log, gdzie PID jest numerem procesu gry. Ma taki sam limit
-rotacji; limit dotyczy wtedy każdej rodziny PID osobno. Mod nie usuwa logów
-innych procesów. Ostrzeżenie o wyniku wskazuje faktycznie używaną ścieżkę.
+Rotation: approximately 1 MiB per file, plus session-stats.log.1, .2 and .3,
+approximately 4 MiB for that log family. Concurrent clients use a short nonblocking
+file lock; contention does not stall the game. Without a supported locking module,
+the mod uses session-stats-<PID>.log, where PID is the game process ID, with the
+same rotation limit per PID family. It does not remove other processes' logs.
+Result warnings show the actual log path.
 
-Błąd zapisu własnego logu nie wyłącza statystyk. Mod zgłasza go w panelu
-i powiadomieniach WoT; pozostaje dotychczasowa diagnostyka w game.log.
-Log jest lokalny i nie jest automatycznie wysyłany.
+Failure to write the dedicated log does not disable statistics. The panel and
+WoT notifications report the problem; existing game.log diagnostics remain.
+Logs are local and are not automatically uploaded.
 
-FINANSE I PD
-Bazowe PD pochodzą z originalXP, a otrzymane PD z wyniku gry. Dodatkowy bonus
-zastosowany po bitwie jest uzgadniany z natywnym kontrolerem wyników i zapamiętany.
-Nie odtwarzamy bazowych PD przez dzielenie wartości końcowej przez mnożnik.
+FINANCES AND XP
+Base XP comes from originalXP; received XP comes from the game result. Additional
+post-battle bonuses are reconciled with the native result controller and saved.
+Base XP is not reconstructed by dividing final XP by a multiplier.
 
-Kredyty obejmują przyznany wynik z właściwymi potrąceniami oraz koszt napraw,
-automatycznego uzupełnienia amunicji, materiałów i dyrektyw. Koszty dyrektyw nie
-są odejmowane drugi raz, gdy należą już do kosztu automatycznego uzupełnienia.
-Obligacje uwzględniają przychód i wydatki zapisane w rozliczeniu bitwy, także
-dyrektywy opłacone obligacjami. Złoto jest oddzielną walutą.
+Credits include awarded amounts with applicable deductions, repair costs and
+automatic ammunition, consumable and directive resupply. Directive costs are not
+subtracted twice when already included in automatic resupply. Bonds include
+battle-reported income and expenses, including bond-funded directives. Gold is
+a separate currency.
 
-Bilans dotyczy rozliczonych bitew w wybranym okresie. Zakup czołgu, sprzedaż
-wyposażenia i inne niezależne operacje w garażu nie są przypisywane ostatniej
-mapie. Odroczona rezerwa kredytów nie jest traktowana jak natychmiastowa wypłata.
-Nagroda jest doliczana, jeśli została ujęta w wyniku danej bitwy. Brakujące kwoty
-pozostają nieznane — nie są zastępowane zerem ani ceną katalogową wyposażenia.
+Balances describe settled battles in the selected period. Vehicle purchases,
+equipment sales and unrelated garage transactions are not assigned to the last
+map. Deferred credit reserves are not treated as immediate payouts. Rewards count
+when included in that battle's result. Missing amounts remain unknown; they are
+not replaced by zero or catalog equipment prices.
 
-DANE, SKRÓT I PRZYCISK
-Standardowa lokalizacja na Windows:
+DATA, SHORTCUT AND BUTTON
+Standard Windows data location:
 %APPDATA%/grz_wot_session_stats/
 
-Wklej tę ścieżkę do paska Eksploratora. Osobny podkatalog dla każdego konta/regionu
-ma nazwę wyliczoną z identyfikatora, a nie nicku. Dane nie leżą w mods/2.4.1.0,
-więc przeniesienie moda do nowej wersji gry nie usuwa ręcznego okresu.
-Zapis tworzy nową, kompletną generację JSON z sumą kontrolną; przechowuje trzy
-najnowsze generacje. Nieznany nowszy schemat blokuje zapis zamiast niszczyć pliki.
+Paste this path into Explorer. Each account/region has a subdirectory derived
+from its identifier, not its nickname. Data is outside mods/2.4.1.0, so moving
+the mod to a new client version does not erase the manual period. Saves create
+complete checksummed JSON generations and retain the newest three. An unknown
+newer schema blocks writes instead of damaging files.
 
-Dotychczasowe ustawienia skrótu i włączenia przycisku garażu pozostają osobno
-od wyglądu. Opcjonalnie utwórz %APPDATA%/grz_wot_session_stats/config.json:
+Existing shortcut and garage-button settings remain separate from appearance.
+Optionally create %APPDATA%/grz_wot_session_stats/config.json:
 {
   "hotkey": "CTRL+F10",
   "footer_button": true
 }
-Możesz ustawić F1–F12 z kombinacją CTRL, SHIFT lub ALT, np. CTRL+SHIFT+F10.
-Zmiana skrótu lub footer_button obowiązuje po ponownym uruchomieniu gry.
-Nieprawidłowy skrót przywraca domyślne Ctrl+F10.
-Kolory i przewijanie edytuj w grz.sessionstats.json obok .wotmod.
+F1–F12 support CTRL, SHIFT or ALT combinations, for example CTRL+SHIFT+F10.
+Shortcut/footer_button changes take effect after restarting the game. An invalid
+shortcut restores Ctrl+F10. Edit appearance and scrolling in grz.sessionstats.json
+beside the .wotmod.
 
-WN8 I AKTUALIZACJE GRY
-Dołączona jest tabela XVM Wargaming 2026-10-19, 999 pojazdów. Działa bez sieci.
-Brak oczekiwanych wartości nowego czołgu nie wyłącza PD, liczników ani finansów;
-WN8 pokazuje wówczas brak lub niepełne pokrycie.
+WN8 AND GAME UPDATES
+The bundled offline XVM Wargaming table is dated 2026-10-19 and covers 999 vehicles.
+Missing expected values for a new vehicle do not disable XP, counts or finances;
+WN8 displays missing or partial coverage.
 
-Aby uaktualnić wyłącznie dane WN8, pobierz JSON:
+To update only WN8 data, download:
 https://static.modxvm.com/wn8-data-exp/json/wg/wn8exp.json
-i zapisz go jako %APPDATA%/grz_wot_session_stats/wn8exp.json. Uruchom ponownie grę.
-Nie używaj pliku z katalogu lesta. Błędny lokalny plik powoduje powrót do tabeli
-dołączonej do moda. Aktualizacja tabeli może zmienić WN8 wcześniejszych wyników;
-liczniki, PD i rozliczenia walut pozostają oparte na zachowanych wynikach.
+and save it as %APPDATA%/grz_wot_session_stats/wn8exp.json, then restart the game.
+Do not use the lesta directory's file. Invalid local data falls back to the bundled
+table. Updating the table may change WN8 for earlier results; counts, XP and
+currency settlements still use stored results.
 
-Własne zasoby okna są rejestrowane przez gui/gen_resources i nazwę R.mods.grz…,
-bez stałych numerów zasobów oraz podmiany podstawowych plików panelu wyników.
-Przycisk w garażu korzysta z własnego komponentu stopki i OpenWG Gameface.
-Gdy struktura stopki po aktualizacji jest niedostępna, pozostaje niezależny skrót
-klawiaturowy, jeżeli interfejs klawiatury i okna nadal działają.
-Przy zmianie klienta zwykle wystarczy przejrzeć runtime.py, normalize.py,
-views.py, footer.py i mały adapter grafik visuals.py. Rdzeń obliczeń i format
-danych są od nich oddzielone. Po potwierdzonej zmianie schematu trzeba również
-zaktualizować właściwy kontrakt w health.py; samo ostrzeżenie nie zmienia adaptera.
-Odczyt fizycznej lokalizacji konfiguracji jest oddzielony w config_path.py,
-a walidacja wyglądu w appearance.py nie zależy od klienta. Źródła lokalizacji
-i zasady bezpiecznego odczytu: source/docs/CONFIG_PATH_SOURCES.md.
-Żaden mod korzystający z wewnętrznego interfejsu klienta nie ma gwarancji działania
-po dowolnej przyszłej aktualizacji; ta architektura ogranicza zakres poprawek.
+Window resources are registered through gui/gen_resources and R.mods.grz… names,
+without fixed resource IDs or replacing core result-panel files. The garage
+button uses a dedicated footer component and OpenWG Gameface. If a client update
+changes the footer, the independent keyboard shortcut remains available provided
+the keyboard and window interfaces still work.
+Client changes usually concern runtime.py, normalize.py, views.py, footer.py and
+the small visuals.py adapter. Calculations and storage are separate. Confirmed
+schema changes also require updating health.py's contract; a warning does not
+modify the adapter automatically. Package discovery is isolated in config_path.py;
+appearance.py validation does not depend on the client. Discovery sources and
+safe loading rules: source/docs/CONFIG_PATH_SOURCES.md. No mod using internal
+client interfaces can guarantee operation after arbitrary future updates; this
+architecture limits the scope of fixes.
 
-ZACHOWANE ZABEZPIECZENIA Z 0.2.5
-• Brak importu okna, obsługi klawiatury albo opcjonalnej subskrypcji nie blokuje
-  sam w sobie odbioru i zapisu wyników z pozostałych dostępnych źródeł.
-• Własne callbacki są osłonięte, aby ich błąd nie przerywał natywnego dispatchera.
-  Zamykanie i zatrzymanie odłączają elementy niezależnie. Zachowane stare
-  callbacki są unieważnione i nie mogą sterować nowym oknem lub uruchomieniem.
-• Brak pomocnika miniaturek czołgów nie wyłącza miniaturek map. Brak grafik
-  nie blokuje tekstowej części statystyk.
-• Ponowny odczyt zapisanego wyniku korzysta ze znanych nazw i identyfikacji mapy,
-  gdy bieżący klient nie potrafi ich odtworzyć. Chroni to grupowanie historii.
-• Panel ostrzega o niedostępnym źródle wyników lub dodatkowych bonusów PD.
-  Powtarzane błędy nie zalewają logu. Brak danych nadal oznacza brak danych;
-  nie zgadujemy nowego znaczenia pól finansowych ani wartości bonusu.
+SAFEGUARDS RETAINED FROM 0.2.5
+• Missing window imports, keyboard handling or an optional subscription do not
+  by themselves block receipt and storage from other available result sources.
+• Mod callbacks are guarded so failures do not interrupt the native dispatcher.
+  Closing/stopping detaches components independently. Retained old callbacks
+  are invalidated and cannot control a new window or runtime.
+• Missing vehicle-thumbnail helpers do not disable map thumbnails. Missing
+  graphics do not block text statistics.
+• Re-reading saved results retains known vehicle names and map identity when
+  the current client cannot resolve them, preserving historical grouping.
+• The panel warns about unavailable result or additional-XP sources. Repeated
+  failures do not flood logs. Missing data remains missing; changed financial
+  meanings and bonus values are not guessed.
 
-To ochrona przed konkretnymi awariami, nie automatyczne dostosowanie do każdego
-nowego WoT. Zmiana formatu wyników, mostka Wulf/Gameface lub wersji Pythona może
-wymagać aktualizacji adaptera albo ponownej kompilacji. Po zmianie aktywnego
-katalogu mods trzeba też zainstalować paczkę dla właściwej wersji klienta.
-Szczegóły audytu i przypięte źródła: source/docs/UPDATE_COMPATIBILITY_SOURCES.md.
+These safeguards address specific failures rather than automatically adapting
+to every new WoT client. Changed result formats, Wulf/Gameface bridges or Python
+versions may require adapter updates or recompilation. A changed active mods
+directory also requires installing the package for the correct client version.
+Audit details and pinned sources: source/docs/UPDATE_COMPATIBILITY_SOURCES.md.
 
-PIERWSZE SPRAWDZENIE W GRZE
-1. W garażu sprawdź małą ikonę, pozycję okna, widoczne podpisy zakładek,
-   przeciąganie za tytuł, krzyżyk w prawym rogu, przełączanie PD
-   i Czołgi/Mapy/Bitwy, Ctrl+F10 oraz zamknięcie przez Esc.
-   Zmień wybrany kolor lub mnożnik rolki w JSON, zapisz i użyj „Odśwież”.
-   To sprawdzenie interfejsu nie wymaga rozegrania żadnej bitwy.
-2. Odbiór wyników sprawdza się osobno: po nowej zakończonej bitwie losowej
-   porównaj bazowe/otrzymane PD oraz netto kredytów i obligacji z natywnym
-   raportem tej konkretnej bitwy. Przy wcześniejszym powrocie do garażu
-   sprawdź spinner i jego podpowiedź, a po pełnym rozliczeniu — wygaszenie
-   wskaźnika, o ile nie oczekują inne wyniki.
-3. Zamknij i ponownie uruchom grę: „Od uruchomienia” ma 0 bitew, „Od resetu”
-   zachowuje rozegrany wynik. Ręczny reset zeruje tylko drugi okres.
-   Jeśli pozostał niepełny wynik z wcześniejszego uruchomienia, sam ten wpis
-   nie powinien uruchamiać spinnera; panel pokaże wyjaśnienie braków.
-Jeżeli panel się nie otworzy, wynik się nie pojawi lub zobaczysz ostrzeżenie,
-zachowaj wskazany log moda wraz z kopiami po rotacji oraz game.log z tego
-uruchomienia (i python.log, jeżeli klient go tworzy). Gdy osobny log nie działa,
-w game.log wyszukaj grz.sessionstats. Przy rozbieżności potrzebny jest również
-natywny ekran szczegółów wyniku. Bez tych danych nie da się potwierdzić przyczyny.
+FIRST IN-GAME CHECK
+1. In the garage, check the small icon, window position, visible tab labels,
+   title-bar dragging, upper-right close button, XP mode, Vehicles/Maps/Battles,
+   Ctrl+F10 and Esc. Change a color or wheel multiplier in JSON, save and click
+   "Refresh". This interface check does not require playing a battle.
+2. Verify result receipt separately: after a new completed random battle, compare
+   base/received XP and credit/bond net values with that battle's native report.
+   After returning early, check the spinner and tooltip; after full settlement,
+   it should stop unless another result is pending.
+3. Restart the game: "Since launch" has zero battles; "Since reset" retains the
+   result. Manual reset clears only the second period. An incomplete old result
+   alone should not start the spinner; the panel explains the missing data.
+If the panel fails to open, a result is missing or a warning appears, retain the
+indicated log and rotated copies plus game.log from that launch (and python.log
+if the client creates it). If the dedicated log fails, search game.log for
+grz.sessionstats. A statistics discrepancy also requires the native result's
+detail screen. Without these, the cause cannot be confirmed.
 
 COMMON TEST
-Oddzielny klient testowy nie gwarantuje odseparowania lokalnej historii moda.
-Dziennik statystyk jest przypisany do konta i regionu. Jeżeli Common Test zwróci
-tę samą parę identyfikatorów, a oba klienty użyją tego samego AppData, mogą
-korzystać z tej samej lokalnej sesji „Od resetu”. Osobny użytkownik Windows
-zapewnia osobne AppData. Zwykła zmiana folderu instalacji gry tego nie zapewnia.
-Nie dotyczy to postępu konta głównego na serwerze Wargaming.
+A separate test client does not guarantee separate local account history. The
+journal is keyed by account and region. If Common Test returns the same pair and
+both clients use the same AppData, they can share the local "Since reset" scope.
+A separate Windows user provides separate AppData; changing only the game install
+directory does not. This does not affect main-account progress on Wargaming's server.
 
-ODINSTALOWANIE
-Przy zamkniętej grze usuń tylko plik grz.sessionstats_0.2.7.wotmod z aktywnego
-katalogu mods. OpenWG może być potrzebny innym modom. Dziennik w AppData pozostaje;
-usunięcie katalogu danych usuwa zapamiętane statystyki.
-Plik grz.sessionstats.json możesz zachować do kolejnej instalacji.
+UNINSTALLING
+Close the game and remove grz.sessionstats_0.2.7.wotmod from the active mods directory.
+Other mods may require OpenWG. The AppData journal remains; deleting the data
+directory deletes saved statistics. Keep grz.sessionstats.json and optional
+language overrides for a later installation if desired.
 
-ŹRÓDŁA I BUDOWA
-source/src/ — kod moda; source/ui/ — natywny panel i przycisk.
-source/tests/ — testy rdzenia, zapisu, adaptera i interfejsu.
-source/tools/build.py — buduje .wotmod metodą ZIP_STORED i zestaw instalacyjny.
-source/tools/make_preview.py — podgląd prawdziwego UI na syntetycznych danych.
-source/preview/PODGLAD.html oraz PODGLAD.html — podgląd, nie odbiera danych gry.
+SOURCE AND BUILD
+source/src/ — mod code; source/ui/ — native panel and button.
+source/tests/ — calculation, storage, adapter and UI tests.
+source/tools/build.py — builds ZIP_STORED .wotmod and installation packages.
+source/tools/make_preview.py — real UI preview using synthetic data.
+source/preview/PODGLAD.html and PODGLAD.html — previews without game data input.
 
-Budowa wymaga narzędzi deweloperskich Python 3 oraz CPython 2.7:
-python3 tools/build.py --python27 /sciezka/do/python2.7 --client-version 2.4.1.0
-Testy Pythona uruchamiane z source:
+Building requires Python 3 and CPython 2.7 developer tools:
+python3 tools/build.py --python27 /path/to/python2.7 --client-version 2.4.1.0
+Run Python tests from source:
 python2.7 -m unittest discover -s tests -p "test_*.py" -v
 python3 -m unittest discover -s tests -p "test_*.py" -v
-Testy UI wymagają Node i Playwright; ustaw GRZ_CHROME na plik wykonywalny Chrome.
-node tests/ui_contract.cjs — kontrolki, układ oraz pojedyncze wyniki bitew.
-node tests/ui-wheel.cjs — kierunek i tempo rolki, brak podwójnego ruchu i granice.
-node tests/ui-footer.cjs — wygląd, kontrolki i integracja przycisku garażu.
-node tests/ui-footer-compat.cjs — awarie API stopki i nieaktywne stare callbacki.
-node tests/ui-footer-activity.cjs — spinner, stan kolejki, podpowiedź i cleanup.
-node tests/ui-appearance.cjs — style z konfiguracji, fallback i mnożnik rolki.
-Testy Pythona obejmują także walidację JSON, zgodność wartości domyślnych ze
-stylem, ustalanie ścieżki paczki oraz przekazanie konfiguracji do panelu i stopki.
+UI tests require Node and Playwright; set GRZ_CHROME to the Chrome executable.
+node tests/ui_contract.cjs — controls, layout and individual battle results.
+node tests/ui-wheel.cjs — wheel direction/speed, no duplicate movement and bounds.
+node tests/ui-footer.cjs — garage-button appearance, controls and integration.
+node tests/ui-footer-compat.cjs — footer API failures and inert old callbacks.
+node tests/ui-footer-activity.cjs — spinner, queue state, tooltip and cleanup.
+node tests/ui-appearance.cjs — configured styles, fallback and wheel multiplier.
+Python tests also cover JSON validation, default/style agreement, package-path
+discovery and configuration delivery to the panel and footer.
 Source validation after PR #3 corrections: 364 tests on Python 3; the same suite
 on CPython 2.7.18 with 4 Python-3-only builder tests skipped.
-Testy obejmują zachowanie spinnera po restarcie i odzyskiwanie starych wyników.
-Style i geometria domyślnego panelu i ikony są porównywane z bazowym wyglądem;
-kontrola rastra dopuszcza ograniczone różnice antyaliasingu między Chromium.
-Weryfikacja automatyczna nie jest testem działającego WoT.
-Paczka gry zawiera bajtkod Pythona 2.7. Nie należy zastępować go bajtkodem Pythona 3.
-Pliki BUILD.json, SHA256SUMS.txt i raporty w tests opisują rzeczywistą weryfikację.
+Tests cover spinner behavior after restart and old-result recovery. Default panel
+and icon styles/geometry are compared against the baseline; raster checks allow
+bounded antialiasing differences between Chromium versions. Automated validation
+is not a live WoT test. The game package contains Python 2.7 bytecode; do not
+replace it with Python 3 bytecode. BUILD.json, SHA256SUMS.txt and test reports
+describe the actual verification.
 
-Licencja kodu: GPL-3.0. OpenWG zachowuje MIT. Szczegóły i pierwotne źródła:
+Code license: GPL-3.0. OpenWG retains MIT. Details and original sources:
 LICENSE.txt, THIRD_PARTY.txt, source/third_party/openwg/LICENSE.

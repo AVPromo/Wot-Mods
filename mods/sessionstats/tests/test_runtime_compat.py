@@ -371,9 +371,9 @@ class RuntimeCompatibilityTests(unittest.TestCase):
         try:
             runtime.LOG.warning = lambda *args, **kwargs: logged.append(args)
             for unused in range(5):
-                self.mod._warn_once('fixture', 'Ten sam problem zgodności.')
+                self.mod._warn_once('fixture', 'The same compatibility problem.')
             self.assertEqual(len(logged), 1)
-            self.assertEqual(self.mod.snapshot()['warnings'].count('Ten sam problem zgodności.'), 1)
+            self.assertEqual(self.mod.snapshot()['warnings'].count('The same compatibility problem.'), 1)
         finally:
             runtime.LOG.warning = old_warning
 

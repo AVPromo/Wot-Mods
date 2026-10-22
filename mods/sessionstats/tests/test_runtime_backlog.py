@@ -72,7 +72,7 @@ class BacklogActivityTests(unittest.TestCase):
         self.assertEqual(self.footer.states[-1], (0, False))
         self.assertEqual(self.summary()['battles'], 1)
         self.assertEqual(self.mod.active_service.pending_arena_ids(), [])
-        self.assertFalse(any('Niepełne wyniki wcześniejszych bitew:' in warning
+        self.assertFalse(any('Incomplete earlier battle results:' in warning
                              for warning in self.mod.snapshot()['warnings']))
         self.api.events.onBattleResultsReceived(True, raw_result())
         self.assertEqual(self.summary()['battles'], 1)

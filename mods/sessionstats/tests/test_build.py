@@ -32,7 +32,7 @@ class BuildContracts(unittest.TestCase):
                 self.assertIn(b'grz.sessionstats_0.2.8.wotmod', rendered)
             self.assertNotIn(b'mods/2.4.1.0/', rendered)
         readme = self.build.render_guide('README_PL.txt', (self.build.ROOT/'README_PL.txt').read_bytes(), '0.2.8','2.5.0.0')
-        self.assertIn(b'Wersja 0.2.8', readme)
+        self.assertIn(b'Version 0.2.8', readme)
 
     def test_historical_changelog_is_not_rewritten(self):
         content = (self.build.ROOT/'ZMIANY.txt').read_bytes()

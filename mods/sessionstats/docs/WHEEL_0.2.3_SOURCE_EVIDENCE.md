@@ -1,59 +1,97 @@
-# Przewijanie rolką w 0.2.3 — źródła i zakres weryfikacji
+# Wheel scrolling 0.2.3 — sources and verification scope
 
-Stan przeglądu: 20 października 2026 r. Zmiana dotyczy wyłącznie przewijania panelu `ui/session_stats.js`. Zgłoszenie użytkownika dotyczyło odwróconego kierunku w prawdziwym kliencie WoT; wcześniejszy panel polegał wyłącznie na `overflow-y: auto`.
+Reviewed on 2026-10-20. This changes only `ui/session_stats.js` panel scrolling.
+The user reported reversed direction in the real WoT client; the previous panel
+relied solely on `overflow-y: auto`.
 
-## 1. Kierunek w aktualnym interfejsie WoT
+## 1. Direction in the current WoT interface
 
-Odczytany materiał: pliki klienta **2.4.1.0 #977**, utrwalone w repozytorium `Kurzdor/wot.assets`, commit **`3605bd36c53d10c16be5d93f5414aa5fd129e84e`** z 16 października 2026 r. To publiczne odwzorowanie plików klienta; nie jest to oficjalny kontrakt kompatybilności modów Wargaming.
+Client resources **2.4.1.0 #977**, `Kurzdor/wot.assets` commit
+**`3605bd36c53d10c16be5d93f5414aa5fd129e84e`**, 2026-10-16. This public mirror
+is not an official Wargaming mod-compatibility contract.
 
-Źródło: [InfoView.js — stały commit](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/lobby/InfoView/InfoView.js).
+Source: [InfoView.js, pinned commit](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/lobby/InfoView/InfoView.js).
 
-Łańcuch operacji w tym pliku:
-
-| Miejsce | Operacja | Znaczenie |
+| Location | Operation | Meaning |
 | --- | --- | --- |
-| Linie 2615–2618 | `Next = -1`, `Prev = 1` | Kierunek ma wartość liczbową. |
-| Linie 2763–2769 | Aktualna pozycja + kierunek × krok | Ujemny kierunek zmniejsza pozycję przewijania. |
-| Linie 2787–2808 | `deltaY` wybiera kierunek i wywołuje przewinięcie | To aktywna ścieżka obsługi rolki. |
-| Linie 3150–3157 | `getDirection: e => e.deltaY > 1 ? p.Next : p.Prev` i przypisanie `scrollTop` | Dodatnia delta większa od 1 przesuwa ku górze, ujemna ku dołowi. |
-| Linie 3305–3309 | Przycisk górny również używa `Next` | Niezależne potwierdzenie znaczenia ujemnego kierunku. |
+| Lines 2615–2618 | `Next = -1`, `Prev = 1` | Direction is numeric. |
+| Lines 2763–2769 | Current position + direction × step | Negative direction decreases position. |
+| Lines 2787–2808 | `deltaY` selects direction and triggers movement | Active wheel path. |
+| Lines 3150–3157 | `getDirection: e => e.deltaY > 1 ? p.Next : p.Prev`, assigning `scrollTop` | Positive delta above 1 moves up; negative moves down. |
+| Lines 3305–3309 | Upper button also uses `Next` | Independently confirms negative-direction meaning. |
 
-Wniosek: natywny komponent WoT interpretuje znak przeciwnie do standardowego przewijania przepełnionej zawartości w przeglądarce. To zgadza się z obserwacją użytkownika. W modzie odwrócenie działa tylko po udanym podłączeniu modelu Gameface (`state.bound`); sam podgląd HTML zachowuje zwykłą obsługę przeglądarki.
+Inference: the native WoT component interprets the sign oppositely to standard
+browser overflow scrolling, matching the user's observation. Our inversion applies
+only after successful Gameface model binding (`state.bound`); standalone HTML keeps
+normal browser behavior.
 
-Nie skopiowano progu `> 1`, który nie określa spójnego kierunku małych dodatnich delt. Kierunek w modzie wynika ze znaku. Nie skopiowano też szybkości animowanego komponentu WoT: zachowujemy wielkość delty urządzenia.
+The `> 1` threshold was not copied because it does not give small positive deltas
+a consistent direction. The mod uses the sign. Version 0.2.3 retained device-delta
+magnitude instead of copying the native animated component's speed.
 
-## 2. Surowy DOM a React
+## 2. Raw DOM versus React
 
-Sam `onWheel` komponentu React nie wystarczyłby do stwierdzenia, że można używać identycznego znaku w bezpośrednim `addEventListener`.
+React `onWheel` alone would not establish the same sign for direct `addEventListener`.
+In [InfoView.html at the same commit](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/lobby/InfoView/InfoView.html),
+lines 6120–6133, bundled React **copies an existing `deltaY` without changing its
+sign**. Only absent `deltaY` falls back to negated `wheelDeltaY`/`wheelDelta`.
 
-W [InfoView.html z tego samego commitu](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/lobby/InfoView/InfoView.html), linie 6120–6133, dołączony React **przepisuje istniejące `deltaY` bez zmiany znaku**. Dopiero gdy tego pola brak, korzysta z zanegowanego `wheelDeltaY` albo `wheelDelta`.
+Gameface documents `wheel` as a supported DOM L3 `WheelEvent` in its
+[JS-event table](https://docs.coherent-labs.com/cpp-gameface/content_development/supported_features_tables/jsevents/).
+The official [SVG UI Tricks — `mouse-map-controls.js`](https://guide.coherent-labs.com/layout-assets-and-styling/graphics--shapes/svg-ui-tricks/),
+updated 2026-07-02, directly uses `map.addEventListener("wheel", ...)`,
+`event.deltaY` and `event.preventDefault()` without React. This supports raw DOM
+`deltaY`; no unverified legacy `mousewheel` path was added.
 
-Gameface dokumentuje `wheel` jako obsługiwane zdarzenie DOM L3 z interfejsem `WheelEvent`: [tabela zdarzeń JS](https://docs.coherent-labs.com/cpp-gameface/content_development/supported_features_tables/jsevents/). Oficjalny poradnik [SVG UI Tricks — `mouse-map-controls.js`](https://guide.coherent-labs.com/layout-assets-and-styling/graphics--shapes/svg-ui-tricks/), aktualizacja 2 lipca 2026 r., używa bezpośrednio `map.addEventListener("wheel", ...)`, `event.deltaY` i `event.preventDefault()`, bez React. To uzasadnia użycie surowego DOM `deltaY` przez mod. Nie dodajemy niesprawdzonej ścieżki starszych zdarzeń `mousewheel`.
+## 3. Canceling default movement — evidence and limits
 
-## 3. Anulowanie domyślnego ruchu — dowody i ograniczenie
+[Gameface C++ input documentation](https://docs.coherent-labs.com/cpp-gameface/integration/optional_features/inputhandlingcpp_native/)
+describes script handling/propagation before default operations including scrolling.
+The [Event API](https://docs.coherent-labs.com/cpp-gameface/api_reference/classes/interface_event/)
+exposes `preventDefault`, `stopPropagation`, `cancelable` and `defaultPrevented`.
+The official example above cancels inside an ordinary wheel listener.
 
-[Dokumentacja wejścia Gameface C++](https://docs.coherent-labs.com/cpp-gameface/integration/optional_features/inputhandlingcpp_native/) opisuje kolejność: obsługa skryptowa i propagacja zdarzenia, potem domyślne operacje, w tym przewijanie. [API Event](https://docs.coherent-labs.com/cpp-gameface/api_reference/classes/interface_event/) udostępnia `preventDefault`, `stopPropagation`, `cancelable` i `defaultPrevented`. Wspomniany wyżej oficjalny przykład używa `preventDefault()` w zwykłym listenerze rolki.
+The adapter owns one panel listener, cancels before changing `scrollTop` and stops
+propagation. There is no global `document` listener. Cleanup removes the exact
+listener. Handled events stay canceled at both endpoints to prevent another element
+from scrolling simultaneously.
 
-Adapter instaluje jeden listener na własnym panelu, anuluje zdarzenie przed zmianą `scrollTop` i zatrzymuje propagację. Nie instaluje globalnej obsługi na `document`. Zamykanie adaptera usuwa ten sam listener. Obsłużone zdarzenie pozostaje anulowane również przy górnej i dolnej granicy listy; dzięki temu nie przewija równocześnie innego elementu.
+**Actual `event.cancelable` was not measured in a running WoT client.** Public docs
+establish supported interfaces and cancellation usage, not flags for every native
+input in a specific client build. `InfoView.js` does not prove this: its handler
+does not call `preventDefault()` and uses a custom component. [InfoView.css](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/lobby/InfoView/InfoView.css),
+lines 190–193, uses `overflow-y: hidden`, a separate scrollbar and manual positioning.
 
-**Nie potwierdzono pomiarem rzeczywistego `event.cancelable` w uruchomionym WoT.** Publiczna dokumentacja opisuje obsługiwany interfejs i użycie anulowania, lecz nie ustala flagi każdego wejścia natywnego w konkretnym buildzie klienta. `InfoView.js` nie stanowi takiego dowodu: używa własnego komponentu przewijania i nie wywołuje `preventDefault()` w analizowanym handlerze. Jego [InfoView.css](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/lobby/InfoView/InfoView.css), linie 190–193, ustawia `overflow-y: hidden`; natywny komponent korzysta z osobnego paska i ręcznej zmiany pozycji.
+If the host explicitly supplies `cancelable === false`, the adapter adds no manual
+movement, avoiding overlap with an uncancelable default. Direction correction will
+not apply under that unusual contract; client observation and a separate adjustment
+would be required. Chromium tests do not establish C++ Gameface behavior.
 
-Jeżeli host poda jawnie `cancelable === false`, adapter pozostawia zdarzenie bez dodatkowej zmiany pozycji. To celowo unika nakładania ręcznego ruchu na domyślny ruch, którego nie można anulować. W takim nietypowym kontrakcie poprawka kierunku nie zadziała; wymagałoby to obserwacji klienta i osobnego dostosowania. Nie udajemy, że test w Chromium rozstrzyga zachowanie silnika C++ Gameface.
+## 4. Behavior selected for this panel
 
-## 4. Zachowanie wybrane dla tego panelu
+- In 0.2.3, pixel mode retained absolute delta, including small trackpad input;
+  only the sign changed in bound Gameface.
+- Line mode multiplied by 24 logical units with client scale; page mode used the
+  current viewport height. This was a mod speed choice, not identical InfoView speed.
+- Position clamps to content bounds. Manual movement immediately triggers existing
+  history batching without waiting for another wheel or engine `scroll` event.
+- Predominantly horizontal gestures and Shift + wheel do not become vertical
+  movement. Wheeling over the title does not control the list.
+- An open reset dialog consumes panel wheels without moving background statistics.
+  Events already canceled by another consumer receive no additional movement.
 
-- Tryb pikselowy zachowuje wartość bezwzględną delty, także drobne ruchy trackpada; zmienia się tylko znak w podłączonym Gameface.
-- Tryb liniowy mnoży deltę przez 24 jednostki logiczne, z uwzględnieniem skali klienta. Tryb stronowy używa bieżącej wysokości przewijanej części. To decyzja moda o tempie, nie obietnica identycznego tempa jak w `InfoView`.
-- Pozycja jest ograniczona do zakresu od zera do końca zawartości. Ręczne przesunięcie uruchamia istniejące doładowanie historii w partiach; nie czeka na kolejną rolkę ani na implementację zdarzenia `scroll` w silniku.
-- Gest z dominującą składową poziomą oraz Shift + rolka nie zamienia się w ruch pionowy. Rolka nad tytułem nie steruje listą.
-- Otwarty dialog resetu przechwytuje rolkę nad panelem i nie przesuwa statystyk w tle. Zdarzenia już anulowane przez innego odbiorcę są pozostawiane bez dodatkowego ruchu.
+## 5. Regression verification
 
-## 5. Weryfikacja regresji
+`tests/ui-wheel.cjs`: **19/19** at preparation, without JavaScript errors. Main cases
+use **actual Chromium CDP input** (`page.mouse.wheel`) with `isTrusted === true`.
+The model double reproduces WoT's sign contract, allowing browser defaults to run
+if cancellation fails. Synthetic `WheelEvent` alone would not reveal that risk.
 
-Test: `tests/ui-wheel.cjs`. Wynik podczas przygotowania poprawki: **19/19**, bez błędów JavaScript.
+Checks cover both directions and exactly one movement, small deltas, repeated input,
+horizontal gestures, Shift, title, reset dialog, endpoints and batching 95 entries.
+A separate unbound page verifies unchanged browser scrolling. After `destroy()`,
+the original reversed WoT-sign behavior returns, serving as a negative control and
+listener-removal check. Only line/page-unit cases use synthetic events.
 
-Główne przypadki używają **rzeczywistego wejścia Chromium przez CDP** (`page.mouse.wheel`), z `isTrusted === true`. Podłączony model testowy odtwarza kontrakt znaku z pliku WoT. Dzięki temu przeglądarka wykonuje własną domyślną obsługę, jeśli mod jej skutecznie nie anuluje. Sama emisja syntetycznego `WheelEvent` nie wykazałaby tego ryzyka.
-
-Sprawdzone są oba kierunki i dokładnie jedno przesunięcie, małe delty, seria ruchów, poziome gesty, Shift, tytuł okna, dialog resetu, granice oraz doładowanie 95 pozycji w partiach. Oddzielna strona bez modelu Gameface potwierdza niezmienione przewijanie przeglądarkowe. Po `destroy()` test odtwarza pierwotny błędny kierunek dla znaku WoT: stanowi to kontrolę negatywną, a zarazem sprawdzenie usunięcia listenera. Syntetyczne zdarzenia służą wyłącznie dwóm dodatkowym przypadkom jednostek liniowych i stronowych.
-
-Zakres: dostarczony JS/HTML/CSS w Chromium z atrapą mostka modelu. Nie uruchomiono klienta WoT ani silnika Gameface, nie wykonano bitwy i nie zmieniono statystyk konta.
+Scope: shipped JS/HTML/CSS in Chromium with a model-bridge double. No WoT/Gameface
+engine, battles or account-statistic changes were involved.

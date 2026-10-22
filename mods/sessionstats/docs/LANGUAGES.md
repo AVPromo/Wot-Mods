@@ -14,6 +14,9 @@ Set the root `language` property in `grz.sessionstats.json`, next to the active
 Existing appearance and session settings can stay in the same object. Open the
 panel or select Refresh to reload both configuration files. Language changes
 do not reset statistics, change account ownership or modify saved battle facts.
+The main configuration is optional and supports partial nested overrides. For
+example, `{"language":"fr"}` changes only the language; every omitted setting
+keeps its built-in default. A missing main file selects the English defaults.
 
 ## Custom translations
 
@@ -25,6 +28,10 @@ the installation ZIP and its source bundle.
 
 Keep your edited catalog when updating the mod. New messages missing from an
 older override file use the current bundled defaults.
+The external catalog is optional: deleting or omitting it keeps the selected
+bundled language available. If the bundled resource itself cannot be read, an
+English dictionary embedded in Python code remains available. Language files
+are never required as separate downloads for the mod to start.
 
 The catalog uses stable message keys, including panel headings, buttons,
 accessibility labels, tooltips, reset confirmations, outcomes, vehicle classes,

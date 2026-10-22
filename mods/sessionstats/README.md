@@ -1,34 +1,36 @@
-# Statystyki sesji dla World of Tanks
+# Session Stats for World of Tanks
 
-Źródła wersji 0.2.7: dwie niezależne sesje, WN8, PD, finanse z obligacjami,
-podział na czołgi/mapy/bitwy, healthcheck wyników, lokalny log i konfigurowalny wygląd.
-Szczegółowa instrukcja: [README_PL.txt](README_PL.txt), historia: [ZMIANY.txt](ZMIANY.txt).
+Version 0.2.7 source: independent sessions, WN8, XP, finances including bonds,
+vehicle/map/battle grouping, result health checks, local logging and configurable
+appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
+These legacy filenames are retained for existing package and documentation links;
+their contents are English.
 Both default scopes and manual resets are isolated per account and region.
 `"sessions": {"instance_tab": true}` displays the optional installation tab.
 Its shared history and independent manual reset persist across game restarts;
 the tab is hidden by default. See [ACCOUNT_SESSIONS.md](docs/ACCOUNT_SESSIONS.md).
-Poprawki po review importu: [REVIEW_FIXES_PR3.md](docs/REVIEW_FIXES_PR3.md).
-Pipeline budowania i walidacji jest dostarczany przez nadrzędny PR #2;
-PR ze źródłami jest na nim oparty i wymaga jego wcześniejszego merge.
+Import review fixes: [REVIEW_FIXES_PR3.md](docs/REVIEW_FIXES_PR3.md).
+The build/validation pipeline comes from parent PR #2. The source PR is stacked
+on it and requires that infrastructure to merge first.
 
-## Instalacja i współpraca z innymi modami
+## Installation and integration with other mods
 
-Pobierz ZIP wydania **Session Stats** z [Releases](https://github.com/Szwarceneger16/WotMods/releases).
-Umieść `.wotmod` i `grz.sessionstats.json` razem w aktywnym `mods/<wersja gry>/`.
-Zachowaj własny JSON przy aktualizacji. OpenWG Gameface 1.2.2 jest dołączony
-na licencji MIT; instaluj tylko jedną kopię tej zależności, także gdy używa jej inny mod.
-Usuń poprzednią wersję samych statystyk. Nie kasuj historii w AppData.
+Download the **Session Stats** installation ZIP from [Releases](https://github.com/Szwarceneger16/WotMods/releases).
+Place the `.wotmod` and optional `grz.sessionstats.json` together in the active
+`mods/<game_version>/` directory. Preserve your custom JSON when updating. OpenWG
+Gameface 1.2.2 is included under MIT; install only one copy even if another mod
+uses it. Remove the old Session Stats package without deleting AppData history.
 
-Statystyki używają własnego `mod_grz_session_stats`, pakietu `grz_session_stats`,
-zasobów `grz.sessionstats` i osobnego katalogu danych/logów. Medkit Reminder ma
-oddzielny punkt wejścia i nie jest zależnością. Zbudowane paczki mają rozłączne
-ścieżki zasobów; rzeczywiste współdziałanie w kliencie nadal wymaga testu w grze.
+Session Stats uses its own `mod_grz_session_stats` entrypoint, `grz_session_stats`
+package, `grz.sessionstats` resources and data/log directory. Medkit Reminder has
+a separate entrypoint and is not a dependency. Built packages have disjoint
+resource paths; coexistence in the actual client still requires an in-game test.
 
-## Budowanie lokalne
+## Local build
 
-Pakowanie wymaga Python 3.9+ oraz CPython 2.7.18 do bajtkodu gry.
-Python 2.7 służy wyłącznie do testów zgodności i kompilacji, bez dostępu do sieci.
-Z tego katalogu:
+Packaging requires Python 3.9+ and CPython 2.7.18 for game bytecode. Python 2.7 is
+used only for compatibility tests and compilation, without network access.
+Run from this directory:
 
 ```sh
 python3 -m unittest discover -s tests -v
@@ -37,33 +39,44 @@ python3 tools/make_preview.py
 python3 tools/build.py --python27 /path/to/python2.7
 ```
 
-Wyniki w `dist/`: `.wotmod`, pełny ZIP instalacyjny ze źródłami, JSON konfiguracji,
-OpenWG, raport `BUILD.json` oraz `SHA256SUMS.txt`. Builder nie pobiera zależności
-i weryfikuje SHA-256 OpenWG. Wbudowany bajtkod używa ścieżek wirtualnych,
-bez ścieżki komputera, na którym wykonano kompilację.
+`dist/` contains six assets: the mod `.wotmod`, complete installation ZIP with
+sources, configuration JSON, OpenWG, `BUILD.json` and `SHA256SUMS.txt`. The builder
+downloads no dependencies and verifies OpenWG's SHA-256. Compiled bytecode uses
+virtual paths without exposing the build computer's filesystem paths.
 
-Podgląd i testy przeglądarkowe używają wyłącznie danych syntetycznych z generatora
-`tools/make_preview.py`. Zależność testowa to Playwright; `GRZ_CHROME` opcjonalnie
-wskazuje plik wykonywalny Chromium. Testy nie uruchamiają prawdziwego WoT.
+Previews and browser tests use only synthetic data from `tools/make_preview.py`.
+Playwright is the test dependency; optional `GRZ_CHROME` selects a Chromium
+executable. These tests do not run the real WoT client.
 
-## Prywatność i zgodność
+## Privacy and compatibility
 
-Patrz [PUBLICATION_PRIVACY.md](docs/PUBLICATION_PRIVACY.md).
-Nie publikuj lokalnych logów, historii gracza, konfiguracji użytkownika ani screenów.
-Runtime przechowuje identyfikatory potrzebne do rozdzielania kont wyłącznie lokalnie;
-nie są to dane dołączone do tego repozytorium ani telemetria.
-Licencja tego moda: [GPL-3.0](LICENSE.txt); zależności: [THIRD_PARTY.txt](THIRD_PARTY.txt).
-Ta licencja nie zmienia warunków pozostałych modów w repozytorium.
+See [PUBLICATION_PRIVACY.md](docs/PUBLICATION_PRIVACY.md). Do not publish local
+logs, player history, personal configuration or screenshots. Runtime account
+identifiers used to separate histories remain local; they are neither repository
+data nor telemetry.
+Mod license: [GPL-3.0](LICENSE.txt); dependencies: [THIRD_PARTY.txt](THIRD_PARTY.txt).
+This license does not alter the terms of other mods in the repository.
 
-Interfejsy WoT mogą zmienić się po aktualizacji. Healthcheck nie gwarantuje wykrycia
-zmiany znaczenia pola przy zachowaniu jego typu i struktury.
-Wersja 0.2.4 została sprawdzona przez użytkownika w grze; 0.2.7 była sprawdzana
-w testach automatycznych i wymaga testu w aktualnym kliencie.
-# Interface languages
+WoT interfaces may change. Health checks cannot guarantee detection of changed
+field meanings when types and structures remain the same. The user tested 0.2.4
+in the game; 0.2.7 was validated automatically and still needs a current-client test.
+
+## Interface languages and optional configuration
 
 English is the default interface language. Select `en`, `ru`, `fr`, `pl`, `de`,
 `es` or `uk` with the root `language` property in `grz.sessionstats.json`.
 All mod labels and messages are customizable in `grz.sessionstats.languages.json`.
 The installation ZIP includes the editable catalog; the `.wotmod` also bundles
-all seven languages. See [language configuration](docs/LANGUAGES.md).
+all seven languages. The neighboring language file is optional: missing or invalid
+overrides fall back to bundled translations, then embedded English. See
+[language configuration](docs/LANGUAGES.md).
 
+The main configuration is optional too. Include only fields you want to override;
+omitted fields and nested settings use defaults. For example:
+
+```json
+{"language": "pl", "scroll": {"speed_multiplier": 1.5}}
+```
+
+Save beside the Session Stats `.wotmod`, then reopen the panel or click Refresh.
+Appearance fields and validation: [APPEARANCE_CONFIG.md](docs/APPEARANCE_CONFIG.md).

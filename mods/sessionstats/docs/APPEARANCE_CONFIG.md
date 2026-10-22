@@ -1,28 +1,23 @@
-# Konfiguracja wyglądu i przewijania — 0.2.7
+# Appearance and scrolling configuration — 0.2.7
 
-## Plik i stosowanie zmian
+## File placement and applying changes
 
-Plik **`grz.sessionstats.json`** umieść w tym samym folderze co właściwa paczka
-`grz.sessionstats_0.2.7.wotmod`, np.:
+Place **`grz.sessionstats.json`** beside the active package:
 
 ```text
 mods/2.4.1.0/grz.sessionstats_0.2.7.wotmod
 mods/2.4.1.0/grz.sessionstats.json
 ```
 
-Nazwa JSON nie zawiera numeru wydania, więc można zachować własne ustawienia
-przy wymianie paczki. Przy kopiowaniu kolejnej aktualizacji zachowaj swój JSON,
-jeżeli chcesz nadal korzystać z wprowadzonych kolorów. Mod tylko go odczytuje;
-nie nadpisuje pliku ani nie dopisuje brakujących pól.
+The JSON filename has no release number. Preserve your custom file when replacing
+the package. The mod only reads it; it never overwrites it or inserts missing fields.
+Configuration loads at startup, when opening the panel and after **Refresh**.
+Save the file, then reopen or refresh the panel. There is no per-frame polling.
 
-Konfiguracja jest czytana przy starcie moda, przy otwieraniu panelu i po wybraniu
-**„Odśwież”**. Po zapisaniu pliku można więc zamknąć i otworzyć panel albo użyć
-przycisku odświeżania. Nie ma ciągłego sprawdzania pliku w każdej klatce.
-
-Dołączony pełny JSON zawiera **obecny wygląd jako wartości domyślne**:
-140 ustawień kolorów, 12 promieni zaokrąglenia, 3 ustawienia opacity oraz
-mnożnik przewijania. Brak pliku, pusty obiekt `{}` i pominięte pola korzystają
-z wartości wbudowanych w mod.
+The full supplied JSON contains **the current appearance as defaults**: 140 colors,
+12 corner radii, three opacity settings and a scrolling multiplier. A missing file,
+empty object `{}` and omitted fields use the built-in defaults. Partial nested
+sections are supported; include only the fields you want to override.
 
 ## Optional installation session
 
@@ -32,102 +27,99 @@ manual reset survive game restarts. The setting controls visibility, so hiding
 the tab does not stop collection or clear the saved period. The two account
 scopes remain independent. [Persistence and identity rules](ACCOUNT_SESSIONS.md).
 
-## Najczęściej przydatne pola
+## Commonly useful fields
 
-| Pole | Wartość domyślna | Znaczenie |
+| Field | Default | Meaning |
 | --- | --- | --- |
-| `colors.window_background` | `"#111309"` | Główne tło okna |
-| `colors.window_border` | `"#646044"` | Obramowanie okna |
-| `colors.table_header_background_start` | `"#292e1f"` | Początek gradientu nagłówków tabel |
-| `colors.table_header_background_end` | `"#222719"` | Koniec gradientu nagłówków tabel |
-| `colors.table_row_background` | `"#181d11"` | Tło pierwszego wiersza tabeli |
-| `colors.table_row_following_background` | `"#1a1f13"` | Tło kolejnych wierszy tabeli |
-| `colors.table_row_following_border_top` | `"#2e3522"` | Delikatna linia między wierszami |
-| `colors.table_row_hover_background` | `"#252d1b"` | Tło wiersza po najechaniu |
-| `colors.metric_value_text` | `"#ebe7d4"` | Liczby w tabeli skuteczności |
-| `colors.positive_text` | `"#c0d889"` | Dodatni bilans |
-| `colors.negative_text` | `"#e4ad84"` | Ujemny bilans |
-| `colors.garage_bars_background` | `"#969a9d"` | Słupki ikony w garażu |
-| `colors.garage_wn8_text` | `"#bdc0c2"` | Mały napis WN8 |
-| `colors.garage_spinner_border` | `"rgba(207,190,140,0.25)"` | Półprzezroczysta część spinnera |
-| `colors.garage_spinner_border_top_color` | `"#dfd3a4"` | Jasna część spinnera |
-| `radii.window` | `4` | Zaokrąglenie okna |
-| `radii.table_header` | `3` | Zaokrąglenie nagłówków tabel |
-| `radii.table_row` | `2` | Zaokrąglenie wierszy tabel |
-| `radii.group_card` | `5` | Zaokrąglenie kart czołgów/map/bitew |
-| `radii.garage_spinner` | `5` | Zaokrąglenie spinnera |
-| `opacity.window` | `1.0` | Widoczność całego panelu wraz z tekstem |
-| `opacity.garage_button` | `1.0` | Widoczność całego przycisku w garażu |
-| `opacity.disabled_controls` | `0.45` | Widoczność nieaktywnych kontrolek |
-| `scroll.speed_multiplier` | `1.0` | Mnożnik obecnej szybkości rolki w grze |
+| `colors.window_background` | `"#111309"` | Main window background |
+| `colors.window_border` | `"#646044"` | Window border |
+| `colors.table_header_background_start` | `"#292e1f"` | Table-header gradient start |
+| `colors.table_header_background_end` | `"#222719"` | Table-header gradient end |
+| `colors.table_row_background` | `"#181d11"` | First table-row background |
+| `colors.table_row_following_background` | `"#1a1f13"` | Subsequent table-row background |
+| `colors.table_row_following_border_top` | `"#2e3522"` | Subtle row separator |
+| `colors.table_row_hover_background` | `"#252d1b"` | Hovered row background |
+| `colors.metric_value_text` | `"#ebe7d4"` | Performance-table numbers |
+| `colors.positive_text` | `"#c0d889"` | Positive balance |
+| `colors.negative_text` | `"#e4ad84"` | Negative balance |
+| `colors.garage_bars_background` | `"#969a9d"` | Garage-icon bars |
+| `colors.garage_wn8_text` | `"#bdc0c2"` | Small WN8 label |
+| `colors.garage_spinner_border` | `"rgba(207,190,140,0.25)"` | Translucent spinner segment |
+| `colors.garage_spinner_border_top_color` | `"#dfd3a4"` | Bright spinner segment |
+| `radii.window` | `4` | Window corners |
+| `radii.table_header` | `3` | Table-header corners |
+| `radii.table_row` | `2` | Table-row corners |
+| `radii.group_card` | `5` | Vehicle/map/battle card corners |
+| `radii.garage_spinner` | `5` | Spinner corners |
+| `opacity.window` | `1.0` | Entire panel, including text |
+| `opacity.garage_button` | `1.0` | Entire garage button |
+| `opacity.disabled_controls` | `0.45` | Disabled controls |
+| `scroll.speed_multiplier` | `1.0` | In-game wheel-speed multiplier |
 
-Pozostałe klucze w pełnym JSON odpowiadają także tłu dokumentu, paskowi tytułu,
-zakładkom okresu, przełącznikowi PD, nagłówkom i wartościom statystyk, separatorom,
-kartom i wynikom bitew, komunikatom, przyciskom, oknu potwierdzenia resetu,
-scrollbarowi, cieniom i stanom po najechaniu. Sufiks `text` oznacza tekst,
-`background` tło, `border`/`border_top`/`border_left` linię, `shadow` cień,
-`hover` stan po najechaniu, `active` zaznaczenie. Sufiksy `start`, `middle`
-i `end` opisują kolejne kolory istniejącego gradientu.
+Other full-JSON keys cover document backgrounds, title bars, period tabs, XP
+switches, metric headings/values, separators, cards, battle results, messages,
+buttons, reset confirmation, scrollbars, shadows and hover states. Suffixes mean:
+`text` for text, `background` for backgrounds, `border`/`border_top`/`border_left`
+for lines, `shadow` for shadows, `hover` for pointer hover, `active` for selection,
+and `start`/`middle`/`end` for successive existing gradient colors.
 
-## Formaty i zakresy
+## Formats and ranges
 
-### Kolory i przezroczyste tła
+### Colors and transparent backgrounds
 
-Dozwolone zapisy kolorów:
+Accepted color formats:
 
-- `"#abc"` — krótki zapis RGB;
-- `"#aabbcc"` — pełny zapis RGB;
-- `"#aabbcc80"` — RGB z końcowym kanałem alpha w zapisie szesnastkowym;
-- `"rgb(170,187,204)"`;
-- `"rgba(170,187,204,0.5)"` — alpha od `0` do `1`;
+- `"#abc"` — short RGB.
+- `"#aabbcc"` — full RGB.
+- `"#aabbcc80"` — RGB with a final hexadecimal alpha channel.
+- `"rgb(170,187,204)"`.
+- `"rgba(170,187,204,0.5)"` — alpha from `0` to `1`.
 - `"transparent"`.
 
-Kanały RGB są liczbami całkowitymi od `0` do `255`. Alpha `0` oznacza pełną
-przezroczystość danego koloru, `1` pełne krycie. Kanał szesnastkowy `80`
-oznacza około 50,2% krycia. Zapis ośmiocyfrowy jest zamieniany na `rgba(...)`,
-aby nie uzależniać renderowania od obsługi takiego hex przez Gameface.
+RGB channels are integers from `0` to `255`. Alpha `0` is fully transparent;
+`1` is fully opaque. Hexadecimal `80` is approximately 50.2% opacity. Eight-digit
+hex values are converted to `rgba(...)` to avoid depending on Gameface hex support.
 
-Aby zmienić **tylko przezroczystość tła**, użyj np.
-`"colors": {"window_background": "rgba(17,19,9,0.8)"}`. Pozostałe tła,
-gradienty i cienie są osobnymi kolorami i zachowują swoje wartości. Ustawienie
-`opacity.window` wpływa na **cały panel, również tekst i kontrolki**.
+To change **only background transparency**, use, for example,
+`"colors": {"window_background": "rgba(17,19,9,0.8)"}`. Other backgrounds,
+gradients and shadows retain their separate values. `opacity.window` affects
+**the entire panel, including text and controls**.
 
-Każdy składnik gradientu lub cienia można zmienić osobno. JSON nie przyjmuje
-całych deklaracji CSS, nazwanych kolorów typu `red`, `url(...)`, `var(...)`,
-`currentColor`, nazw selektorów ani dowolnych gradientów. Kierunki gradientów,
-ich punkty, położenia cieni i układ pozostają częścią stylu moda.
+Gradient/shadow colors are independently editable. JSON accepts neither entire
+CSS declarations nor named colors such as `red`, `url(...)`, `var(...)`,
+`currentColor`, selector names or arbitrary gradients. Gradient directions/stops,
+shadow positions and layout remain part of the mod's styles.
 
-### Zaokrąglenia
+### Corner radii
 
-Każde pole `radii` przyjmuje liczbę od **0 do 24**. Jednostki podążają za skalą
-interfejsu WoT: przy bazowej skali jedna jednostka odpowiada jednemu pikselowi.
-Nie dopisuj `px` ani `rem` w JSON. `0` usuwa istniejące zaokrąglenie danej grupy.
-W paskach zaokrąglonych tylko u góry albo u dołu ustawienie nadal dotyczy tych
-samych narożników; nie zmienia struktury panelu.
+Each `radii` field accepts a number from **0 to 24**. Units follow WoT's UI scale;
+one unit is one pixel at base scale. Do not append `px` or `rem`. Zero removes
+the group's rounding. Styles rounded only at the top/bottom retain those same
+corners; configuration does not change panel structure.
 
 ### Opacity
 
-Każde pole `opacity` przyjmuje liczbę od **0 do 1**. `1` oznacza pełną
-widoczność, `0.8` — 80% widoczności, `0` — niewidoczność. Nie zapisuj procentów
-ani liczb jako tekstu. Na przykład `0.8` jest prawidłowe, a `"80%"` nie.
+Each `opacity` field accepts **0 to 1**. `1` is fully visible, `0.8` is 80% visible,
+and `0` is invisible. Do not use percentages or numeric strings: `0.8` is valid,
+`"80%"` is not.
 
-### Szybkość rolki
+### Wheel speed
 
-`scroll.speed_multiplier` przyjmuje liczbę od **0.1 do 8**:
+`scroll.speed_multiplier` accepts **0.1 to 8**:
 
-- `1.0` zachowuje obecną szybkość;
-- `1.5` oznacza krok o połowę większy;
-- `2.0` oznacza dwukrotnie większy krok;
-- `0.5` zmniejsza krok o połowę.
+- `1.0` preserves current speed.
+- `1.5` increases each step by half.
+- `2.0` doubles each step.
+- `0.5` halves each step.
 
-Mnożnik dotyczy adaptera przewijania w grze, w tym wejścia w jednostkach strony.
-Dotychczasowy kierunek przewijania i zatrzymywanie na końcach pozostają zachowane.
-Podgląd otwierany jako zwykły plik HTML zachowuje natywną obsługę rolki przeglądarki.
+This affects the in-game scrolling adapter, including page-unit input. Direction
+and endpoint clamping remain unchanged. Standalone HTML previews retain native
+browser wheel handling.
 
-## Krótki przykład własnych ustawień
+## Example overrides
 
-Możesz pozostawić pełny plik z paczki albo zastąpić go częściowym plikiem.
-Poniższy przykład zmienia tylko wymienione wartości; reszta zostaje domyślna:
+Keep the complete supplied file or replace it with a partial configuration. Only
+the following values change; every omitted setting uses its default:
 
 ```json
 {
@@ -151,62 +143,58 @@ Poniższy przykład zmienia tylko wymienione wartości; reszta zostaje domyślna
 }
 ```
 
-To przykład zmian, **nie ustawienia domyślne dołączone do paczki**. Zapisz plik
-w UTF-8; BOM jest obsługiwany. JSON wymaga cudzysłowów przy nazwach pól, kropki
-w liczbach dziesiętnych i przecinków między polami. Nie obsługuje komentarzy ani
-przecinka po ostatnim polu.
+These are **example changes, not the bundled defaults**. Save UTF-8; BOM is
+supported. JSON requires quoted keys, decimal points and commas between fields.
+Comments and trailing commas are unsupported.
 
-## Zachowanie przy błędach i log
+## Errors and logging
 
-| Przypadek | Zachowanie |
+| Condition | Behavior |
 | --- | --- |
-| Brak pliku lub brak pojedynczego pola | Wbudowane wartości domyślne |
-| Niepoprawna składnia JSON, kodowanie, duplikat nazwy pola lub przekroczone 128 KiB | Cały domyślny wygląd |
-| Główny obiekt o złym typie lub nieobsługiwane `schema_version` | Cały domyślny wygląd |
-| Błędny kolor, typ albo zakres pojedynczego pola | Domyślna wartość tego pola; poprawne pozostałe ustawienia działają |
-| Sekcja o złym typie, np. `"colors": []` | Domyślna wartość tej sekcji |
-| Nieznana nazwa pola | Pole jest pomijane i zgłaszane w logu |
+| Missing file or individual field | Built-in defaults |
+| Invalid JSON syntax/encoding, duplicate key or size above 128 KiB | All defaults |
+| Invalid root type or unsupported `schema_version` | All defaults |
+| Invalid individual color/type/range | That field's default; valid other settings remain |
+| Invalid section type, such as `"colors": []` | That section's defaults |
+| Unknown field | Ignored and logged |
 
-`true` i `false` nie są liczbami konfiguracyjnymi. Niestandardowe stałe JSON
-`NaN` i `Infinity` odrzucają plik. Każda wartość liczbowa jest również sprawdzana
-pod kątem skończoności i odpowiedniego zakresu.
+`true` and `false` cannot substitute for numeric settings. Nonstandard `NaN` and
+`Infinity` reject the file. Every number must be finite and within its range.
+Invalid changes loaded by Refresh restore the appropriate defaults rather than
+silently retaining earlier custom values.
 
-Nowy błędny plik przy „Odśwież” przywraca odpowiednie wartości domyślne;
-nie zachowuje po cichu poprzednich niestandardowych wartości.
+Errors use **`CONFIG`**, a field name and rejection reason. Syntax errors include
+line/column when supplied, including Python 2.7's text error format. Raw values
+and full JSON contents are never logged. One read emits at most 64 field diagnostics
+plus an omitted-excess notice.
 
-Błędy mają w logu moda prefiks **`CONFIG`**, nazwę pola i powód odrzucenia.
-Błąd składni zawiera numer linii i kolumny, jeżeli parser go udostępnia;
-obsługiwany jest również tekstowy format błędu Pythona 2.7. Surowe wartości
-z pliku oraz pełna treść JSON nie są wpisywane do logu. Pojedynczy odczyt
-zapisuje najwyżej 64 diagnostyki pól oraz informację o pominiętej nadwyżce.
-
-Standardowy log:
+Standard log:
 
 ```text
 %APPDATA%\grz_wot_session_stats\logs\session-stats.log
 ```
 
-## Kontrakt implementacji
+## Implementation contract
 
-`appearance.py` ma wbudowane niezależne kopie wartości domyślnych i szablony
-całych obecnych arkuszy. Z JSON podstawiane są wyłącznie sprawdzone skalary.
-Kod nie używa zmiennych CSS i nie odczytuje plików stylu z obcej ścieżki.
-Statyczne arkusze w paczce pozostają awaryjnym stylem bazowym.
+`appearance.py` contains independent default copies and templates for the existing
+complete stylesheets. Only validated scalar values are substituted. It does not
+use CSS variables or load styles from external paths. Bundled static styles remain
+the fallback.
 
-Testy sprawdzają, że rozwinięcie domyślnych szablonów jest tekstowo równe
-obecnym plikom CSS, z wyjątkiem dopisanych neutralnych deklaracji `opacity:1`
-panelu i przycisku. Osobna kontrola wymaga, aby wszystkie rzeczywiste kolory,
-promienie i deklaracje opacity były objęte tokenami oraz aby dołączony JSON
-zawierał dokładnie te same wartości domyślne. Przyszła zmiana bazowego stylu
-wymaga aktualizacji tego jawnego kontraktu.
+Tests require default template expansion to match the stylesheets textually,
+except for neutral `opacity:1` declarations added to the panel/button. Separate
+checks require tokens for all actual colors, radii and opacity declarations, and
+exact agreement with the supplied JSON defaults. Future base-style changes must
+update this explicit contract.
 
-Publiczne funkcje: `default_config()`, `load_config(path)`,
-`validate_config(object)` i `build_presentation(config)`. Ostatnia zwraca
-`panel_css`, `footer_css` oraz `scroll_speed` do przekazania istniejącym modelom UI.
-# Language selection
+Public functions: `default_config()`, `load_config(path)`, `validate_config(object)`
+and `build_presentation(config)`. The last returns `panel_css`, `footer_css` and
+`scroll_speed` for the existing UI models.
 
-The same configuration accepts a root `"language": "en"` setting. English is
-the default; `ru`, `fr`, `pl`, `de`, `es` and `uk` are also bundled. Editable
-translations live in the neighboring `grz.sessionstats.languages.json` file.
-See [LANGUAGES.md](LANGUAGES.md) for overrides, added languages and fallbacks.
+## Language selection
 
+The same configuration accepts root `"language": "en"`. English is the default;
+`ru`, `fr`, `pl`, `de`, `es` and `uk` are also bundled inside the `.wotmod`.
+The neighboring `grz.sessionstats.languages.json` is optional and editable.
+Removing it preserves bundled translations; embedded English is the final fallback.
+See [LANGUAGES.md](LANGUAGES.md) for overrides and added languages.

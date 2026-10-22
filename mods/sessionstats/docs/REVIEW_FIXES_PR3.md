@@ -1,62 +1,76 @@
-# Poprawki po review PR #3
+# PR #3 review fixes
 
-- Źródła są oparte na gałęzi dedykowanego PR #2, który zawiera budowanie,
-  testy obu wersji Pythona, testy Chromium i automatyczne Releases statystyk.
-  Zmiany workflow pozostają do review w PR #2. PR #3 pokazuje różnicę źródeł.
-  Pipeline musi być zaakceptowany na `main` przed ostatecznym merge źródeł.
-- Test błędnego JSON-a wymaga liczbowej lokalizacji błędu i braku prywatnej
-  wartości w logu, bez uzależniania wyniku od pozycji wybranej przez dekoder.
-- Każde zapytanie cache ma własny token. Spóźnione odpowiedzi wygasłego
-  zapytania nie usuwają nowszego zapytania ani nie omijają backoffu.
-- Wyłącznie `reconcile=True` pozwala zmieniać znane wyniki. `complete=True`
-  oznacza kompletność; bez uprawnienia do rewizji może uzupełniać brakujące pola.
-- Błąd opcjonalnej rejestracji Gameface nie blokuje pierwszego odczytu modelu
-  i wymiarowania. Następne zdarzenie modelu ponawia rejestrację, bez dodawania
-  kolejnych nasłuchów silnika; cleanup usuwa tylko uzyskaną rejestrację.
-- Builder wpisuje wersję wydania do nazw plików w aktywnych instrukcjach,
-  również w kopii źródeł. Historyczny changelog i dowody zgodności pozostają historyczne.
-- Manifest wewnątrz ZIP-a używa ścieżek względem korzenia rozpakowanej paczki;
-  `sha256sum -c SHA256SUMS.txt` sprawdza wszystkie trzy pliki instalacyjne.
-- Historyczne niepełne wpisy pozostają w kolejce odczytu i historii, ale po
-  restarcie bez nowej bitwy nie utrzymują spinnera. Panel pokazuje wyjaśnienie.
-  Szczegóły i granice działania: [RESTORED_RESULTS_ACTIVITY.md](RESTORED_RESULTS_ACTIVITY.md).
+## English repository documentation
+
+Repository guides, historical notes, changelogs, attribution descriptions and
+package metadata are now English. Legacy guide/archive filenames remain stable
+for existing packaging and links. The builder stamps the English `Version` line;
+synthetic preview names and generic test messages are English too. Translated
+catalogs, legacy Polish warning lookups and deliberate Unicode/localization test
+fixtures retain their language-specific content.
+
+Installation and language guides explicitly document the bundled seven-language
+catalog, embedded English fallback, optional neighboring JSON files and partial
+nested configuration overrides.
+
+## Earlier review fixes
+
+- Sources are stacked on dedicated PR #2, which supplies builds, both Python
+  versions, Chromium tests and automatic Session Stats Releases. Workflow review
+  remains in PR #2; PR #3 shows source changes. The pipeline must be accepted on
+  `main` before the final source merge.
+- Malformed-JSON tests require a numeric error location and omission of private
+  values from logs without depending on the decoder's chosen error position.
+- Each cache request owns a token. Late responses from expired requests cannot
+  remove newer requests or bypass backoff.
+- Only `reconcile=True` authorizes changing known results. `complete=True` marks
+  completeness; without revision authority it may fill unknown fields only.
+- Optional Gameface registration failure does not block the initial model read
+  or sizing. A later model event retries registration without duplicate engine
+  listeners; cleanup removes only an acquired registration.
+- The builder stamps active guide filenames, including the source copy, with the
+  release version. Historical changelogs and compatibility evidence stay historical.
+- The ZIP's internal manifest uses paths relative to the extracted package root.
+  At this review stage, `sha256sum -c SHA256SUMS.txt` verified all three installed
+  files; the later language-catalog addition extends this to four.
+- Old incomplete entries remain queued and stored, but do not keep the spinner
+  active after restarting without a new battle. The panel explains the gap.
+  Details: [RESTORED_RESULTS_ACTIVITY.md](RESTORED_RESULTS_ACTIVITY.md).
 
 Validation: 364 Python 3 tests; the same Python 2.7 suite with 4 Python-3-only
 builder tests skipped. The 114 panel checks cover rejected callback registration,
 synchronous delivery during registration and retained callbacks after teardown.
-Sprawdzono wydanie 0.2.8, rzeczywistą weryfikację sum po rozpakowaniu ZIP-a
-oraz identyczny ZIP po ponownym zbudowaniu z zawartych w nim źródeł.
-Testy z atrapami klienta nie zastępują uruchomienia WoT.
+A 0.2.8 build, actual extracted-ZIP checksum verification and an identical ZIP
+rebuilt from its included sources were checked. Mocked-client tests do not replace
+running WoT.
 
-Odzyskiwanie po wyłączeniu klienta ma dodatkową obserwację natywnego cache
-przed odbiorcą i potwierdzeniem strumienia, sprawiedliwą kolejkę, osobne opóźnienia
-cooldown/logowania i uzupełnianie nieznanych danych ze spóźnionych strumieni.
-Niepełne okresy i brakujące bitwy są jawne w panelu. Granice odzyskiwania
-i przypięty kod klienta: [OFFLINE_RESULT_RECOVERY.md](OFFLINE_RESULT_RECOVERY.md).
-Przy wejściu do bitwy utrwalamy także dostępne nazwy mapy i własnego czołgu,
-poziom i klasę. Brakujący wynik pozostaje dzięki temu rozpoznawalny po restarcie.
-Osiem testów obejmuje natywny deskryptor, późną gotowość metadanych, trwałość,
-deduplikację zapisów, ochronę potwierdzonych wyników i prywatność kontekstu.
+Offline recovery additionally observes the native cache before its consumer and
+stream acknowledgment, uses a fair queue, separates cooldown/login delays and
+fills unknown fields from late streams. Incomplete periods and missing battles
+remain explicit. Recovery limits and pinned client code:
+[OFFLINE_RESULT_RECOVERY.md](OFFLINE_RESULT_RECOVERY.md). Battle entry also saves
+available map/vehicle names, tier and class, making missing results recognizable
+after restart. Eight tests cover native descriptors, late metadata readiness,
+persistence, write deduplication, confirmed-result protection and context privacy.
 
-Porównanie rastra zachowuje limit 16 zmienionych pikseli; tolerancja kanału 6/255
-obejmuje zaobserwowane na Chromium 151 zaokrąglenie 10 pikseli z różnicą 5/255.
-Style i geometria nadal są porównywane dokładnie. Dodatkowa kontrola negatywna
-potwierdza odrzucenie rzeczywistej zmiany kolorów, promieni i przezroczystości.
+Raster comparison retains its 16-pixel limit; the 6/255 channel tolerance covers
+10 pixels differing by 5/255 observed on Chromium 151. Styles and geometry still
+match exactly. A negative control confirms rejection of actual color, radius and
+opacity changes.
 
 Review 5610518614:
-- Opóźnione odświeżenie premii zachowuje konto z chwili zaplanowania.
-  Po zmianie konta timer zwalnia swój stan i kończy pracę bez odczytu ani
-  przetwarzania wyników nowego konta. Ręczne Odśwież działa niezależnie
-  i nie przejmuje ani nie kasuje timera poprzedniego konta.
-- Cleanup panelu unieważnia lokalny stan powiązania i callbacku przed
-  wywołaniem mostka. Każde z trzech engine.off i usunięcie callbacku modelu
-  ma osobną osłonę. Błąd jednego wywołania nie blokuje pozostałych i nie
-  wydostaje się do beforeunload. Zachowany callback zmiany skali pozostaje
-  nieaktywny po zniszczeniu dokumentu.
-- Dwa testy Pythona obejmują zmianę konta w czasie oczekiwania na timer,
-  brak odczytu i rewizji nowego konta oraz niezależność ręcznego odświeżenia.
-  Piętnaście kontroli Chromium obejmuje osobną awarię każdego usunięcia,
-  wspólną awarię wszystkich, ponowne sprzątanie i spóźnione callbacki.
+- Deferred bonus refresh retains the account captured when scheduled. After an
+  account switch, the timer releases its state and stops without reading or
+  processing the new account's results. Manual Refresh remains independent and
+  neither consumes nor cancels the old account's timer.
+- Panel cleanup invalidates local binding/callback state before calling the bridge.
+  Each of three engine.off calls and model-callback removal is guarded separately.
+  One failure neither blocks the others nor escapes beforeunload. A retained scale
+  callback stays inert after document destruction.
+- Two Python tests cover switching accounts while a timer waits, no reads/revisions
+  of the new account and independent manual refresh. Fifteen Chromium checks cover
+  each removal failing separately, all failing together, repeated cleanup and late
+  callbacks.
 
 Account scopes and the optional durable installation scope:
 - Default scopes and manual resets remain isolated per account and region.

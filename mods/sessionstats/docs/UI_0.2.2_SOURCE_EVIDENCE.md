@@ -1,85 +1,77 @@
-# Okno 0.2.2: przeciąganie, geometria i potwierdzone źródła
+# Window 0.2.2 — dragging, geometry and source evidence
 
-Sprawdzono 20 października 2026 r. Cel: WoT PC Wargaming EU 2.4.1.0.
-Kod źródłowy odczytano z publicznych kopii zasobów klienta oraz repozytorium
-autora moda. Nie są one deklaracją stabilnego, oficjalnego API modów Wargaming.
+Reviewed on 2026-10-20. Target: WoT PC Wargaming EU 2.4.1.0. Public client-resource
+mirrors and a mod author's repository provide implementation evidence, not an
+official stable Wargaming mod API.
 
-## Obserwacja i zakres poprawki
+## Observation and scope
 
-Nowy pełny obraz użytkownika pokazuje panel około 700×620 px przy lewym górnym
-rogu, z poprawnie wyświetlanymi wynikami bitew. W 0.2.1 nie było obsługi natywnego
-przeciągania nagłówka. Bez `game.log` nie można rozstrzygnąć, czy pozostawanie
-przy (0,0) wynikało z początkowego rozmiaru powierzchni, obszaru okna czy kolejności
-wykonania operacji. Nie przedstawiamy żadnego z tych wariantów jako ustalonej
-przyczyny testu użytkownika.
+The user's full screenshot showed a roughly 700×620 px panel near the upper-left
+corner with battle results rendered correctly. Version 0.2.1 lacked native header
+dragging. Without `game.log`, initial surface dimensions, window area and operation
+ordering cannot be distinguished as causes of the (0,0) position. None is presented
+as the established cause of that user test.
 
-0.2.2 dodaje potwierdzone zdarzenie przesuwania klienta, jawne pozycjonowanie
-przez `WindowImpl.move(x,y)` oraz rozróżnienie między żądaniem położenia a
-zaobserwowanym `Window.position`. Po przesunięciu okna przez gracza odświeżanie
-danych nie przywraca środka ekranu. Jeśli zmniejszenie obszaru gry wypchnie panel
-poza ekran, pozycja jest jedynie ograniczana do dostępnych granic.
+Version 0.2.2 adds the verified client move event, explicit `WindowImpl.move(x,y)`
+positioning and separate requested/observed `Window.position`. Data refresh no
+longer recenters a player-moved window. A smaller game area only clamps it within
+available bounds.
 
-## Natywne przeciąganie: kompletna ścieżka JS i Python
+## Native dragging: complete JS/Python path
 
-Źródła JS: `Kurzdor/wot.assets`, commit
-`3605bd36c53d10c16be5d93f5414aa5fd129e84e` z 16 października 2026 r.; opis
-commitu: **2.4.1.0 #977**.
+JS source: `Kurzdor/wot.assets`, commit
+`3605bd36c53d10c16be5d93f5414aa5fd129e84e`, 2026-10-16, **2.4.1.0 #977**.
 
-| Sprawdzony element | Dokładne źródło |
+| Verified element | Exact source |
 | --- | --- |
-| Klientowy helper `sendEvent.move(on)` wysyła zdarzenie typu 16 z `isMouseEvent: true` i wartością `on`. Proxy ma typ `GFViewEventProxy`. | [tutorial.js, linie 197–244](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/js/tutorial.js#L197-L244) |
-| Natywne okno plutonu rozpoczyna przesuwanie tylko dla lewego przycisku myszy; kończy je w nasłuchu `mouseup` na dokumencie i usuwa ten nasłuch. | [MembersWindow.js, linie 1257–1268](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/lobby/platoon/MembersWindow/MembersWindow.js#L1257-L1268) |
-| Pythonowy `MembersWindow` używa `WindowFlags.WINDOW`, bez dodatkowej flagi przesuwalności. Jego content ma `ViewSettings` z domyślnym `ViewFlags.VIEW`, tak jak okno moda. | [platoon_members_view.py, linie 87–92](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/lobby/platoon/view/platoon_members_view.py#L87-L92) oraz [linie 724–739](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/lobby/platoon/view/platoon_members_view.py#L724-L739) |
-| Pośrednia klasa `PreloadableWindow` tylko przekazuje flagi i zawartość do `WindowImpl`; jej dodatkowe zachowanie dotyczy ukrywania widoku wczytanego wcześniej. Nie dodaje mechanizmu ani flagi drag. | [platoon_helpers.py, linie 19–36](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/lobby/platoon/platoon_helpers.py#L19-L36) |
+| Client helper `sendEvent.move(on)` sends event type 16 with `isMouseEvent: true` and `on`; proxy type is `GFViewEventProxy`. | [tutorial.js, lines 197–244](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/js/tutorial.js#L197-L244) |
+| The native platoon window begins moving only with the left mouse button, ends on document `mouseup` and removes that listener. | [MembersWindow.js, lines 1257–1268](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/_dist/production/lobby/platoon/MembersWindow/MembersWindow.js#L1257-L1268) |
+| Python `MembersWindow` uses `WindowFlags.WINDOW` without an additional draggable flag. Its `ViewSettings` defaults to `ViewFlags.VIEW`, as in this mod. | [platoon_members_view.py, lines 87–92](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/lobby/platoon/view/platoon_members_view.py#L87-L92) and [lines 724–739](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/lobby/platoon/view/platoon_members_view.py#L724-L739) |
+| `PreloadableWindow` passes flags/content to `WindowImpl`; its extra behavior hides preloaded views. It adds no drag mechanism or flag. | [platoon_helpers.py, lines 19–36](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/lobby/platoon/platoon_helpers.py#L19-L36) |
 
-Zdarzenie używane przez nasz nagłówek:
+The header uses:
 
 ```javascript
 viewEnv.handleViewEvent({__Type:'GFViewEventProxy', type:16, isMouseEvent:true, on:true});
 ```
 
-Zakończenie używa tego samego zdarzenia z `on:false`. Polecenie modelu
-`{action:'drag', active:true/false}` wyłącznie informuje właściciela okna, by
-zachował wybraną pozycję. Nie przesyła współrzędnych kolejnych ruchów myszy.
-Nie używamy niepotwierdzonego `startWindowDrag`, przesuwania samego DOM ani
-symulacji kursora. Przycisk zamknięcia i otwarty dialog resetowania nie rozpoczynają
-drag; JS kończy operację także przy utracie fokusu i zwalnianiu dokumentu.
+Ending sends the same event with `on:false`. Model command
+`{action:'drag', active:true/false}` tells the owner to preserve the chosen position;
+it does not transmit mouse-movement coordinates. The mod does not use an unverified
+`startWindowDrag`, DOM-only moving or cursor simulation. Close controls and an open
+reset dialog do not start dragging. Blur and document cleanup also end it.
 
-## Rozmiar i pozycjonowanie
+## Size and positioning
 
-- [tutorial.js, linie 262–282](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/js/tutorial.js#L262-L282)
-  potwierdza wywołania `getViewSizePx()`, `resizeViewPx(width,height)`, `getScale()`
-  i `remToPx(value)`. To kod korzystający z bindingu; nie zawiera implementacji
-  C++ tych metod. Ogólny `engine.call` nie jest podstawą do wymyślania nazw
-  dodatkowych poleceń zmiany rozmiaru.
-- [WindowImpl.move, linie 42–48](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/pub/window_impl.py#L42-L48)
-  deleguje pozycjonowanie do natywnego obszaru. [Window.position i Window.size](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/frameworks/wulf/windows_system/window.py#L207-L230)
-  odczytują odpowiednio `windowPosition` i `windowSize` proxy. [Zdarzenia](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/frameworks/wulf/windows_system/window.py#L381-L386)
-  mają podpisy `onSizeChanged(uniqueID,width,height)` i
-  `onPositionChanged(uniqueID,x,y)`.
-- [Autorowy card_window.py, linie 417–438](https://github.com/przemyslaw-zan/zanju-wot-mods/blob/809ad2740a33154de22c828a5dd3007e7167a282/mods/campaign-tracker/src/zanju_ct/gameface/card_window.py#L417-L438)
-  wyznacza położenie z wymiarów zgłoszonych przez dokument i wymiarów rodzica,
-  następnie używa `WindowImpl.move`. To wzorzec przyjęty w 0.2.2.
-- [Autorowy card.css](https://github.com/przemyslaw-zan/zanju-wot-mods/blob/809ad2740a33154de22c828a5dd3007e7167a282/mods/campaign-tracker/res/gui/gameface/mods/zanju_campaigns/card.css#L14-L21)
-  nie narzuca `html` i `body` szerokości/wysokości 100%; panel pozostaje w normalnym
-  przepływie z jawną szerokością. Natywny dokument moda również odłącza wysokość
-  `html/body` od początkowej powierzchni. Podgląd przeglądarkowy ma osobny kontekst.
+- [tutorial.js, lines 262–282](https://github.com/Kurzdor/wot.assets/blob/3605bd36c53d10c16be5d93f5414aa5fd129e84e/gui/gameface/js/tutorial.js#L262-L282)
+  confirms `getViewSizePx()`, `resizeViewPx(width,height)`, `getScale()` and
+  `remToPx(value)`. These are binding calls, not C++ implementations. Generic
+  `engine.call` does not justify inventing additional resize-command names.
+- [WindowImpl.move, lines 42–48](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/gui/impl/pub/window_impl.py#L42-L48)
+  delegates to the native area. [Window.position and Window.size](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/frameworks/wulf/windows_system/window.py#L207-L230)
+  read proxy `windowPosition`/`windowSize`. [Events](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client/frameworks/wulf/windows_system/window.py#L381-L386)
+  use `onSizeChanged(uniqueID,width,height)` and `onPositionChanged(uniqueID,x,y)`.
+- [Mod-author card_window.py, lines 417–438](https://github.com/przemyslaw-zan/zanju-wot-mods/blob/809ad2740a33154de22c828a5dd3007e7167a282/mods/campaign-tracker/src/zanju_ct/gameface/card_window.py#L417-L438)
+  derives position from document/parent dimensions and calls `WindowImpl.move`,
+  the pattern adopted in 0.2.2.
+- [Mod-author card.css](https://github.com/przemyslaw-zan/zanju-wot-mods/blob/809ad2740a33154de22c828a5dd3007e7167a282/mods/campaign-tracker/res/gui/gameface/mods/zanju_campaigns/card.css#L14-L21)
+  avoids 100% `html`/`body` dimensions, keeping an explicitly sized panel in normal
+  flow. Our native document likewise separates body height from the initial surface;
+  browser previews have their own context.
 
-Pomiar DOM nie udaje potwierdzenia wymiarów tekstury. Jednorazowy timer po pięciu
-sekundach może oddzielnie wskazać brak etapu renderera, rozbieżność żądanej i
-zaobserwowanej pozycji lub rozbieżność dokumentu i natywnej powierzchni. Znika
-wcześniej dopiero po zgodnych pomiarach i etapach. Logowanie jest ograniczone,
-bez danych konta i treści statystyk; zamknięcie odłącza wszystkie nasłuchy i timer.
+DOM measurement does not confirm texture dimensions. One five-second timer can
+separately report missing renderer stages, requested/observed-position differences
+or document/native-surface differences. It stops early only after matching stages
+and measurements. Logs are bounded and exclude account/statistic contents. Closing
+removes all listeners and the timer.
 
-## Weryfikacja lokalna
+## Local verification
 
-`tests/test_runtime.py`: **34/34 na Pythonie 3 oraz 34/34 na Pythonie 2.7.18**.
-Istotne regresje obejmują przyjęte, lecz ograniczone do (0,0) żądanie ruchu
-początkowej powierzchni pełnoekranowej; poprawne ustawienie dopiero po jej
-natywnym resize; zachowanie pozycji przy aktualizacjach danych/rozmiaru/skali;
-nieprzerywanie aktywnego drag; ograniczenie położenia do mniejszego ekranu;
-usuwanie nasłuchów i ignorowanie komend poprzedniej instancji okna.
+`tests/test_runtime.py`: **34/34 on Python 3 and 34/34 on Python 2.7.18**. Regressions
+cover accepted movement clamped to (0,0) on an initial fullscreen surface, successful
+positioning after native resize, position retention across data/size/scale updates,
+uninterrupted active dragging, smaller-screen clamping, listener removal and old
+window commands.
 
-Testy używają podwójnych obiektów Wulf i sprawdzają kod wobec odczytanych
-kontraktów. Nie uruchamiają C++ klienta. Nie oznaczają, że wersja 0.2.2 została
-już ponownie sprawdzona w działającym WoT.
+Wulf doubles validate our code against reviewed contracts without running client
+C++. These results do not mean 0.2.2 had already been retested in a running WoT client.

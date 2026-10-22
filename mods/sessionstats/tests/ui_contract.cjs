@@ -157,7 +157,7 @@ async function nativeHost(browser, options) {
   await page.evaluate(data=>{
     window.GRZ_DEMO_FIXTURES=data;
     const toolbar=document.createElement('div');
-    toolbar.innerHTML='<button id="demo-reopen">Otwórz panel</button><button id="demo-restart">Przywróć przykład</button>';
+    toolbar.innerHTML='<button id="demo-reopen">Open panel</button><button id="demo-restart">Restore example</button>';
     document.body.appendChild(toolbar);
   },fixtures);
   await page.addScriptTag({path:path.join(root,'preview/controller.js')});

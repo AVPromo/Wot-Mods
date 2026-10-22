@@ -60,7 +60,7 @@ class UpdateHistoryTests(unittest.TestCase):
         sequence = self.previous.store.sequence
         context = self.previous.result_context(ARENA_ID)
         self.assertEqual(context['map_id'], '17_map')
-        self.assertEqual(context['vehicle_name'], 'Czołg próbny')
+        self.assertEqual(context['vehicle_name'], 'Test vehicle')
         self.assertNotIn('currencies', context)
         self.assertNotIn('_manual_id', context)
         context['map_id'] = 'changed-locally'
@@ -81,9 +81,9 @@ class UpdateHistoryTests(unittest.TestCase):
         self.assertEqual(manual['summary']['battles'], 1)
         self.assertEqual(manual['summary']['xp_received']['sum'], 2600)
         self.assertEqual(manual['vehicles'][0]['id'], before['vehicles'][0]['id'])
-        self.assertEqual(manual['vehicles'][0]['name'], 'Czołg próbny')
+        self.assertEqual(manual['vehicles'][0]['name'], 'Test vehicle')
         self.assertEqual(manual['maps'][0]['id'], '17_map')
-        self.assertEqual(manual['maps'][0]['name'], 'Mapa próbna')
+        self.assertEqual(manual['maps'][0]['name'], 'Test map')
         self.assertEqual(manual['summary']['currencies'], before['summary']['currencies'])
         self.assertTrue(any('Map name' in item for item in snapshot['warnings']))
 

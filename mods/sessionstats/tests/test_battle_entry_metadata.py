@@ -12,18 +12,18 @@ from grz_session_stats.core import StatsService
 from test_normalize import ARENA_ID, START, raw_result
 
 
-METADATA = {'vehicle_name': 'Czołg wejściowy', 'vehicle_tier': 8,
-            'vehicle_type': 'mediumTank', 'map_name': 'Mapa wejściowa'}
+METADATA = {'vehicle_name': 'Entry vehicle', 'vehicle_tier': 8,
+            'vehicle_type': 'mediumTank', 'map_name': 'Entry map'}
 
 
 class NativeEntryContextTests(unittest.TestCase):
     def setUp(self):
-        self.vehicle_type = fixtures.Obj(compactDescr=1, shortUserString='Czołg wejściowy',
-                                         userString='Pełna nazwa', level=8, classTag='mediumTank')
+        self.vehicle_type = fixtures.Obj(compactDescr=1, shortUserString='Entry vehicle',
+                                         userString='Full name', level=8, classTag='mediumTank')
         self.vehicle = {'vehicleType': fixtures.Obj(type=self.vehicle_type),
                         'name': 'PRIVATE_PLAYER_SENTINEL', 'accountDBID': 7}
         self.arena = fixtures.Obj(bonusType=1, vehicles={10: self.vehicle},
-                                  arenaType=fixtures.Obj(geometryName='17_map', name='Mapa wejściowa'))
+                                  arenaType=fixtures.Obj(geometryName='17_map', name='Entry map'))
         player = fixtures.Obj(arena=self.arena, arenaUniqueID=int(ARENA_ID), playerVehicleID=10)
         self.api = runtime.GameAPI.__new__(runtime.GameAPI)
         self.api.player = lambda: player

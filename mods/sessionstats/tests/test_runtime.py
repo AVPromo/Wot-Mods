@@ -130,10 +130,10 @@ class FakeAPI(object):
         return self.context
 
     def vehicle_info(self, compact):
-        return {'name': 'Czołg próbny', 'tier': 8, 'type': 'mediumTank'}
+        return {'name': 'Test vehicle', 'tier': 8, 'type': 'mediumTank'}
 
     def map_info(self, arena_type_id):
-        return {'id': '17_map', 'name': 'Mapa próbna'}
+        return {'id': '17_map', 'name': 'Test map'}
 
     def key_down(self, key):
         return key in self.pressed
@@ -653,9 +653,9 @@ class NativeBindingTests(unittest.TestCase):
         self.assertEqual(payload['viewport'], {'width': 1920, 'height': 1080, 'scale': 1.0})
         self.window._model.onAction({'action': 'refresh'})
         self.assertEqual(self.actions, [{'action': 'refresh'}])
-        self.stats['warnings'] = ['Próba']
+        self.stats['warnings'] = ['Probe']
         self.window.refresh()
-        self.assertEqual(json.loads(self.window._model.props[0][1])['warnings'], ['Próba'])
+        self.assertEqual(json.loads(self.window._model.props[0][1])['warnings'], ['Probe'])
         self.window.resize('700', '620')
         self.assertEqual(native.position, (610, 230))
         self.window.resize('nan', '620')

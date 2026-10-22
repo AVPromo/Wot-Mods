@@ -1,29 +1,28 @@
-# Import źródeł i kontrola publikacji
+# Source import and publication checks
 
-Punkt odniesienia: paczka źródłowa Session Stats 0.2.7.
-Pierwotny import zachowywał kod runtime i UI z tej paczki. Poprawki po review
-opisuje `REVIEW_FIXES_PR3.md`; schemat zapisu i domyślny JSON pozostają bez zmian.
-Builder otrzymał numerowanie wydań, pełny manifest assetów i filtrowanie
-wygenerowanych raportów testowych. Test obrazu zachowuje dokładne porównanie
-stylów/geometrii; raster dopuszcza najwyżej 16 pikseli krawędzi z różnicą
-do 6/255 na kanał, aby uniknąć różnic zaokrąglenia renderera Chromium.
+Baseline: the Session Stats 0.2.7 source package. The initial import retained its
+runtime/UI code. Review fixes are recorded in `REVIEW_FIXES_PR3.md`; the storage
+schema and default JSON remained unchanged at import. The builder gained release
+numbering, a complete asset manifest and generated-test-report filtering. Visual
+checks retain exact style/geometry comparison; raster comparison permits at most
+16 edge pixels differing by up to 6/255 per channel for Chromium renderer rounding.
 
-Pierwotna weryfikacja lokalna importu (przed poprawkami po review):
+Initial local import validation, before review fixes:
 
-- 284 testy statystyk na Pythonie 3 i 284 na CPythonie 2.7.18.
-- 175 testów istniejącego moda i wspólnej infrastruktury wydawania.
-- 78 kontroli panelu, 22 rolki, 22 aktywności spinnera, 12 zgodności stopki,
-  30 konfiguracji wyglądu oraz zestaw bazowej ikony.
-- Pierwotny `.wotmod` 0.2.7 był zgodny bajtowo z paczką wejściową:
+- 284 Session Stats tests on Python 3 and 284 on CPython 2.7.18.
+- 175 tests for the existing mod and shared release infrastructure.
+- 78 panel checks, 22 wheel checks, 22 spinner-activity checks, 12 footer
+  compatibility checks, 30 appearance checks and the baseline-icon suite.
+- The original 0.2.7 `.wotmod` matched the input package byte for byte:
   SHA-256 `76e5cffa54d79b6cbee37858725d063664082fe8cf0da41eb9406b10bff394bd`.
-  To historyczny punkt odniesienia; poprawiony kod ma inną sumę.
-- Dwukrotne budowanie daje identyczne wszystkie sześć assetów wydania.
-- Próbne wydanie 0.2.8 ma właściwą wersję także wewnątrz bajtkodu.
-- Brak kolizji identyfikatorów paczek i ścieżek zasobów z Medkit Reminder.
-- Skan źródeł, zagnieżdżonych archiwów i stałych/ścieżek bajtkodu: PASS.
+  This is a historical baseline; corrected code has a different digest.
+- All six release assets matched across two builds.
+- A trial 0.2.8 build carried the correct version inside bytecode too.
+- No package-identifier/resource-path collisions with Medkit Reminder.
+- Source, nested-archive and bytecode constant/path privacy scans: PASS.
 
-Wyniki te dotyczą lokalnego złożenia obu PR. Nowy workflow musi zostać
-zaakceptowany na `main`, zanim wynik jego CI będzie potwierdzał import źródeł.
-Wersji repozytoryjnej nie uruchamiano w prawdziwym kliencie WoT.
-Informacje o ograniczeniach: `UPDATE_COMPATIBILITY_SOURCES.md`,
-`RESULT_HEALTH_CONTRACT.md` oraz `PUBLICATION_PRIVACY.md`.
+These results describe the locally combined PRs. The new workflow must be
+accepted on `main` before its CI result can validate the source import. The
+repository version has not been run in a real WoT client. Limitations:
+`UPDATE_COMPATIBILITY_SOURCES.md`, `RESULT_HEALTH_CONTRACT.md` and
+`PUBLICATION_PRIVACY.md`.

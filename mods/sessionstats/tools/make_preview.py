@@ -22,12 +22,12 @@ from grz_session_stats.localization import Localizer
 def snapshots():
     # Deliberately synthetic tank IDs and reference values, never a substitute
     # for the real WG table bundled in data/wn8exp.json.
-    expected = {'header': {'version': 'przykład', 'source': 'synthetic'}, 'data': [
+    expected = {'header': {'version': 'example', 'source': 'synthetic'}, 'data': [
         {'IDNum':101, 'expDamage':1800, 'expFrag':1.0, 'expSpot':1.5, 'expDef':0.8, 'expWinRate':51},
         {'IDNum':202, 'expDamage':1650, 'expFrag':0.95, 'expSpot':1.2, 'expDef':0.8, 'expWinRate':51},
         {'IDNum':303, 'expDamage':1750, 'expFrag':1.0, 'expSpot':1.6, 'expDef':0.75, 'expWinRate':51}]}
     tanks = [(101, 'Leopard 1'), (202, 'E 50 M'), (303, 'Bat.-Châtillon 25 t')]
-    maps = [('malinovka','Malinówka'), ('murovanka','Murowanka'), ('prokhorovka','Prochorowka'),
+    maps = [('malinovka','Malinovka'), ('murovanka','Murovanka'), ('prokhorovka','Prokhorovka'),
             ('himmelsdorf','Himmelsdorf'), ('redshire','Redshire')]
     start = datetime(2026,10,20,16,10,tzinfo=timezone.utc).timestamp()
     clock = [start-86400]

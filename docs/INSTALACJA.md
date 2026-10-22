@@ -1,47 +1,47 @@
-# Stay Sharp Medkit Reminder 1.6.0 — instalacja i test
+# Stay Sharp Medkit Reminder 1.6.0 — installation and testing
 
-## Co robi
+## Behavior
 
-Wyświetla pomarańczową, gradientową ramkę apteczki, pulsującą przez 2 sekundy do pełnej intensywności i przez 2 sekundy do zera. Działa wyłącznie wtedy, gdy własny pojazd ma uprawnienie do wykorzystania apteczki wynikające z aktywnego efektu atutu, apteczka jest gotowa, HUD jest widoczny i trwa bitwa. Nie aktywuje apteczki, nie wydaje żadnego dźwięku i nie zmienia statystyk gry.
+Displays an orange gradient frame around the medkit, brightening for two seconds and fading for two seconds. It runs only during battle when the player's vehicle has the active perk effect allowing medkit use, the medkit is ready and the HUD is visible. It does not activate the medkit, play sounds or change game statistics.
 
-## Instalacja
+## Installation
 
-1. Zamknij World of Tanks.
-2. Zachowaj kopię potwierdzonej jako działająca wersji 1.5.0 poza katalogiem `mods`.
-3. **Usuń stary plik 1.5.0 z aktywnego katalogu `mods/<wersja_gry>/`**. Dwie wersje tego samego moda nie mogą działać równocześnie.
-4. Skopiuj `com.staysharp.medkitreminder_1.6.0.wotmod` do katalogu gry, np. `C:\Games\World_of_Tanks_EU\mods\2.4.1.0\` (jeżeli gra zaktualizowała numer katalogu, użyj nowego katalogu wersji).
-5. Uruchom grę normalnie.
+1. Close World of Tanks.
+2. Keep a backup of the confirmed working version 1.5.0 outside `mods`.
+3. **Remove the old 1.5.0 file from the active `mods/<game_version>/` directory.** Two versions of the same mod must not run together.
+4. Copy `com.staysharp.medkitreminder_1.6.0.wotmod` into the game directory, for example `C:\Games\World_of_Tanks_EU\mods\2.4.1.0\`. Use the current client-version directory if an update changed its name.
+5. Start the game normally.
 
-Nie trzeba kopiować `.py`, `.dds`, `.swf`, shaderów, banków dźwięku ani DLL. Pakiet `.wotmod` zawiera `meta.xml`, plik `.pyc` i komplet 21 DDS, pod ścieżkami zasobów WoT.
+No separate `.py`, `.dds`, `.swf`, shaders, sound banks or DLLs are needed. The `.wotmod` contains `meta.xml`, a `.pyc` and all 21 DDS frames under WoT resource paths.
 
-## Test w grze
+## In-game checks
 
-- Przed odliczaniem i podczas wyboru konfiguracji nie powinna pojawić się ramka.
-- Po rozpoczęciu bitwy, na pojeździe z właściwym atutem, gotowa apteczka powinna pulsować w cyklu 4 sekund.
-- Sprawdź kamerę arcade, sniper, widok artyleryjski z góry i widok trajektorii.
-- Po użyciu apteczki oraz podczas cooldownu ramka ma zgasnąć, a po odnowieniu wrócić.
-- Przy rannym członku załogi lub natywnym podświetleniu WoT przypomnienie nie powinno zastępować ostrzeżenia gry.
-- Po zamknięciu bitwy nie powinny pozostawać ramki ani uruchomione animacje.
+- No frame should appear before the countdown or during configuration selection.
+- After battle starts, a ready medkit on a vehicle with the relevant perk should pulse in a four-second cycle.
+- Check arcade, sniper, top-down artillery and trajectory views.
+- The frame should disappear after medkit use and during cooldown, then return when ready.
+- Native crew-injury warnings and WoT highlighting should take priority.
+- Leaving battle should remove the frames and stop their animation.
 
-## Diagnostyka
+## Diagnostics
 
-Log jest zapisywany pod:
+The local log is written to:
 
 `%LOCALAPPDATA%\StaySharpMedkit\staysharp.log`
 
-Najbardziej przydatne wpisy:
+Useful entries:
 
-- `v1.6.0 loaded; component events` — subskrypcja zdarzeń gry zainstalowana.
-- `battle panel populated` — komponent został wykryty za pomocą zdarzenia rejestracji (nie przez podmianę metod).
-- `HUD registration rejected: ...` — niezgodny klient / układ HUD; mod nie włączy grafiki.
-- `equipment state=incompatible_hud_...` — niespodziewana zmiana w trakcie bitwy; mod wygasza ramkę.
-- `GFX disabled by compatibility preflight: ...` — brak wymaganej części interfejsu renderera.
-- `overlay mounted: hud_child` — nakładka została dodana pod komponentem HUD.
-- `overlay mounted: gui_root` — stara metoda graficzna, gdy komponent HUD nie jest dostępny.
-- `PULSE alive` — animacja dalej aktualizuje klatki.
+- `v1.6.0 loaded; component events` — game-event subscriptions installed.
+- `battle panel populated` — component discovered through registration events, without replacing methods.
+- `HUD registration rejected: ...` — incompatible client/layout; graphics remain disabled.
+- `equipment state=incompatible_hud_...` — unexpected mid-battle change; the frame is disabled.
+- `GFX disabled by compatibility preflight: ...` — required renderer interface unavailable.
+- `overlay mounted: hud_child` — overlay attached below the HUD component.
+- `overlay mounted: gui_root` — legacy graphical fallback when the HUD component is unavailable.
+- `PULSE alive` — animation frames are still being updated.
 
-Jeśli gra się wyłącza, **usuń 1.6.0**, wróć do sprawdzonej wersji 1.5.0 i wyślij końcówkę logu. Żaden test offline nie zastępuje prawdziwego klienta WoT.
+If the game exits unexpectedly, **remove 1.6.0**, return to the verified 1.5.0 version and provide the end of the log for diagnosis. Offline checks do not replace a real WoT client test.
 
-## Aktualizacje WoT
+## WoT updates
 
-Jeżeli aktualizacja nie zmieni API, wystarczy przenieść ten sam `.wotmod` do nowego katalogu `mods/<wersja_gry>`. Przy zmianie struktury HUD lub API moduł ma się wyłączyć bez zgadywania położenia ramki; może to wymagać aktualizacji moda. Plik `.pyc` jest zgodny z bajtkodem CPython 2.7 używanym przez zweryfikowany klient. Migracja gry na inny interpreter będzie wymagała nowej kompilacji.
+If the API is unchanged, moving the same `.wotmod` to the new `mods/<game_version>` directory is sufficient. Changed HUD structures or APIs should disable the mod without guessing frame placement, and may require a mod update. The `.pyc` uses CPython 2.7 bytecode matching the verified client; a different interpreter requires rebuilding.

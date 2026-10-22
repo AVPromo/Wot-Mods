@@ -1,27 +1,53 @@
-# Interfejs 0.2.4 — zmiany i podstawa weryfikacji
+# Interface 0.2.4 — changes and verification basis
 
-Stan: 20 października 2026 r. Aktualizacja odpowiada na dwa zrzuty działającej wersji 0.2.3 oraz zgłoszenie wolnego przewijania, powtarzania średniej w pojedynczej bitwie i zbyt ostrej siatki zestawień.
+As of 2026-10-20. This update responds to two screenshots of working 0.2.3 and reports
+of slow scrolling, repeated averages for individual battles and overly sharp table grids.
 
-## Osobny wynik bitwy
+## Individual battle results
 
-`ui/session_stats.js` rozróżnia agregaty i pojedyncze bitwy przy renderowaniu grup. Nagłówek bitwy zawiera nazwę pojazdu, datę, mapę oraz zwycięstwo, porażkę lub remis. Nie powtarza liczby jednej bitwy ani jej win rate.
+`ui/session_stats.js` distinguishes aggregates from individual battles. A battle
+header shows vehicle, date, map and victory/defeat/draw without repeating the
+single-battle count or win rate.
 
-`details(..., battle)` tworzy dwie pojedyncze miary w `.ss-battle-performance`: wybrany rodzaj PD i pełną liczbę WN8. PD pochodzą z sumy serii obejmującej dokładnie jeden znany wynik. WN8 pochodzi z `stats.wn8` z pokryciem jednego wyniku. Nie wykorzystuje się średniej do prezentowania pojedynczej bitwy; brak pokrycia daje kreskę, również gdy brakująca seria miałaby sumę równą zero. Potwierdzone zero pozostaje zerem.
+`details(..., battle)` creates two individual `.ss-battle-performance` metrics:
+the selected XP type and full WN8. XP comes from a series total containing exactly
+one known result. WN8 uses `stats.wn8` with one-result coverage. Neither presents
+an average as an individual result. Missing coverage gives a dash even if the
+missing series total would be zero; confirmed zero remains zero.
 
-Podsumowania sesji, czołgów i map zachowują min/średnią/max. Wspólny kod rozliczeń pokazuje przychód, koszty i netto, w tym obligacje. Nie zmieniono obliczeń, normalizacji wyników ani formatu zapisu historii.
+Session, vehicle and map aggregates retain minimum/average/maximum. Shared finances
+show income, costs and net values including bonds. Calculations, normalization and
+history storage are unchanged.
 
-## Łagodniejszy układ
+## Softer layout
 
-`ui/session_stats.css` zachowuje domyślny panel 700×620, Warhelios i dotychczasową oliwkowo-złotą paletę. Sekcje mają niewielkie zaokrąglenia, a nagłówki spokojne tło. Pionowa siatka komórek została usunięta; wiersze rozdzielają dyskretne poziome linie i niewielka różnica tła.
+`ui/session_stats.css` retains the default 700×620 panel, Warhelios and olive/gold
+palette. Sections have small corner radii and calm headers. Subtle horizontal
+separators and alternating backgrounds replace vertical cell grids.
 
-Cyfry PD/WN8 w agregatach mają nadal 16 jednostek logicznych, finanse 14, a pojedyncze miary bitwy 18. Wiersze otrzymały po 5 jednostek odstępu od góry i dołu. Kwoty są wyrównane do prawej z końcowym odstępem 4 jednostek. W kolumnach liczb miejsce z lewej pozostaje dostępne dla pełnych wartości, ponieważ nie ma tam już pionowej linii. Nazwy i pozostałe komórki zachowują boczne wcięcia. Nie zmniejszano fontu w celu zmieszczenia dużych kwot.
+Aggregate XP/WN8 numbers remain 16 logical units, finances 14 and individual battle
+metrics 18. Rows have five units of top/bottom spacing. Amounts align right with
+four trailing units. Numeric columns retain left space for full values after
+removing vertical lines. Names/other cells retain side padding. Fonts are not
+shrunk to fit large amounts.
 
-[Oficjalna tabela właściwości CSS Gameface](https://docs.coherent-labs.com/cpp-gameface/content_development/supported_features_tables/cssproperties/) wymienia obsługę `border-radius`, narożników i `box-shadow`; ograniczenie `box-shadow` dotyczy `inherit`, którego tu nie użyto. Dokumentację sprawdzono ponownie 20.10.2026. Nie wprowadzono CSS grid, `object-fit`, `currentColor` jako tła ani nowych zależności.
+The [official Gameface CSS property table](https://docs.coherent-labs.com/cpp-gameface/content_development/supported_features_tables/cssproperties/)
+lists `border-radius`, individual corners and `box-shadow`; the shadow restriction
+concerns unused `inherit`. Rechecked on 2026-10-20. No CSS grid, `object-fit`,
+background `currentColor` or new dependencies were introduced.
 
-## Weryfikacja i jej granice
+## Verification and limits
 
-`tests/ui_contract.cjs` sprawdza rzeczywiste dostarczane pliki HTML/CSS/JS. Testy obejmują pojedyncze miary w obu trybach PD, brak min/średniej/max w bitwie, zachowanie agregatów, wyniki i brak danych, finanse z obligacjami, miniatury, kontrolki oraz kontrakt okna. Pomiar tekstu przez DOM Range wykrywa wejście cyfr w odstępy komórek; sprawdzane są zwykłe wyniki oraz pełne kwoty ±12 345 678, PD 123 456 i WN8 10420 przy szerokościach 320, 360, 420, 560, 620 i 744 piksele.
+`tests/ui_contract.cjs` checks the shipped HTML/CSS/JS: individual metrics in both
+XP modes, no battle min/average/max, retained aggregates, outcomes/missing data,
+bond finances, thumbnails, controls and window contract. DOM Range measurements
+detect digits entering cell padding. Checks include ordinary values and full
+±12 345 678 amounts, XP 123 456 and WN8 10420 at widths 320, 360, 420, 560, 620
+and 744 pixels.
 
-Aktualny raport: `tests/ui-report.json`. Końcowe podglądy sesji i listy bitew obejrzano wewnętrznie; obrazy QA nie są częścią paczki. Testy działają w Chromium z symulacją modelu klienta, bez natywnego renderera uruchomionego WoT. Zrzuty użytkownika potwierdzają działanie poprzedniego wydania, a nie stan nowej paczki 0.2.4 w jego kliencie.
+Current report: `tests/ui-report.json`. Final session/battle previews were visually
+inspected internally; QA images are not packaged. Tests run Chromium with a mocked
+client model, without WoT's native renderer. User screenshots establish the previous
+release's behavior, not the new 0.2.4 package in that client.
 
-Zmiana tempa rolki i jej niezależne testy są opisane w `WHEEL_0.2.4_SOURCE_EVIDENCE.md`.
+Wheel-speed changes and separate tests: `WHEEL_0.2.4_SOURCE_EVIDENCE.md`.

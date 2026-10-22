@@ -66,9 +66,9 @@ class DiagnosticsTests(unittest.TestCase):
         try:
             state = self.start(os.path.join(self.directory, 'Żółć'))
             self.assertTrue(state.ok)
-            self.logger.warning('Brak pola: %s', 'otrzymane PD — żółć')
+            self.logger.warning('Missing field: %s', 'received XP — żółć')
             content = self.read(state)
-            self.assertIn('Brak pola: otrzymane PD — żółć', content)
+            self.assertIn('Missing field: received XP — żółć', content)
             self.assertIn('[v%s]' % VERSION, content)
             self.assertIn('Z WARNING', content)
             self.assertEqual(len(capture.records), 1)
