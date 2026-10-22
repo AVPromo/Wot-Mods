@@ -84,7 +84,7 @@ bash scripts/release_snapshot.sh dist \
   'com.staysharp.medkitreminder_*.wotmod'
 ```
 
-For Session Stats (after PR #2 is updated to this model):
+For Session Stats:
 
 ```bash
 bash scripts/release_snapshot.sh mods/sessionstats/dist \
@@ -100,11 +100,23 @@ Every mod needs its own `on.push.paths`, independent version tags and native
 GitHub tag-protection Ruleset for its prefix. The root SHA256SUMS.txt is always
 recreated for the complete snapshot, and release filenames must not collide.
 
-**Merge dependency:** PR #5 is accepted on main. PR #2 adapts Session Stats
-to the shared publication flow; source PR #3 remains stacked on #2. Accept
-and synchronize the infrastructure changes before validating and merging the
-source import. Keep this Stay Sharp namespace migration when updating either
-branch onto main.
+**Merge dependency:** PR #5 is accepted on main. PR #2 integrates that accepted
+flow for Session Stats; PR #3 remains stacked on #2. After #2 is accepted,
+update #3 onto main and run full source validation with the accepted harness.
+The infrastructure-only checkout deliberately skips absent, never-imported
+Session Stats sources; it does not establish a passing mod build.
+
+Session Stats requires a separate `sessionstats-release-tags` Ruleset targeting
+exactly `refs/tags/sessionstats-v*`, with active update/deletion protection and
+no bypass actors or creation block. Its `sessionstats-release` Environment must
+supply `SESSIONSTATS_REVIEWED_RULESET_ID` and
+`SESSIONSTATS_REVIEWED_RULESET_UPDATED_AT` if GitHub redacts bypass actors.
+The publisher checks the exact revision; missing protection blocks publishing.
+Creating that owner-managed policy is a deployment prerequisite, not something
+this workflow grants to itself.
+
+PR #6 is also accepted on main. Keep its dedicated Stay Sharp tag namespace,
+Ruleset, Environment and approval variables when synchronizing either branch.
 
 ## Testing and operating limits
 
