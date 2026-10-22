@@ -219,13 +219,13 @@ jobs:
           printf '%s' "$metadata" | jq -e --arg tag "$tag" \
             '.tagName == $tag and .isDraft == false and .isPrerelease == false' >/dev/null
           # Check the COMPLETE published snapshot, not just the changed mod.
-          expected="$(find dist -maxdepth 1 -type f -printf '%f\\n' | LC_ALL=C sort)"
+          expected="$(find dist -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
           listed="$(printf '%s' "$metadata" | jq -r '.assets[].name' | LC_ALL=C sort)"
           test "$listed" = "$expected" || { echo 'Release asset list mismatch' >&2; exit 1; }
           remote="$(mktemp -d)"
           trap 'rm -rf -- "$remote"' EXIT
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$remote"
-          received="$(find "$remote" -maxdepth 1 -type f -printf '%f\\n' | LC_ALL=C sort)"
+          received="$(find "$remote" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
           test "$received" = "$expected" || { echo 'Downloaded asset list mismatch' >&2; exit 1; }
           while IFS= read -r name; do
             cmp -- "dist/$name" "$remote/$name" || exit 1

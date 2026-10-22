@@ -50,6 +50,11 @@ class IsolatedBuildTests(unittest.TestCase):
         self.assertIn('gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$remote"', RELEASE)
         self.assertIn('cmp -- "dist/$name" "$remote/$name"', RELEASE)
 
+    def test_filename_inventory_is_delimited_by_actual_newlines(self):
+        # GNU find must receive backslash+n, not two backslashes + n.
+        # The latter generates a single concatenated filename string.
+        self.assertEqual(RELEASE.count(" -printf '%f\\n'"), 2)
+
     def test_other_mods_must_share_publisher_lock(self):
         self.assertIn('group: wotmod-release-${{ github.repository }}', RELEASE)
         self.assertIn('cancel-in-progress: false', RELEASE)
