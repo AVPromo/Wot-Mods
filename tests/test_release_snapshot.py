@@ -90,6 +90,15 @@ class SnapshotTests(unittest.TestCase):
         subprocess.run(["sha256sum", "-c", "SHA256SUMS.txt"], cwd=self.dist, check=True,
                        stdout=subprocess.DEVNULL)
 
+    def test_new_tag_namespace_accepts_legacy_latest_without_rebuilding(self):
+        self.releases[0]['tagName'] = 'v1.6.2'
+        self.list_path.write_text(json.dumps(self.releases))
+        result = self.call_helper()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.dist / self.own_name).read_bytes(), b'new-medkit-build')
+        self.assertEqual((self.dist / 'grz.sessionstats_0.2.4.wotmod').read_bytes(),
+                         b'unchanged-stats')
+
     def test_first_release_has_no_snapshot_to_carry(self):
         self.list_path.write_text("[]")
         r = self.call_helper()

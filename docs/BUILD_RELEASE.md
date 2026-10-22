@@ -34,15 +34,15 @@ GitHub's `gh release create` internally creates a draft, uploads assets and publ
 ## Required GitHub tag protection (before merging)
 
 The publication workflow **fails closed** unless an active native GitHub
-**tag ruleset** named `wotmod-release-tags` prevents moving/deleting version
+**tag ruleset** named `staysharp-release-tags` prevents moving/deleting version
 tags. This addresses a race in which `gh release create --verify-tag` only
 checks the existence of the tag; GitHub's Immutable Releases protects tags
 **after publishing**, not during the draft upload.
 
 Configure once in **Settings → Rules → Rulesets → New ruleset → New tag ruleset**:
 
-- **Name:** `wotmod-release-tags`; **Enforcement:** Active.
-- **Target tags:** `v*`, stored by GitHub as `refs/tags/v*`; no exclusions.
+- **Name:** `staysharp-release-tags`; **Enforcement:** Active.
+- **Target tags:** `staysharp-v*`, stored by GitHub as `refs/tags/staysharp-v*`; no exclusions.
 - **Rules:** Restrict updates and Restrict deletions.
 - **Bypass actors:** none. Leave **Restrict creations** unchecked, because
   GitHub Actions needs to create new version tags.
@@ -61,7 +61,7 @@ Ruleset revision*. There is no extra PAT, GitHub App or custom HTTP client.
 To approve a Ruleset without granting administrative credentials to Actions:
 
 1. As the repository owner, inspect **Settings → Rules → Rulesets →
-   `wotmod-release-tags`**. Confirm it is Active, targets `v*`, blocks
+   `staysharp-release-tags`**. Confirm it is Active, targets `staysharp-v*`, blocks
    updates/deletion and contains **no bypass actors**. The owner is the
    trusted authority for this initial verification.
 2. Find its numeric ID and last-updated timestamp using the owner's own
@@ -69,17 +69,17 @@ To approve a Ruleset without granting administrative credentials to Actions:
 
    ```sh
    gh api 'repos/Szwarceneger16/WotMods/rulesets?targets=tag' \
-     --jq '.[] | select(.name == "wotmod-release-tags") | .id'
+     --jq '.[] | select(.name == "staysharp-release-tags") | .id'
    gh api 'repos/Szwarceneger16/WotMods/rulesets/REPLACE_ID' \
      --jq '{id, updated_at, bypass_actors}'
    ```
 
    Only continue if the owner's response shows `bypass_actors: []`.
-3. Open **Settings → Environments**, create `wotmod-release`, restrict
+3. Open **Settings → Environments**, create `staysharp-release`, restrict
    deployments to `main`, and set these two *non-secret environment variables*:
 
-   - `WOTMOD_REVIEWED_RULESET_ID` = the numeric Ruleset ID.
-   - `WOTMOD_REVIEWED_RULESET_UPDATED_AT` = the exact `updated_at` string
+   - `STAYSHARP_REVIEWED_RULESET_ID` = the numeric Ruleset ID.
+   - `STAYSHARP_REVIEWED_RULESET_UPDATED_AT` = the exact `updated_at` string
      returned by the owner-authorized API request.
 
    Environment variables in a personally owned repository can only be
@@ -120,7 +120,7 @@ If a new run leaves a draft, leave it for manual investigation, and fix the unde
 
 ## Release numbering and scope
 
-The first merged workflow on `main` had run number 1, producing `v1.6.1`, but publication failed. The next new Release workflow run will use `v1.6.2` if the baseline `VERSION` remains `1.6.1`. This is **workflow-run numbering**, not the number of commits and not a tag-triggered workflow. Tags created with `GITHUB_TOKEN` don't trigger another GitHub Actions workflow.
+The first merged workflow on `main` had run number 1, producing `v1.6.1`, but publication failed. New runs now use `staysharp-v<version>`; the numeric version still comes from the same workflow run counter and baseline. This is **workflow-run numbering**, not the number of commits and not a tag-triggered workflow. Tags created with `GITHUB_TOKEN` don't trigger another GitHub Actions workflow.
 
 For now, this pipeline builds **Stay Sharp only**. The repo can contain other mods, but `/releases/latest` is a repository-wide pointer. A future multi-mod release workflow must be explicitly designed and reviewed before combining artifacts.
 
@@ -143,3 +143,34 @@ order, the older run exits as a successful no-op, never reverting A to an old
 binary. Every mod's release workflow must use the same lock and the same
 `release_snapshot.sh DIST PRIMARY_FILE PRIMARY_GLOB ...` contract; otherwise
 this guarantee does not hold. See [MULTIMOD_RELEASES.md](MULTIMOD_RELEASES.md).
+
+## Migration from the historical Stay Sharp namespace
+
+New runs use `staysharp-v<version>`, Ruleset `staysharp-release-tags`,
+Environment `staysharp-release`, and `STAYSHARP_REVIEWED_RULESET_*` variables.
+The package filename and version algorithm are unchanged. Snapshot comparison
+reads the primary package version, not the Release tag prefix, so releases
+with old `v*` tags remain valid carry-forward sources and cannot be downgraded.
+
+Before merging this workflow migration:
+
+1. Create a NEW active tag Ruleset `staysharp-release-tags` targeting exactly
+   `staysharp-v*`, with no exclusions or bypass actors. Enable Restrict updates
+   and Restrict deletions; leave Restrict creations off.
+2. Create `staysharp-release` under Settings → Environments. Select **Selected
+   branches and tags**, add a **Branch** rule for exactly `main`, and leave
+   required reviewers/wait timers off for automatic publication.
+3. Inspect the new Ruleset and set its exact numeric ID and `updated_at` in
+   Environment variables `STAYSHARP_REVIEWED_RULESET_ID` and
+   `STAYSHARP_REVIEWED_RULESET_UPDATED_AT`. Do not copy the old ruleset's values.
+4. Keep `wotmod-release-tags` protecting historical `v*` tags. Do not move,
+   rename, delete or republish historical tags/releases. Keep its legacy
+   Environment while older release runs might still be in flight.
+5. Finish/reconcile old running publications, then review and merge the
+   migration. Restrict the legacy `wotmod-release` Environment to Branch `main`
+   as well if it is retained. After acceptance, synchronize open CI/source
+   branches onto main so they cannot restore the old publisher configuration.
+
+The repository-wide lock deliberately retains its generic name
+`wotmod-release-${{ github.repository }}`. Giving each mod a different lock
+would permit simultaneous writes to the shared Latest pointer.

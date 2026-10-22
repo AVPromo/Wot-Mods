@@ -34,6 +34,16 @@ class GitHubNativeReleaseTests(unittest.TestCase):
         for action in action_lines:
             self.assertRegex(action, r'^actions/(?:checkout|upload-artifact|download-artifact)@[0-9a-f]{40}$')
 
+    def test_staysharp_namespace_keeps_repository_wide_publication_lock(self):
+        self.assertIn('tag=staysharp-v%s', WORKFLOW)
+        self.assertNotIn('tag=v%s', WORKFLOW)
+        self.assertIn('name: Release Stay Sharp', WORKFLOW)
+        self.assertNotIn('wotmod-release-tags', WORKFLOW)
+        self.assertNotIn('WOTMOD_REVIEWED_RULESET', WORKFLOW)
+        self.assertIn('group: wotmod-release-${{ github.repository }}', WORKFLOW)
+        self.assertIn('queue: max', WORKFLOW)
+        self.assertIn('cancel-in-progress: false', WORKFLOW)
+
     def test_remote_tag_bound_to_exact_workflow_commit_before_release(self):
         self.assertLess(WORKFLOW.index('git push origin'), WORKFLOW.index('gh release create'))
         self.assertIn('test "$resolved" = "$GITHUB_SHA"', WORKFLOW)
@@ -55,11 +65,11 @@ class GitHubNativeReleaseTests(unittest.TestCase):
         self.assertIn('gh release create', WORKFLOW)
 
     def test_protection_rules_checked_before_tag_or_release_creation(self):
-        self.assertIn('wotmod-release-tags', WORKFLOW)
-        self.assertIn('refs/tags/v*', WORKFLOW)
-        self.assertIn('environment: wotmod-release', WORKFLOW)
-        self.assertIn('WOTMOD_REVIEWED_RULESET_ID: ${{ vars.WOTMOD_REVIEWED_RULESET_ID }}', WORKFLOW)
-        self.assertIn('WOTMOD_REVIEWED_RULESET_UPDATED_AT: ${{ vars.WOTMOD_REVIEWED_RULESET_UPDATED_AT }}', WORKFLOW)
+        self.assertIn('staysharp-release-tags', WORKFLOW)
+        self.assertIn('refs/tags/staysharp-v*', WORKFLOW)
+        self.assertIn('environment: staysharp-release', WORKFLOW)
+        self.assertIn('STAYSHARP_REVIEWED_RULESET_ID: ${{ vars.STAYSHARP_REVIEWED_RULESET_ID }}', WORKFLOW)
+        self.assertIn('STAYSHARP_REVIEWED_RULESET_UPDATED_AT: ${{ vars.STAYSHARP_REVIEWED_RULESET_UPDATED_AT }}', WORKFLOW)
         self.assertLess(WORKFLOW.index('policy_ids='), WORKFLOW.index('git push origin'))
         self.assertLess(WORKFLOW.index('policy_ids='), WORKFLOW.index('gh release create'))
         self.assertIn('if has("bypass_actors") then', WORKFLOW)
@@ -78,9 +88,9 @@ class GitHubNativeReleaseTests(unittest.TestCase):
         self.assertNotIn('.target == "tag"', listing)
         expr = listing.split("--jq '", 1)[1].split("'", 1)[0]
         summary = [
-            {'id': 42, 'name': 'wotmod-release-tags', 'enforcement': 'active'},
+            {'id': 42, 'name': 'staysharp-release-tags', 'enforcement': 'active'},
             {'id': 91, 'name': 'another-tag-ruleset', 'enforcement': 'active'},
-            {'id': 33, 'name': 'wotmod-release-tags', 'enforcement': 'disabled'},
+            {'id': 33, 'name': 'staysharp-release-tags', 'enforcement': 'disabled'},
         ]  # The GitHub list-rulesets endpoint does not provide .target.
         result = subprocess.run(['jq', '-r', expr], input=json.dumps(summary),
                                 text=True, capture_output=True)
@@ -89,13 +99,13 @@ class GitHubNativeReleaseTests(unittest.TestCase):
 
     def test_ruleset_policy_requires_visible_empty_bypass_or_owner_reviewed_revision(self):
         # Execute the exact jq predicate deployed by GitHub Actions.
-        marker = '--arg approved_at "${WOTMOD_REVIEWED_RULESET_UPDATED_AT:-}" ' + "'\n"
+        marker = '--arg approved_at "${STAYSHARP_REVIEWED_RULESET_UPDATED_AT:-}" ' + "'\n"
         self.assertIn(marker, WORKFLOW)
         predicate = WORKFLOW.split(marker, 1)[1].split("\n          ' >/dev/null", 1)[0]
         baseline = {
             'id': 42, 'updated_at': '2026-10-22T09:15:00Z',
-            'name': 'wotmod-release-tags', 'target': 'tag', 'enforcement': 'active',
-            'conditions': {'ref_name': {'include': ['refs/tags/v*'], 'exclude': []}},
+            'name': 'staysharp-release-tags', 'target': 'tag', 'enforcement': 'active',
+            'conditions': {'ref_name': {'include': ['refs/tags/staysharp-v*'], 'exclude': []}},
             'bypass_actors': [], 'rules': [{'type': 'update'}, {'type': 'deletion'}]
         }
 
@@ -110,8 +120,9 @@ class GitHubNativeReleaseTests(unittest.TestCase):
         self.assertTrue(accepted(baseline))
         for changes in (
             {'id': 43}, {'target': 'branch'}, {'enforcement': 'disabled'},
-            {'conditions': {'ref_name': {'include': ['refs/tags/v2*'], 'exclude': []}}},
-            {'conditions': {'ref_name': {'include': ['refs/tags/v*'], 'exclude': ['refs/tags/v1*']}}},
+            {'conditions': {'ref_name': {'include': ['refs/tags/v*'], 'exclude': []}}},
+            {'conditions': {'ref_name': {'include': ['refs/tags/staysharp-v2*'], 'exclude': []}}},
+            {'conditions': {'ref_name': {'include': ['refs/tags/staysharp-v*'], 'exclude': ['refs/tags/staysharp-v1*']}}},
             {'bypass_actors': [{'actor_type': 'RepositoryRole', 'actor_id': 5, 'bypass_mode': 'always'}]},
             {'bypass_actors': None},
             {'rules': [{'type': 'deletion'}]}, {'rules': [{'type': 'update'}]},
