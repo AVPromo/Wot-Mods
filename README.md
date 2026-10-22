@@ -7,7 +7,7 @@ The mod uses the regular consumables HUD and works independently of arcade, snip
 
 ## Downloads
 
-**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. Releases become downloadable for everyone after the first reviewed PR is merged and the Release workflow succeeds.
+**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. Only fully published Releases are downloadable; a failed draft is not a usable release.
 
 ## Installation
 
@@ -37,11 +37,21 @@ See [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](
 
 ## Changes, reviews and releases
 
-1. Open a pull request against `main`. The **CI** workflow builds and tests the mod with a read-only token; it does **not** create Releases.
-2. Review and merge the PR. A separate **Release** workflow on each push to `main` rebuilds, reruns tests and privacy checks, then publishes a new versioned `.wotmod` together with `SHA256SUMS.txt` in GitHub Releases.
-3. Releases use monotonically increasing patch numbers derived from the **Release workflow run number**: the first release is `v1.6.1`, the next is `v1.6.2`, and so on. Skipped versions are possible after a failed workflow run. Re-running a successful workflow does not replace an existing Release.
+1. Submit a PR to `main`. GitHub Actions runs unit tests, privacy checks and a deterministic build with **read-only** repository permissions.
+2. After review and merge, GitHub Actions builds and validates the `.wotmod`, transfers the verified files to a separate **write-scoped publishing job** using official `actions/upload-artifact` / `download-artifact`, and creates a GitHub Release with official `gh release create`.
+3. Every new push to `main` produces a unique patch version derived from the Release workflow run number. Retrying a successful run verifies the existing release without overwriting it; a failed run can leave a gap in release numbers.
 
-A manual Release workflow trigger is also available. The pipeline uses the repository-scoped `GITHUB_TOKEN` only; **no PAT or repository secret is required**. The repo is public, but no Release is published until this PR is merged.
+No custom HTTP client, third-party publication service or Java is involved; GitHub's own CLI and built-in `GITHUB_TOKEN` handle the release. Neither the workflow nor a separate recovery script deletes an existing Release. If publication is interrupted, check the draft manually; the pipeline fails safely instead of guessing what to remove.
+
+The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. See [build and release documentation](docs/BUILD_RELEASE.md).
+
+**Mandatory protection before merge:** configure the active GitHub tag
+ruleset `wotmod-release-tags` for `v*`, with **Restrict updates**, **Restrict
+deletions** and **no bypass actors**. The owner must also approve its exact
+revision using the two non-secret variables of the `wotmod-release` GitHub
+Environment, because Actions cannot reliably read the hidden bypass list.
+Without this verified configuration, publishing stops before creating a tag
+or Release. Details: [required release-tag protection](docs/BUILD_RELEASE.md#required-github-tag-protection-before-merging).
 
 ## Privacy and safety
 
