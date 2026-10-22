@@ -5,7 +5,7 @@
     if (!root) { return; }
 
     var state = { scope: 'launch', group: 'vehicles', xp: 'base', payload: null,
-        dialog: false, bound: false, connecting: false, callbackId: null, callbackRegistering: false, actionError: null,
+        dialog: false, bound: false, binding: null, connecting: false, callbackId: null, callbackRegistering: false, actionError: null,
         nativeWidth: 0, nativeHeight: 0, nativeScale: 1, diagnostics: {}, dragging: false,
         scrollSpeed: 1, appearanceNode: null, appearanceCSS: '', destroyed: false,
         list: [], loadedCount: 40, renderedCount: 0 };
@@ -669,24 +669,69 @@
         invoke('viewport');
         queueResize();
     }
+    function releaseBinding(binding) {
+        if (!binding) { return; }
+        // Invalidate wrappers before native removal, which may throw or retain them.
+        binding.active = false;
+        try {
+            if (typeof binding.engine.off === 'function') {
+                binding.engine.off('viewEnv.onDataChanged', binding.data);
+            }
+        } catch (error) { /* Attempt the scale listener independently. */ }
+        try {
+            if (typeof binding.engine.off === 'function') {
+                binding.engine.off('self.onScaleUpdated', binding.scale);
+            }
+        } catch (error) { /* Retained wrappers cannot act after invalidation. */ }
+    }
     function bindModel() {
         if (state.destroyed) { return; }
         if (state.bound) { readModel(); queueResize(); return; }
-        if (!window.engine || !window.viewEnv) { return; }
+        if (state.binding) { return; }
+        if (!window.engine || !window.viewEnv || typeof window.engine.on !== 'function') {
+            state.connecting = false;
+            return;
+        }
+        var binding = {engine:window.engine, active:false};
+        binding.data = function () {
+            if (binding.active && state.binding === binding && !state.destroyed) { readModel(); }
+        };
+        binding.scale = function () {
+            if (binding.active && state.binding === binding && !state.destroyed) { onScaleUpdated(); }
+        };
+        state.binding = binding;
+        try {
+            binding.engine.on('viewEnv.onDataChanged', binding.data);
+            binding.engine.on('self.onScaleUpdated', binding.scale);
+        } catch (error) {
+            state.binding = null;
+            state.bound = false;
+            state.connecting = false;
+            releaseBinding(binding);
+            return;
+        }
+        if (state.destroyed) { releaseBinding(binding); state.binding = null; return; }
+        binding.active = true;
         state.bound = true;
-        document.documentElement.className += ' ss-native-document';
-        root.className += ' is-native';
+        if (document.documentElement.className.indexOf('ss-native-document') === -1) {
+            document.documentElement.className += ' ss-native-document';
+        }
+        if (root.className.indexOf('is-native') === -1) { root.className += ' is-native'; }
         nativeDiagnostic('dom_ready');
-        window.engine.on('viewEnv.onDataChanged', readModel);
-        window.engine.on('self.onScaleUpdated', onScaleUpdated);
         readModel();
         nativeDiagnostic('model_bound');
         queueResize();
     }
     function afterEngineReady() {
         if (state.destroyed) { return; }
-        if (window.isDomBuilt) { bindModel(); }
-        else { window.engine.on('self.onDomBuilt', bindModel); }
+        try {
+            if (window.isDomBuilt) { bindModel(); }
+            else { window.engine.on('self.onDomBuilt', bindModel); }
+        } catch (error) {
+            state.connecting = false;
+            try { window.engine.off('self.onDomBuilt', bindModel); }
+            catch (ignored) { /* A retained readiness callback is idempotent. */ }
+        }
     }
     function cleanup() {
         if (state.destroyed) { return; }
@@ -699,22 +744,13 @@
         document.removeEventListener('mouseup', endNativeDrag);
         window.removeEventListener('blur', endNativeDrag);
         // Invalidate local ownership before calling the disappearing bridge.
-        var wasBound = state.bound, callbackId = state.callbackId;
+        var binding = state.binding, callbackId = state.callbackId;
+        state.binding = null;
         state.callbackId = null;
         state.callbackRegistering = false;
         state.bound = false;
-        if (wasBound) {
-            try {
-                if (window.engine && typeof window.engine.off === 'function') {
-                    window.engine.off('viewEnv.onDataChanged', readModel);
-                }
-            } catch (error) { /* Continue removing the other native listeners. */ }
-            try {
-                if (window.engine && typeof window.engine.off === 'function') {
-                    window.engine.off('self.onScaleUpdated', onScaleUpdated);
-                }
-            } catch (error) { /* Continue removing the other native listeners. */ }
-        }
+        state.connecting = false;
+        releaseBinding(binding);
         // DOM readiness can be pending before the model has ever been bound.
         try {
             if (window.engine && typeof window.engine.off === 'function') {
@@ -736,10 +772,14 @@
     window.addEventListener('beforeunload', cleanup);
     function connectNative() {
         if (state.destroyed || state.connecting) { return; }
-        if (window.engine && window.engine.whenReady && typeof window.engine.whenReady.then === 'function') {
-            state.connecting = true;
-            window.engine.whenReady.then(afterEngineReady);
-        }
+        try {
+            if (window.engine && window.engine.whenReady && typeof window.engine.whenReady.then === 'function') {
+                state.connecting = true;
+                window.engine.whenReady.then(afterEngineReady, function () {
+                    state.connecting = false;
+                });
+            }
+        } catch (error) { state.connecting = false; }
     }
     document.addEventListener('DOMContentLoaded', connectNative);
     window.addEventListener('load', connectNative);

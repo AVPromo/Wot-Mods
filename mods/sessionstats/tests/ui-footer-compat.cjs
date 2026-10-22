@@ -18,6 +18,8 @@ async function fixture(browser, options = {}) {
     window.testWarnings = [];
     window.testFrames = [];
     window.testModelCallbacks = [];
+    window.testRegistrationAttempts = {};
+    window.testFeature = {onAction:args=>testCommand(args)};
     window.testID = 41;
     window.nativeCalls = 0;
     window.requestAnimationFrame = callback => { testFrames.push(callback); return testFrames.length; };
@@ -38,7 +40,14 @@ async function fixture(browser, options = {}) {
       }
     };
     window.viewEnv = {
-      addDataChangedCallback(name, id) { testModelCallbacks.push(['add', id]); return id + 100; },
+      addDataChangedCallback(name, id) {
+        testModelCallbacks.push(['add', id]);
+        testRegistrationAttempts[id]=(testRegistrationAttempts[id] || 0)+1;
+        if(options.rejectModel && testRegistrationAttempts[id]===1) throw new Error('Model registration rejected');
+        if(options.emptyModel && testRegistrationAttempts[id]===1) return null;
+        if(options.synchronousModel) emitChange();
+        return id+100;
+      },
       removeDataChangedCallback(callbackID, id) {
         testModelCallbacks.push(['remove', id]);
         if (options.cleanupFailure) throw new TypeError('model cleanup changed');
@@ -46,7 +55,7 @@ async function fixture(browser, options = {}) {
     };
     window.subViews = {
       ids() { return [testID]; },
-      get() { return {model: {grzSessionFooter: {onAction: args => testCommand(args)}}}; }
+      get() { return {model: {grzSessionFooter: testFeature}}; }
     };
     if (options.missingGet) delete window.subViews.get;
     window.emitChange = () => (testEvents['viewEnv.onDataChanged'] || []).slice().forEach(fn => fn());
@@ -93,6 +102,36 @@ async function fixture(browser, options = {}) {
       await normal.evaluate(() => nativeCalls === 6 && testActions.length === 1));
     await normal.close();
 
+    for(const mode of ['rejectModel','emptyModel']) {
+      const retry=await fixture(browser,{[mode]:true});
+      check('Initial failed footer callback keeps the usable icon ('+mode+')',
+        await retry.locator('#grz-session-stats-footer-button').count()===1 &&
+        await retry.evaluate(()=>testRegistrationAttempts[41]===1));
+      await retry.evaluate(()=>emitChange());
+      check('The same footer subview retries and then stops registering ('+mode+')',
+        await retry.evaluate(()=>{emitChange();return testRegistrationAttempts[41]===2;}));
+      await retry.evaluate(()=>{testID=42;emitChange();});
+      check('A recreated footer subview retains its icon after rejected registration ('+mode+')',
+        await retry.locator('#grz-session-stats-footer-button').count()===1 &&
+        await retry.evaluate(()=>testRegistrationAttempts[42]===1 && testModelCallbacks.some(x=>x[0]==='remove' && x[1]===41)));
+      await retry.evaluate(()=>{
+        testFeature.activity=JSON.stringify({pending:3,processing:false});
+        testFeature.appearance='.grz-session-footer-button { color: rgb(12, 34, 56); }';
+        emitChange();emitChange();
+      });
+      check('Recovered footer callback receives activity and appearance changes ('+mode+')',
+        await retry.evaluate(()=>testRegistrationAttempts[42]===2 &&
+          document.getElementById('grz-session-stats-footer-button').getAttribute('aria-busy')==='true' &&
+          getComputedStyle(document.getElementById('grz-session-stats-footer-button')).color==='rgb(12, 34, 56)'));
+      await retry.evaluate(()=>GRZSessionFooter.destroy());
+      check('Cleanup removes the successfully retried callback for the current subview ('+mode+')',
+        await retry.evaluate(()=>testModelCallbacks.filter(x=>x[0]==='remove' && x[1]===42).length===1));
+      await retry.close();
+    }
+    const synchronous=await fixture(browser,{synchronousModel:true});
+    check('Synchronous footer model delivery cannot recursively duplicate registration',
+      await synchronous.evaluate(()=>testRegistrationAttempts[41]===1));
+    await synchronous.close();
     const late = await fixture(browser, {cleanupFailure:true});
     const lateState = await late.evaluate(() => {
       const staleClick = document.getElementById('grz-session-stats-footer-button').onclick;

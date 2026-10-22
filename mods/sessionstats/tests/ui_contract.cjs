@@ -93,6 +93,8 @@ async function nativeHost(browser, options) {
     window.__grzHelperCalls={rem:0,resize:0,callback:0};
     window.__grzEngineOn=[];
     window.__grzEngineOff=[];
+    window.__grzRejectEngine=!!options.rejectEngine;
+    window.__grzStaleCallbacks=[];
     window.__grzRemovedCallbacks=[];
     window.isDomBuilt=!options.pendingDom;
     window.model={payload:JSON.stringify(snapshot),onAction:function(args){
@@ -104,8 +106,14 @@ async function nativeHost(browser, options) {
         window.__grzEvents['viewEnv.onDataChanged']();
       }
     }};
-    const engineReady=options.pendingEngine ? new Promise(resolve=>{window.__grzResolveEngine=resolve;}) : Promise.resolve();
-    window.engine={whenReady:engineReady,on:function(name,fn){window.__grzEngineOn.push(name);window.__grzEvents[name]=fn;},off:function(name){
+    const engineReady=options.pendingEngine ? new Promise((resolve,reject)=>{window.__grzResolveEngine=resolve;window.__grzRejectReady=reject;}) : Promise.resolve();
+    window.engine={whenReady:engineReady,on:function(name,fn){
+      window.__grzEngineOn.push(name);
+      if(__grzRejectEngine && name===options.rejectEngine && !options.rejectAfterRegister) throw new Error('Engine registration rejected');
+      window.__grzEvents[name]=fn;
+      if(__grzRejectEngine) window.__grzStaleCallbacks.push(fn);
+      if(__grzRejectEngine && name===options.rejectEngine) throw new Error('Engine registration rejected after subscribing');
+    },off:function(name){
       window.__grzEngineOff.push(name);
       if(options.teardown===name || options.teardown==='all') throw new Error('Native unsubscribe rejected');
     }};
@@ -140,7 +148,7 @@ async function nativeHost(browser, options) {
   },{snapshot,options});
   await serveUI(native);
   await native.goto('http://grz-session.test/SessionStats.html');
-  if(options.pendingEngine) { await native.waitForFunction(()=>window.GRZSessionStats); }
+  if(options.pendingEngine || options.rejectEngine) { await native.waitForFunction(()=>window.GRZSessionStats); }
   else if(options.pendingDom) { await native.waitForFunction(()=>window.__grzEngineOn.includes('self.onDomBuilt')); }
   else { await native.waitForFunction(()=>window.__grzCommands.some(args=>args.action==='resize')); }
   return native;
@@ -520,6 +528,39 @@ async function nativeHost(browser, options) {
       __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
     await degraded.close();
   }
+  for(const rejectEngine of ['viewEnv.onDataChanged','self.onScaleUpdated']) {
+    for(const rejectAfterRegister of [false,true]) {
+      const failed=await nativeHost(browser,{rejectEngine,rejectAfterRegister,teardown:'all'});
+      check('Rejected engine subscription leaves the panel unbound ('+rejectEngine+', partial='+rejectAfterRegister+')',
+        await failed.evaluate(()=>!GRZSessionStats.getState().nativeBound && __grzHelperCalls.callback===0));
+      await failed.evaluate(()=>{__grzRejectEngine=false;window.dispatchEvent(new Event('load'));});
+      await failed.waitForFunction(()=>GRZSessionStats.getState().nativeBound && __grzCommands.some(x=>x.action==='resize'));
+      check('A later load retries both subscriptions and renders the initial model ('+rejectEngine+', partial='+rejectAfterRegister+')',
+        await failed.evaluate(()=>document.querySelector('#ss-summary .ss-kpi-value').textContent==='16' && __grzHelperCalls.callback===1));
+      check('Partially retained callbacks stay inert after a successful replacement ('+rejectEngine+', partial='+rejectAfterRegister+')',
+        await failed.evaluate(()=>{
+          const payload=JSON.parse(model.payload);
+          Object.assign(payload.scopes.launch.summary,{battles:0,observed_battles:0,missing_results:0,partial_results:0});
+          model.payload=JSON.stringify(payload);
+          const count=__grzCommands.length;
+          __grzStaleCallbacks.forEach(fn=>fn());
+          return __grzCommands.length===count && document.querySelector('#ss-summary .ss-kpi-value').textContent==='16';
+        }));
+      await failed.evaluate(()=>__grzEvents['viewEnv.onDataChanged']());
+      check('The recovered engine subscription receives subsequent model changes ('+rejectEngine+', partial='+rejectAfterRegister+')',
+        await failed.evaluate(()=>document.querySelector('#ss-summary .ss-kpi-value').textContent==='0'));
+      await failed.close();
+    }
+  }
+  const readyRetry=await nativeHost(browser,{pendingEngine:true});
+  await readyRetry.evaluate(async()=>{__grzRejectReady(new Error('Readiness rejected'));await Promise.resolve();await Promise.resolve();});
+  check('Rejected panel readiness is handled and leaves the panel unbound',
+    await readyRetry.evaluate(()=>!GRZSessionStats.getState().nativeBound && __grzHelperCalls.callback===0));
+  await readyRetry.evaluate(()=>{engine.whenReady=Promise.resolve();window.dispatchEvent(new Event('load'));});
+  await readyRetry.waitForFunction(()=>GRZSessionStats.getState().nativeBound);
+  check('A fresh readiness promise can reconnect after rejection',
+    await readyRetry.evaluate(()=>document.querySelector('#ss-summary .ss-kpi-value').textContent==='16'));
+  await readyRetry.close();
   const loading=await nativeHost(browser,{pendingDom:true});
   check('Loading panel owns a DOM-ready listener before model binding',await loading.evaluate(()=>
     !GRZSessionStats.getState().nativeBound && __grzEngineOn.join(',')==='self.onDomBuilt'));

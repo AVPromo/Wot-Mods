@@ -4,6 +4,7 @@
     if (window.GRZSessionFooter) { return; }
     var button = null;
     var callbackId = null;
+    var callbackRegistering = false;
     var resId = null;
     var feature = null;
     var bound = false;
@@ -173,9 +174,17 @@
             }
             callbackId = null;
             resId = nextId;
-            if (bound && resId !== null && typeof window.viewEnv.addDataChangedCallback === 'function') {
-                callbackId = window.viewEnv.addDataChangedCallback('model', resId, true);
-            }
+        }
+        // A rejected registration must be retried even when the subview ID stays
+        // unchanged. Keep its model and the usable button while registration waits.
+        if (bound && resId !== null && callbackId === null && !callbackRegistering && window.viewEnv &&
+                typeof window.viewEnv.addDataChangedCallback === 'function') {
+            callbackRegistering = true;
+            try {
+                var registered = window.viewEnv.addDataChangedCallback('model', resId, true);
+                if (registered !== undefined && registered !== null) { callbackId = registered; }
+            } catch (error) { reportFailure('model registration'); }
+            finally { callbackRegistering = false; }
         }
         feature = found ? found.model : null;
         if (!feature) { removeButton(); }

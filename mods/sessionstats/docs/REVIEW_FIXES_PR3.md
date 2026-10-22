@@ -146,3 +146,30 @@ decoder rejects nesting or accepts the invalid non-string translation. The
 14-test localization suite passes on CPython 2.7.18, 3.12 and 3.14.4. A negative
 control removing the production `RuntimeError` handlers makes all three targeted
 fallback regressions fail. Production behavior and workflow files are unchanged.
+
+## Review 5616729809: retry native panel and footer subscriptions
+
+Panel binding is committed only after both engine subscriptions succeed.
+A rejected subscription invalidates its attempt before independently removing
+both listeners, clears the connection gate and permits a later load/readiness
+retry. Attempt-owned wrappers keep partially retained callbacks inert even
+when native unsubscription throws. Readiness rejection and synchronous bridge
+errors are handled without an unhandled promise. Successful connections still
+render the current model, size the window and retain optional model-callback
+retry behavior.
+
+Footer model registration is retried whenever its callback ID is missing,
+including after a rejection or null return for the same/recreated subview.
+The model/button remains usable while registration waits. A reentrancy guard
+prevents synchronous delivery from recursively registering another callback.
+
+Browser regressions cover subscription failures before/after registration,
+failed rollback removal, recovery and inert old callbacks, readiness rejection
+and recovery, initial/recreated footer subviews, activity/appearance updates,
+cleanup and synchronous registration. Targeted negative controls run these
+regressions against the previous shipped JavaScript and reproduce both bugs.
+Real Gameface/client validation remains separate from these Chromium doubles.
+
+The source branch was synchronized with accepted main after infrastructure
+PR #2 and Stay Sharp namespace PR #6. No candidate workflow replaces the
+accepted validation harness.
