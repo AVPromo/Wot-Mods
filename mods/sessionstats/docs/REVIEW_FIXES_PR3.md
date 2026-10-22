@@ -1,5 +1,24 @@
 # PR #3 review fixes
 
+## Review 5620473401: application validation during generation selection
+
+`GenerationStore.load` accepts an optional application validator. StatsService
+supplies its ledger validator before a generation is selected, so a checksum-valid
+known-schema payload with invalid periods, battle records or account ownership
+can fall back to an older valid generation. Account and installation ledgers use
+the same path. Recovery preserves the existing manual-reset epoch and history;
+the next commit advances past the newest observed generation.
+
+Unsupported storage/payload/application schemas still stop selection and prohibit
+writes. Exhausting the known-schema candidates leaves the store read-only without
+reinitializing files. A valid newest ledger and a valid but already closed launch
+are not rolled back. Concurrent/stale writer checks continue to compare against
+the highest observed generation, including rejected candidates.
+
+Regressions cover invalid manual/launch periods, malformed battles, mismatched
+account ownership, multiple rejected candidates, installation resets, subsequent
+restart/writes, unsupported schemas, all-invalid stores and stale writers.
+
 ## Review 5620062915 and related-pattern audit
 
 The correction includes the three reported findings and a search for analogous

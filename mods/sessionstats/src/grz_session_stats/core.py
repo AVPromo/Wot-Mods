@@ -244,9 +244,8 @@ class StatsService(object):
         current_time = self._time()
         self._state = self._empty_state(current_time)
         try:
-            existing = self.store.load()
+            existing = self.store.load(validate=self._validate_state)
             if existing is not None:
-                self._validate_state(existing)
                 self._state = existing
             if self.store.warning:
                 self._warnings.append(self.store.warning)

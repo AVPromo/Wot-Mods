@@ -159,7 +159,13 @@ class GenerationStore(object):
             raise ValueError('checksum mismatch')
         return payload
 
-    def load(self):
+    def load(self, validate=None):
+        """Select the newest generation accepted by storage and the caller.
+
+        An optional application validator raises StorageError/ValueError for
+        invalid known-schema payloads. UnsupportedSchemaError always stops
+        selection, including when raised by the validator.
+        """
         self.warning = None
         files = self._files()
         self._observed_generation = files[0][0] if files else 0
@@ -167,10 +173,12 @@ class GenerationStore(object):
         for generation, path in files:
             try:
                 payload = self._decode(path, generation)
+                if validate is not None:
+                    validate(payload)
             except UnsupportedSchemaError:
                 self.read_only = True
                 raise
-            except (ValueError, TypeError, UnicodeError, IOError, OSError, RuntimeError):
+            except (StorageError, ValueError, TypeError, UnicodeError, IOError, OSError, RuntimeError):
                 # Python 2.7 reports decoder/encoder recursion as RuntimeError;
                 # Python 3 RecursionError is its subclass. Try an older backup.
                 damaged += 1

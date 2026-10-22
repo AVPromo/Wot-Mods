@@ -165,6 +165,51 @@ class StorageTests(unittest.TestCase):
             handle.write(b'partial uncommitted data')
         self.assertEqual(GenerationStore(self.directory).load(), self.payload(1))
 
+    def _reject_second_payload(self, payload):
+        if payload['value'] == 2:
+            raise StorageError('invalid application ledger')
+
+    def test_application_validation_selects_an_older_generation_and_advances_past_damage(self):
+        self.store.save(self.payload(1))
+        self.store.save(self.payload(2))
+        damaged_path = self.store._files()[0][1]
+        with open(damaged_path, 'rb') as stream:
+            damaged_bytes = stream.read()
+        recovered = GenerationStore(self.directory)
+        self.assertEqual(recovered.load(validate=self._reject_second_payload), self.payload(1))
+        self.assertEqual(recovered.sequence, 1)
+        self.assertIsNotNone(recovered.warning)
+        self.assertFalse(recovered.read_only)
+        self.assertEqual(recovered.save(self.payload(3)), 3)
+        with open(damaged_path, 'rb') as stream:
+            self.assertEqual(stream.read(), damaged_bytes)
+        self.assertEqual(GenerationStore(self.directory).load(), self.payload(3))
+
+    def test_application_schema_rejection_stops_selection_before_older_payloads(self):
+        self.store.save(self.payload(1))
+        self.store.save(self.payload(2))
+        calls = []
+
+        def unsupported(payload):
+            calls.append(payload['value'])
+            raise UnsupportedSchemaError('application schema unavailable')
+
+        recovered = GenerationStore(self.directory)
+        self.assertRaises(UnsupportedSchemaError, recovered.load, validate=unsupported)
+        self.assertEqual(calls, [2])
+        self.assertTrue(recovered.read_only)
+        self.assertRaises(StorageError, recovered.save, self.payload(3))
+
+    def test_application_recovery_keeps_stale_writer_protection(self):
+        self.store.save(self.payload(1))
+        self.store.save(self.payload(2))
+        first, second = GenerationStore(self.directory), GenerationStore(self.directory)
+        self.assertEqual(first.load(validate=self._reject_second_payload), self.payload(1))
+        self.assertEqual(second.load(validate=self._reject_second_payload), self.payload(1))
+        self.assertEqual(second.save(self.payload(3)), 3)
+        self.assertRaises(StorageError, first.save, self.payload(4))
+        self.assertEqual(GenerationStore(self.directory).load(), self.payload(3))
+
     def test_rename_failure_preserves_committed_state(self):
         self.store.save(self.payload(1))
         original = os.rename
