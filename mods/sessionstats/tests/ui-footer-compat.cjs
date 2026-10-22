@@ -19,17 +19,20 @@ async function fixture(browser, options = {}) {
     window.testFrames = [];
     window.testModelCallbacks = [];
     window.testRegistrationAttempts = {};
+    window.testOnAdd = null;
+    window.testOnRemove = null;
     window.testFeature = {onAction:args=>testCommand(args)};
     window.testID = 41;
     window.nativeCalls = 0;
     window.requestAnimationFrame = callback => { testFrames.push(callback); return testFrames.length; };
     window.console.warn = message => testWarnings.push(message);
-    window.isDomBuilt = true;
+    window.isDomBuilt = !options.domPending;
     document.getElementById('native-button').onclick = () => { nativeCalls++; };
     window.testCommand = args => testActions.push(args);
     window.engine = {
       whenReady: options.rejectedReady ? new Promise((resolve, reject) => { window.testRejectReady = reject; }) : Promise.resolve(),
       on(name, callback) {
+        if (options.destroyOnSubscribe === name) GRZSessionFooter.destroy();
         if (!testEvents[name]) testEvents[name] = [];
         testEvents[name].push(callback);
         if (options.partialOnFailure) throw new TypeError('registration changed');
@@ -46,10 +49,12 @@ async function fixture(browser, options = {}) {
         if(options.rejectModel && testRegistrationAttempts[id]===1) throw new Error('Model registration rejected');
         if(options.emptyModel && testRegistrationAttempts[id]===1) return null;
         if(options.synchronousModel) emitChange();
+        if(testOnAdd) testOnAdd(id);
         return id+100;
       },
       removeDataChangedCallback(callbackID, id) {
-        testModelCallbacks.push(['remove', id]);
+        testModelCallbacks.push(['remove', id, callbackID]);
+        if(testOnRemove) testOnRemove(id);
         if (options.synchronousRemoval) emitChange();
         if (options.cleanupFailure || options.rejectRemoval) throw new TypeError('model cleanup changed');
       }
@@ -174,6 +179,72 @@ async function fixture(browser, options = {}) {
     check('Synchronous footer model delivery cannot recursively duplicate registration',
       await synchronous.evaluate(()=>testRegistrationAttempts[41]===1));
     await synchronous.close();
+    const duringAdd=await fixture(browser);
+    await duringAdd.evaluate(()=>{
+      testOnAdd=()=>{testOnAdd=null;GRZSessionFooter.destroy();};
+      testID=42;emitChange();flushFrames();emitChange();
+    });
+    check('A footer callback returned after destruction is removed for its original model',
+      await duringAdd.evaluate(()=>testModelCallbacks.some(x=>x[0]==='remove' && x[1]===42 && x[2]===142) &&
+        !document.getElementById('grz-session-stats-footer-button') && testActions.length===0));
+    await duringAdd.close();
+
+    const duringSwitch=await fixture(browser);
+    await duringSwitch.evaluate(()=>{
+      testOnAdd=id=>{
+        testOnAdd=null;
+        testID=43;testFeature={onAction:args=>testActions.push({id:43,...args}),
+          activity:JSON.stringify({pending:4,processing:false})};emitChange();
+      };
+      testID=42;emitChange();emitChange();
+    });
+    await duringSwitch.locator('#grz-session-stats-footer-button').click();
+    check('A synchronous model replacement keeps its new callback and command ownership',
+      await duringSwitch.evaluate(()=>testRegistrationAttempts[43]===1 && testActions[0].id===43 &&
+        document.getElementById('grz-session-stats-footer-button').getAttribute('aria-busy')==='true' &&
+        testModelCallbacks.filter(x=>x[0]==='remove' && x[1]===42 && x[2]===142).length===1));
+    await duringSwitch.evaluate(()=>GRZSessionFooter.destroy());
+    check('Teardown removes the actual replacement callback, not the late superseded return',
+      await duringSwitch.evaluate(()=>testModelCallbacks.filter(x=>x[0]==='remove' && x[1]===43 && x[2]===143).length===1));
+    await duringSwitch.close();
+
+    const duringRemoval=await fixture(browser);
+    await duringRemoval.evaluate(()=>{
+      testOnRemove=()=>{
+        testOnRemove=null;testID=43;
+        testFeature={onAction:args=>testActions.push({id:43,...args})};emitChange();
+      };
+      testID=42;emitChange();emitChange();
+    });
+    await duringRemoval.locator('#grz-session-stats-footer-button').click();
+    check('A model change during old cleanup cannot restore the superseded model or register it',
+      await duringRemoval.evaluate(()=>!testRegistrationAttempts[42] && testRegistrationAttempts[43]===1 && testActions[0].id===43));
+    await duringRemoval.close();
+
+    const replacedBridge=await fixture(browser);
+    await replacedBridge.evaluate(()=>{
+      testOnAdd=()=>{
+        testOnAdd=null;
+        window.viewEnv={
+          addDataChangedCallback(name,id){testModelCallbacks.push(['replacement-add',id]);return id+500;},
+          removeDataChangedCallback(callback,id){testModelCallbacks.push(['replacement-remove',id,callback]);}
+        };
+      };
+      testID=42;emitChange();emitChange();emitChange();GRZSessionFooter.destroy();
+    });
+    check('A replaced native bridge cleans late returns through their original API and owns its own callback',
+      await replacedBridge.evaluate(()=>testModelCallbacks.filter(x=>x[0]==='remove' && x[1]===42 && x[2]===142).length===1 &&
+        testModelCallbacks.filter(x=>x[0]==='replacement-add' && x[1]===42).length===1 &&
+        testModelCallbacks.some(x=>x[0]==='replacement-remove' && x[1]===42 && x[2]===542)));
+    await replacedBridge.close();
+
+    for(const name of ['viewEnv.onDataChanged','self.onDomBuilt']) {
+      const lateSubscription=await fixture(browser,{destroyOnSubscribe:name,domPending:name==='self.onDomBuilt'});
+      check('Engine subscription returning after footer destruction is rolled back ('+name+')',
+        await lateSubscription.evaluate(name=>(testEvents[name] || []).length===0 &&
+          testModelCallbacks.length===0 && !document.getElementById('grz-session-stats-footer-button'),name));
+      await lateSubscription.close();
+    }
     const late = await fixture(browser, {cleanupFailure:true});
     const lateState = await late.evaluate(() => {
       const staleClick = document.getElementById('grz-session-stats-footer-button').onclick;

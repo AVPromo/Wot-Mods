@@ -20,6 +20,7 @@ import uuid
 
 SCHEMA_VERSION = 1
 STORAGE_VERSION = 1
+MAX_JSON_DEPTH = 64
 _GENERATION_RE = re.compile(r'^state-([0-9]{20})\.json$')
 _PROCESS_LOCK = threading.RLock()
 
@@ -35,6 +36,23 @@ class UnsupportedSchemaError(StorageError):
 def canonical_bytes(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True,
                       separators=(',', ':'), allow_nan=False).encode('utf-8')
+
+
+def check_json_depth(value):
+    """Bound external nesting before later encoders, copies or text conversion.
+
+    Ledger/config structures are shallow; history length is not limited here.
+    An iterative check also works when a newer decoder accepts deeper JSON.
+    """
+    pending = [(value, 0)]
+    while pending:
+        current, depth = pending.pop()
+        if not isinstance(current, (dict, list)):
+            continue
+        if depth > MAX_JSON_DEPTH:
+            raise ValueError('JSON nesting exceeds the supported data shape')
+        children = current.values() if isinstance(current, dict) else current
+        pending.extend((item, depth + 1) for item in children if isinstance(item, (dict, list)))
 
 
 def _ensure_directory(directory):
@@ -131,13 +149,14 @@ class GenerationStore(object):
         if envelope.get('generation') != generation:
             raise ValueError('generation mismatch')
         payload = envelope.get('payload')
-        actual = hashlib.sha256(canonical_bytes(payload)).hexdigest()
-        if actual != envelope.get('payload_checksum'):
-            raise ValueError('checksum mismatch')
         if not isinstance(payload, dict):
             raise ValueError('invalid payload')
         if payload.get('schema_version') != self.schema_version:
             raise UnsupportedSchemaError(message('storage.schema'))
+        check_json_depth(payload)
+        actual = hashlib.sha256(canonical_bytes(payload)).hexdigest()
+        if actual != envelope.get('payload_checksum'):
+            raise ValueError('checksum mismatch')
         return payload
 
     def load(self):
@@ -172,6 +191,7 @@ class GenerationStore(object):
         if payload.get('schema_version') != self.schema_version:
             raise UnsupportedSchemaError(message('storage.unsupported_write'))
         try:
+            check_json_depth(payload)
             _ensure_directory(self.directory)
             with _WriteLock(self.directory) as lock:
                 if lock.fallback:
@@ -217,7 +237,7 @@ class GenerationStore(object):
                 return generation
         except StorageError:
             raise
-        except (IOError, OSError, ValueError, TypeError, UnicodeError):
+        except (IOError, OSError, ValueError, TypeError, UnicodeError, RuntimeError):
             raise StorageError(message('storage.failed'))
 
     def _sync_directory(self):

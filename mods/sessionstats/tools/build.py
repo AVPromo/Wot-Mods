@@ -48,7 +48,14 @@ def render_guide(relative, content, version, client_version):
     text = content.decode('utf-8')
     text = text.replace('grz.sessionstats_'+VERSION+'.wotmod', 'grz.sessionstats_'+version+'.wotmod')
     text = text.replace('wot-statystyki-sesji-v'+VERSION+'.zip', 'wot-statystyki-sesji-v'+version+'.zip')
-    text = text.replace('mods/2.4.1.0/', 'mods/'+client_version+'/')
+    # A source bundle may already be stamped for a different client. Keep
+    # installation paths and active target/command fields consistent on rebuild.
+    text = re.sub(r'(?<![A-Za-z0-9_])mods/[0-9]+(?:\.[0-9]+){3}\b',
+                  lambda unused: 'mods/' + client_version, text)
+    for prefix in (r'(target: Wargaming EU )', r'(?m)^(Target: World of Tanks PC Wargaming EU )',
+                   r'(For client )', r'(active mods directory is not )', r'(--client-version )'):
+        text = re.sub(prefix + r'[0-9]+(?:\.[0-9]+){3}\b',
+                      lambda match: match.group(1) + client_version, text)
     for prefix in RELEASE_GUIDES[relative]:
         text = re.sub(prefix + re.escape(VERSION) + r'\b',
                       lambda match: match.group(1) + version, text)
@@ -98,7 +105,7 @@ def main():
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', global_version):
         parser.error('Version must be a semantic version without a suffix')
     version_tag = global_version
-    if not re.match(r'^\d+\.\d+\.\d+\.\d+$', args.client_version):
+    if not re.fullmatch(r'[0-9]+(?:\.[0-9]+){3}', args.client_version):
         parser.error('Client version must have four numeric parts')
     compiler = str(Path(args.python27).resolve())
     version = subprocess.check_output([compiler, '-c', 'import sys; print("%d.%d" % sys.version_info[:2])']).decode().strip()

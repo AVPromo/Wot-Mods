@@ -1,5 +1,29 @@
 # PR #3 review fixes
 
+## Review 5620062915 and related-pattern audit
+
+The correction includes the three reported findings and a search for analogous
+failures in the mod's JSON, packaging and native-resource boundaries:
+
+| Boundary | Correction or verified existing protection |
+| --- | --- |
+| AppData preferences and WN8 override | One bounded reader converts decoder RuntimeError/RecursionError into the invalid-file fallback. Each start restores preference defaults; hotkeys have bounded text shape and the footer flag is a strict boolean. Bundled WN8 remains available after a rejected override. |
+| Accepted deeply nested JSON | An iterative depth limit of 64 protects later conversion, copying and encoding even on interpreters that accept deeper input. It limits structural nesting, not history length. Applies to external runtime JSON and persisted generations. |
+| State recovery and writes | Known-schema generations with excessive depth recover older valid state. Unsupported schemas are protected before depth/checksum processing. Failed nested/encoder writes leave the committed generation intact. |
+| Appearance and language JSON | Existing bounded reads, strict shape validation and decoder-failure fallback were checked alongside their regression suites. No raw decoder text is added to fallback diagnostics. |
+| Source-bundle rebuild | Numeric client directories and active installation target/command fields are restamped from any previous client. Release fields continue to follow source/VERSION. Historical source evidence and dependency versions remain unchanged. Client-version arguments require a full match. |
+| Native window subscriptions and watchdog | A registration returning after close is rolled back. An old watchdog return cannot replace the timer owned by a newer window. Interrupted construction stops before loading a released surface. |
+| Python footer ownership | Failed child removal and partial-registration rollback remain owned for retry. Reinstallation waits for release and cannot reactivate stale commands or remove another mod's replacement. Runtime retains failed uninstall handles across stop/start. |
+| Loader ownership | fini retains a stopped runtime while native cleanup is unconfirmed. init reuses that owner, including after partial initialization failure, so old pending handles are not abandoned for a fresh runtime. |
+| Footer JavaScript ownership | Each model callback belongs to its original resource ID and bridge. Late returns after destruction or model/bridge replacement are removed through that original API. Engine subscriptions returning after destroy are rolled back. |
+| Panel JavaScript cleanup | Retained DOM controls cannot dispatch commands after destroy, including through a replacement/preview fallback. The exact key handler is removed so a destroyed panel no longer consumes Escape. Existing connection attempt, retry and model ownership checks remain in place. |
+| Result/account ownership | Existing revision-authority, delayed-account refresh, stale result-token and late-cache regressions were included in validation. No new collector behavior or dependency on another mod is introduced. |
+
+Tests inject both decoder runtime failures and successful decoding of invalid
+nested values. They do not assume one fixed recursion threshold across Python
+versions. Native lifecycle tests use strict doubles; browser tests use synthetic
+bridges. Neither establishes compatibility with a live WoT client.
+
 ## English repository documentation
 
 Repository guides, historical notes, changelogs, attribution descriptions and

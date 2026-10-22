@@ -3,9 +3,9 @@
     'use strict';
     if (window.GRZSessionFooter) { return; }
     var button = null;
-    var callbackId = null;
-    var callbackRegistering = false;
-    var resId = null;
+    var subscription = null;
+    var dataEngine = null;
+    var readyEngine = null;
     var feature = null;
     var bound = false;
     var destroyed = false;
@@ -165,34 +165,48 @@
         if (button && button.parentNode) { button.parentNode.removeChild(button); }
         button = null;
     }
+    function removeModelCallback(owner, callbackId) {
+        if (!owner || callbackId === null || callbackId === undefined) { return; }
+        try {
+            if (owner.viewEnv && typeof owner.viewEnv.removeDataChangedCallback === 'function') {
+                owner.viewEnv.removeDataChangedCallback(callbackId, owner.id);
+            }
+        } catch (error) { reportFailure('model cleanup'); }
+    }
     function syncFeature() {
         var found = findFeature();
+        if (destroyed) { return; }
         var nextId = found ? found.id : null;
-        if (nextId !== resId) {
-            var previousCallback = callbackId;
-            var previousId = resId;
-            // Release ownership first: native cleanup may throw or deliver a
-            // synchronous update. Neither may keep us attached to a stale ID.
-            callbackId = null;
-            resId = nextId;
-            try {
-                if (previousCallback !== null && window.viewEnv && typeof window.viewEnv.removeDataChangedCallback === 'function') {
-                    window.viewEnv.removeDataChangedCallback(previousCallback, previousId);
-                }
-            } catch (error) { reportFailure('model cleanup'); }
-        }
-        // A rejected registration must be retried even when the subview ID stays
-        // unchanged. Keep its model and the usable button while registration waits.
-        if (bound && resId !== null && callbackId === null && !callbackRegistering && window.viewEnv &&
-                typeof window.viewEnv.addDataChangedCallback === 'function') {
-            callbackRegistering = true;
-            try {
-                var registered = window.viewEnv.addDataChangedCallback('model', resId, true);
-                if (registered !== undefined && registered !== null) { callbackId = registered; }
-            } catch (error) { reportFailure('model registration'); }
-            finally { callbackRegistering = false; }
-        }
+        var owner = subscription, previous;
         feature = found ? found.model : null;
+        if ((owner && (owner.id !== nextId || owner.viewEnv !== window.viewEnv)) || (!owner && nextId !== null)) {
+            previous = owner;
+            owner = nextId === null ? null : {id:nextId, viewEnv:window.viewEnv,
+                callbackId:null, registering:false, active:true};
+            subscription = owner;
+            if (previous) {
+                previous.active = false;
+                var previousCallback = previous.callbackId;
+                previous.callbackId = null;
+                removeModelCallback(previous, previousCallback);
+            }
+        }
+        // Native registration/removal may synchronously switch models or close
+        // the document. Only the same live owner may accept a returned callback.
+        if (destroyed || subscription !== owner) { return; }
+        if (bound && owner && owner.callbackId === null && !owner.registering && owner.viewEnv &&
+                typeof owner.viewEnv.addDataChangedCallback === 'function') {
+            owner.registering = true;
+            try {
+                var registered = owner.viewEnv.addDataChangedCallback('model', owner.id, true);
+                if (registered !== undefined && registered !== null) {
+                    if (!destroyed && owner.active && subscription === owner && window.viewEnv === owner.viewEnv) {
+                        owner.callbackId = registered;
+                    } else { removeModelCallback(owner, registered); }
+                }
+            } catch (error) { reportFailure('model registration'); }
+            finally { owner.registering = false; }
+        }
         if (!feature) { removeButton(); }
     }
     function ensureButton() {
@@ -233,6 +247,7 @@
         if (destroyed) { return; }
         try {
             syncFeature();
+            if (destroyed) { return; }
             ensureButton();
             updateAppearance();
             updateActivity();
@@ -249,7 +264,13 @@
                 typeof window.engine.on !== 'function') { return; }
         bound = true;
         try {
-            window.engine.on('viewEnv.onDataChanged', update);
+            var engine = window.engine;
+            dataEngine = engine;
+            engine.on('viewEnv.onDataChanged', update);
+            if (destroyed) {
+                removeEngineListener(engine, 'viewEnv.onDataChanged', update, 'event cleanup');
+                return;
+            }
             update();
             if (typeof window.requestAnimationFrame === 'function') {
                 window.requestAnimationFrame(function () {
@@ -266,30 +287,36 @@
         try {
             if (window.isDomBuilt) { bind(); }
             else if (window.engine && typeof window.engine.on === 'function') {
-                window.engine.on('self.onDomBuilt', bind);
+                var engine = window.engine;
+                readyEngine = engine;
+                engine.on('self.onDomBuilt', bind);
+                if (destroyed) { removeEngineListener(engine, 'self.onDomBuilt', bind, 'ready cleanup'); }
             }
         } catch (error) {
             reportFailure('ready');
             destroy();
         }
     }
+    function removeEngineListener(engine, name, callback, stage) {
+        try {
+            if (engine && typeof engine.off === 'function') { engine.off(name, callback); }
+        } catch (error) { reportFailure(stage); }
+    }
     function destroy() {
         if (destroyed) { return; }
         destroyed = true;
-        // Complete our cleanup even if one native unsubscribe API changed.
-        // Retained callbacks and already queued frames are terminally inert.
-        if (window.engine && typeof window.engine.off === 'function') {
-            try { window.engine.off('viewEnv.onDataChanged', update); }
-            catch (error) { reportFailure('event cleanup'); }
-            try { window.engine.off('self.onDomBuilt', bind); }
-            catch (error) { reportFailure('ready cleanup'); }
-        }
-        if (callbackId !== null && window.viewEnv && typeof window.viewEnv.removeDataChangedCallback === 'function') {
-            try { window.viewEnv.removeDataChangedCallback(callbackId, resId); }
-            catch (error) { reportFailure('model cleanup'); }
-        }
+        var owner = subscription;
+        var callbackId = owner ? owner.callbackId : null;
+        var data = dataEngine, ready = readyEngine;
+        subscription = dataEngine = readyEngine = null;
+        feature = null; bound = false;
+        if (owner) { owner.active = false; owner.callbackId = null; }
+        // Invalidate before native unsubscribe; callbacks returned after this
+        // cleanup are removed by their registration's ownership check.
+        removeEngineListener(data, 'viewEnv.onDataChanged', update, 'event cleanup');
+        removeEngineListener(ready, 'self.onDomBuilt', bind, 'ready cleanup');
+        removeModelCallback(owner, callbackId);
         removeButton();
-        feature = null; callbackId = null; resId = null; bound = false;
         window.removeEventListener('beforeunload', destroy);
     }
     window.GRZSessionFooter = { refresh:update, destroy:destroy };

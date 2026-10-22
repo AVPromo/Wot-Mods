@@ -480,6 +480,7 @@
         }
     }
     function invoke(action, extra) {
+        if (state.destroyed) { return false; }
         var args = { action: action }, key;
         if (extra) { for (key in extra) { if (Object.prototype.hasOwnProperty.call(extra, key)) { args[key] = String(extra[key]); } } }
         try {
@@ -582,7 +583,7 @@
     nodes.titlebar.addEventListener('mousedown', beginNativeDrag);
     document.addEventListener('mouseup', endNativeDrag);
     window.addEventListener('blur', endNativeDrag);
-    document.addEventListener('keydown', function (event) {
+    function onKeyDown(event) {
         var key = event.key || event.keyCode;
         if (key === 'Escape' || key === 27) {
             event.preventDefault();
@@ -596,7 +597,8 @@
                 event.preventDefault(); focusControl(nodes['reset-cancel']);
             }
         }
-    });
+    }
+    document.addEventListener('keydown', onKeyDown);
 
     function isCurrent(attempt) {
         return attempt && attempt.active && !state.destroyed && state.binding === attempt &&
@@ -803,6 +805,7 @@
         state.scrollSpeed = 1;
         endNativeDrag();
         root.removeEventListener('wheel', onNativeWheel, false);
+        document.removeEventListener('keydown', onKeyDown);
         nodes.titlebar.removeEventListener('mousedown', beginNativeDrag);
         document.removeEventListener('mouseup', endNativeDrag);
         window.removeEventListener('blur', endNativeDrag);

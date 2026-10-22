@@ -163,6 +163,91 @@ class FooterActivityTests(unittest.TestCase):
         commands.onAction({'action': 'open'})
         self.assertEqual(self.opened, [])
 
+    def test_failed_child_removal_is_retained_and_retried_without_reviving_commands(self):
+        handle, lobby_class = self.install()
+        lobby, child, commands = self.attach(lobby_class)
+        healthy, healthy_child, unused_commands = self.attach(lobby_class)
+        original = lobby._unregisterChild
+
+        def rejected(*args):
+            raise RuntimeError('native cleanup temporarily unavailable')
+
+        lobby._unregisterChild = rejected
+        self.addCleanup(setattr, lobby, '_unregisterChild', original)
+        self.assertFalse(handle.uninstall())
+        self.assertIs(footer._installed, handle)
+        self.assertEqual(len(handle._children), 1)
+        self.assertIs(lobby.getChildView(footer.POSITION_ID), child)
+        self.assertIsNone(healthy.getChildView(footer.POSITION_ID))
+        commands.onAction({'action': 'open'})
+        self.assertEqual(self.opened, [])
+        self.assertIsNone(footer.install(lambda: self.opened.append('replacement')))
+        self.assertIs(footer._installed, handle)
+        lobby._unregisterChild = original
+        replacement = footer.install(lambda: self.opened.append('replacement'))
+        self.assertIsNotNone(replacement)
+        self.assertIsNot(replacement, handle)
+        self.assertIsNone(lobby.getChildView(footer.POSITION_ID))
+        lobby._onLoading()
+        current = lobby.getChildView(footer.POSITION_ID)
+        current.model.props[1][1].onAction({'action': 'open'})
+        commands.onAction({'action': 'open'})
+        self.assertEqual(self.opened, ['replacement'])
+
+    def test_silent_child_removal_failure_cannot_be_mistaken_for_release(self):
+        handle, lobby_class = self.install()
+        lobby, child, unused_commands = self.attach(lobby_class)
+        original = lobby._unregisterChild
+        lobby._unregisterChild = lambda *args: None
+        self.addCleanup(setattr, lobby, '_unregisterChild', original)
+        self.assertFalse(handle.uninstall())
+        self.assertEqual(len(handle._children), 1)
+        self.assertIs(footer._installed, handle)
+        lobby._unregisterChild = original
+        self.assertTrue(handle.uninstall())
+        self.assertEqual(handle._children, [])
+        self.assertIsNone(footer._installed)
+
+    def test_partial_child_registration_keeps_failed_rollback_owned(self):
+        handle, lobby_class = self.install()
+        lobby = lobby_class()
+        original_register = lobby._registerChild
+        original_remove = lobby._unregisterChild
+
+        def partial(position, child):
+            original_register(position, child)
+            raise RuntimeError('registered before failing')
+
+        def rejected(*args):
+            raise RuntimeError('rollback temporarily unavailable')
+
+        lobby._registerChild = partial
+        lobby._unregisterChild = rejected
+        self.addCleanup(setattr, lobby, '_unregisterChild', original_remove)
+        lobby._onLoading()
+        child = lobby.getChildView(footer.POSITION_ID)
+        self.assertIsNotNone(child)
+        self.assertEqual(len(handle._children), 1)
+        self.assertFalse(handle.uninstall())
+        lobby._unregisterChild = original_remove
+        self.assertTrue(handle.uninstall())
+        self.assertIsNone(lobby.getChildView(footer.POSITION_ID))
+
+    def test_failed_cleanup_never_removes_a_replacement_owned_by_another_mod(self):
+        handle, lobby_class = self.install()
+        lobby, child, unused_commands = self.attach(lobby_class)
+        original = lobby._unregisterChild
+        lobby._unregisterChild = lambda *args: None
+        self.assertFalse(handle.uninstall())
+        foreign = self.component()
+        lobby.children[footer.POSITION_ID] = foreign
+        attempts = []
+        lobby._unregisterChild = lambda *args: attempts.append(args)
+        self.assertTrue(handle.uninstall())
+        self.assertEqual(attempts, [])
+        self.assertIs(lobby.getChildView(footer.POSITION_ID), foreign)
+        lobby._unregisterChild = original
+
     def test_invalid_activity_counts_cannot_create_false_pending_work(self):
         handle, lobby_class = self.install()
         lobby, child, commands = self.attach(lobby_class)

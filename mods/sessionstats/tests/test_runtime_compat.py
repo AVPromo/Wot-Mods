@@ -312,6 +312,98 @@ class RuntimeCompatibilityTests(unittest.TestCase):
         retained(True, raw_result())
         self.assertEqual(self.summary()['battles'], 0)
 
+    def test_footer_cleanup_failure_stays_owned_across_stop_and_start(self):
+        for throws in (False, True):
+            state = {'reject': True, 'cleanup': 0, 'installed': 0}
+
+            def cleanup():
+                state['cleanup'] += 1
+                if state['reject']:
+                    if throws:
+                        raise RuntimeError('temporary footer cleanup failure')
+                    return False
+                return True
+
+            handle = Obj(uninstall=cleanup)
+
+            def installer(callback):
+                state['installed'] += 1
+                return handle
+
+            self.mod = runtime.Runtime(api=self.api, data_dir=self.directory, now=self.clock,
+                                       expected_table=EXPECTED, window=self.window,
+                                       footer_installer=installer)
+            self.mod.start()
+            self.mod.stop()
+
+            self.assertIs(self.mod.footer_handle, handle)
+            self.mod.start()
+            self.assertEqual(state['installed'], 1)
+            self.assertIs(self.mod.footer_handle, handle)
+            self.assertTrue(self.mod.running)
+            state['reject'] = False
+            self.mod.stop()
+            self.assertIsNone(self.mod.footer_handle)
+            self.mod.start()
+            self.assertEqual(state['installed'], 2)
+            self.mod.stop()
+
+    def _check_loader_cleanup_ownership(self, fail_start):
+        self.window.open()
+        original_close = self.window.close
+        state = {'reject': True, 'constructed': 0, 'fail_start': fail_start}
+
+        def close():
+            if state['reject']:
+                raise RuntimeError('native window remains open')
+            return original_close()
+
+        self.window.close = close
+        mod = runtime.Runtime(api=self.api, data_dir=self.directory, now=self.clock,
+                              expected_table=EXPECTED, window=self.window,
+                              footer_installer=lambda callback: None)
+        original_start = mod.start
+
+        def start():
+            original_start()
+            if state['fail_start']:
+                raise RuntimeError('partial initialization failure')
+
+        mod.start = start
+        previous_class, previous_instance = runtime.Runtime, runtime._runtime
+
+        def construct():
+            state['constructed'] += 1
+            return mod
+
+        runtime.Runtime, runtime._runtime = construct, None
+        try:
+            runtime.init()
+            if not fail_start:
+                runtime.fini()
+            self.assertFalse(mod.running)
+            self.assertIs(runtime._runtime, mod)
+            self.assertTrue(self.window.is_open())
+            state['fail_start'] = False
+            runtime.init()
+            self.assertTrue(mod.running)
+            self.assertIs(runtime._runtime, mod)
+            self.assertEqual(state['constructed'], 1)
+            self.assertEqual(len(self.api.events.onBattleResultsReceived.handlers), 1)
+            state['reject'] = False
+            runtime.fini()
+            self.assertIsNone(runtime._runtime)
+            self.assertFalse(self.window.is_open())
+        finally:
+            state['reject'] = False
+            mod.stop()
+            runtime.Runtime, runtime._runtime = previous_class, previous_instance
+
+    def test_loader_retains_failed_teardown_owner_for_next_initialization(self):
+        self._check_loader_cleanup_ownership(False)
+
+    def test_loader_retains_partial_initialization_owner_after_failed_cleanup(self):
+        self._check_loader_cleanup_ownership(True)
     def test_failed_unsubscribe_and_cancel_leave_old_callbacks_inert_after_restart(self):
         retained = RetainedEvent()
         self.api.events.onBattleResultsReceived = retained

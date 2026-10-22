@@ -280,6 +280,13 @@ class StatsWindow(object):
             self._log_once('event_attach_' + name, logging.WARNING,
                            'GRZ UI: optional native notification %s could not be subscribed.', name)
             return False
+        if generation != self._generation or self._closing:
+            active[0] = False
+            try:
+                event -= guarded
+            except Exception:
+                pass
+            return False
         self._events.append((event, guarded, active))
         return True
 
@@ -296,6 +303,9 @@ class StatsWindow(object):
     def _cancel_watchdog(self):
         callback_id = self._watchdog_id
         self._watchdog_id = None
+        self._cancel_callback(callback_id)
+
+    def _cancel_callback(self, callback_id):
         if callback_id is not None:
             try:
                 import BigWorld
@@ -466,7 +476,11 @@ class StatsWindow(object):
         self._cancel_watchdog()
         try:
             import BigWorld
-            self._watchdog_id = BigWorld.callback(5.0, lambda: self._check_renderer(generation))
+            callback_id = BigWorld.callback(5.0, lambda: self._check_renderer(generation))
+            if generation != self._generation or native is not self._window or self._closing:
+                self._cancel_callback(callback_id)
+                return False
+            self._watchdog_id = callback_id
             self._finish_watchdog_if_ready()
         except (ImportError, AttributeError, RuntimeError):
             pass
@@ -582,11 +596,18 @@ class StatsWindow(object):
             self._view = build_view_class()(layout_id, self._model)
             native = build_window_class()(self._view, parent, self._on_ready)
             self._window = native
-            self._attach(getattr(native, 'onSizeChanged', None), self._on_native_size)
-            self._attach(getattr(native, 'onPositionChanged', None), self._on_native_position)
-            self._attach(getattr(parent, 'onSizeChanged', None), self._on_parent_size)
-            self._attach(getattr(native, 'onStatusChanged', None),
-                         lambda status: self._on_native_status(native, status))
+            if generation != self._generation:
+                self.close()
+                return False
+            for event, callback in (
+                    (getattr(native, 'onSizeChanged', None), self._on_native_size),
+                    (getattr(native, 'onPositionChanged', None), self._on_native_position),
+                    (getattr(parent, 'onSizeChanged', None), self._on_parent_size),
+                    (getattr(native, 'onStatusChanged', None),
+                     lambda status: self._on_native_status(native, status))):
+                self._attach(event, callback)
+                if generation != self._generation or self._window is not native or self._closing:
+                    return False
             LOG.info('GRZ UI: opening registered layout=%s viewport=%s.', layout_id, self._published_viewport)
             native.load()
             return self.is_open()

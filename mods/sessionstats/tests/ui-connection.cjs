@@ -162,4 +162,27 @@ module.exports = async function ({browser,nativeHost,check}) {
   check('Destruction during synchronous model registration removes the returned callback from its original view',
     await disposeDuringRegistration.evaluate(()=>!GRZSessionStats.getState().nativeBound && __grzRemovedCallbacks.join(',')==='71' && __grzTimers.size===0));
   await disposeDuringRegistration.close();
+
+  const retainedControls=await nativeHost(browser,{});
+  const retained=await retainedControls.evaluate(()=>{
+    document.getElementById('ss-scope-manual').onclick();
+    document.getElementById('ss-reset').onclick();
+    const confirm=document.getElementById('ss-reset-confirm').onclick;
+    const refresh=document.getElementById('ss-refresh').onclick;
+    const close=document.getElementById('ss-close').onclick;
+    GRZSessionStats.destroy();
+    const count=__grzCommands.length;
+    confirm();refresh();close();close();
+    const escape=new KeyboardEvent('keydown',{key:'Escape',cancelable:true,bubbles:true});
+    document.dispatchEvent(escape);
+    const nativeInert=__grzCommands.length===count && !escape.defaultPrevented;
+    window.model=null;
+    const fallback=[];
+    GRZSessionStats.onAction=args=>fallback.push(args);
+    refresh();close();
+    return {nativeInert,fallbackInert:fallback.length===0};
+  });
+  check('Retained panel controls cannot reset, refresh or close native models after destroy; Escape returns to the host',retained.nativeInert);
+  check('Retained panel controls cannot dispatch to a preview/replacement fallback after destroy',retained.fallbackInert);
+  await retainedControls.close();
 };

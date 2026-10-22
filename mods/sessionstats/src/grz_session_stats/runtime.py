@@ -27,12 +27,14 @@ import uuid
 from . import VERSION
 from .normalize import arena_start, normalize_result, _number, _integer, text_type
 from .monitor import ResultMonitor
+from .storage import check_json_depth
 
 LOG = logging.getLogger('grz.sessionstats')
 LAUNCH_ID = uuid.uuid4().hex
 LAUNCH_STARTED_AT = time.time()
 TICK_SECONDS = 5.0
 MAX_EXPECTED_BYTES = 8 * 1024 * 1024
+DEFAULT_LOCAL_CONFIG = {'hotkey': 'CTRL+F10', 'footer_button': True}
 
 
 def _filesystem_text(value):
@@ -62,10 +64,18 @@ def resolve_data_dir(bigworld=None, environ=None):
 
 
 def _load_json_file(path):
-    if os.path.getsize(path) > MAX_EXPECTED_BYTES:
+    with io.open(path, 'rb') as handle:
+        raw = handle.read(MAX_EXPECTED_BYTES + 1)
+    if len(raw) > MAX_EXPECTED_BYTES:
         raise ValueError('JSON file exceeds size limit')
-    with io.open(path, 'r', encoding='utf-8-sig') as handle:
-        return json.load(handle)
+    try:
+        value = json.loads(raw.decode('utf-8-sig'))
+        check_json_depth(value)
+        return value
+    except RuntimeError:
+        # Shared external-file boundary: decoder recursion must use each
+        # caller's invalid-file fallback on both Python 2.7 and Python 3.
+        raise ValueError('JSON decoder exceeded its nesting limit')
 
 
 def _looks_like_expected(table):
@@ -262,6 +272,7 @@ class GameAPI(object):
         if isinstance(raw, bytes):
             raw = raw.decode('utf-8-sig')
         table = json.loads(raw)
+        check_json_depth(table)
         if not _looks_like_expected(table):
             raise ValueError(message('runtime.wn8_invalid'))
         return table
@@ -307,7 +318,7 @@ class Runtime(object):
         self.running = False
         self.last_error = None
         self._hotkey_held = False
-        self.config = {'hotkey': 'CTRL+F10', 'footer_button': True}
+        self.config = dict(DEFAULT_LOCAL_CONFIG)
         self._hotkey = None
         self.compatibility_warnings = {}
         self._diagnostics = set()
@@ -521,6 +532,20 @@ class Runtime(object):
                             exception=True)
             return False
 
+    def _retire_footer(self):
+        handle = self.footer_handle
+        if handle is None:
+            return True
+        try:
+            if handle.uninstall() is False:
+                return False
+        except Exception:
+            self._warn_once('footer:stop', 'Could not remove optional footer integration.',
+                            exception=True, visible=False)
+            return False
+        self.footer_handle = None
+        return True
+
     def _schedule_tick(self):
         if self.running and self._tick_id is None:
             callback = self._guard(self._tick, 'tick')
@@ -550,14 +575,25 @@ class Runtime(object):
             self.data_dir = resolve_data_dir(self.api.bw)
             self._start_log()
         self._load_appearance()
+        # Each lifecycle starts from defaults; a rejected replacement file
+        # must not silently retain preferences from an earlier start.
+        self.config = dict(DEFAULT_LOCAL_CONFIG)
         try:
             cfg_file = os.path.join(self.data_dir, 'config.json')
             if os.path.isfile(cfg_file):
                 cfg = _load_json_file(cfg_file)
-                if isinstance(cfg, dict):
-                    for key in self.config:
-                        if key in cfg:
-                            self.config[key] = cfg[key]
+                if not isinstance(cfg, dict):
+                    raise ValueError('invalid local configuration root')
+                if 'hotkey' in cfg:
+                    if isinstance(cfg['hotkey'], text_type) and len(cfg['hotkey']) <= 64:
+                        self.config['hotkey'] = cfg['hotkey']
+                    else:
+                        LOG.warning('Invalid local hotkey preference; default will be used.')
+                if 'footer_button' in cfg:
+                    if type(cfg['footer_button']) is bool:
+                        self.config['footer_button'] = cfg['footer_button']
+                    else:
+                        LOG.warning('Invalid local footer preference; default will be used.')
         except (IOError, OSError, ValueError, TypeError):
             LOG.warning('Invalid local configuration; defaults will be used.')
         if self.expected_table is None:
@@ -637,7 +673,8 @@ class Runtime(object):
         else:
             self._warn_once('event:bonus',
                             message('runtime.bonus_refresh'))
-        if self.config.get('footer_button', True):
+        footer_released = self._retire_footer()
+        if footer_released and self.config.get('footer_button', True):
             try:
                 if self.footer_installer is None:
                     from .footer import install
@@ -702,14 +739,7 @@ class Runtime(object):
             except Exception:
                 LOG.warning('Could not remove XP event subscription.')
         self._window_call('close')
-        if self.footer_handle is not None:
-            handle = self.footer_handle
-            self.footer_handle = None
-            try:
-                handle.uninstall()
-            except Exception:
-                self._warn_once('footer:stop', 'Could not remove optional footer integration.',
-                                exception=True, visible=False)
+        self._retire_footer()
         self.inflight.clear()
         if self._log_handle is not None:
             handle = self._log_handle
@@ -719,6 +749,15 @@ class Runtime(object):
                 handle.close()
             except Exception:
                 LOG.warning('Could not close the dedicated mod log.')
+
+    def cleanup_complete(self):
+        if self.footer_handle is not None:
+            return False
+        try:
+            return self.window is None or not self.window.is_open()
+        except Exception:
+            # An unreadable native handle is not confirmation of release.
+            return False
 
     def _ensure_service(self):
         if not self.running or self.api.is_replay():
@@ -1242,7 +1281,9 @@ class Runtime(object):
 
     def _parse_hotkey(self, value):
         try:
-            parts = str(value).upper().replace(' ', '').split('+')
+            if not isinstance(value, text_type) or len(value) > 64:
+                raise ValueError('Invalid hotkey shape')
+            parts = value.upper().replace(' ', '').split('+')
             key_name = parts[-1]
             if key_name not in ['F{0}'.format(i) for i in range(1, 13)]:
                 raise ValueError('Function key required')
@@ -1284,9 +1325,11 @@ _runtime = None
 
 def init():
     global _runtime
-    if _runtime is not None:
+    if _runtime is not None and _runtime.running:
         return
-    instance = Runtime()
+    # Reuse a stopped owner when native teardown was incomplete; a fresh
+    # runtime would have no way to retry or gate its old window/footer.
+    instance = _runtime if _runtime is not None else Runtime()
     try:
         instance.start()
         _runtime = instance
@@ -1296,14 +1339,16 @@ def init():
             instance.stop()
         except Exception:
             pass
+        _runtime = None if instance.cleanup_complete() else instance
 
 
 def fini():
     global _runtime
     instance = _runtime
-    _runtime = None
     if instance is not None:
         try:
             instance.stop()
         except Exception:
             LOG.exception('GRZ Session Stats teardown failed.')
+        if _runtime is instance and instance.cleanup_complete():
+            _runtime = None

@@ -80,6 +80,63 @@ class WindowCompatibilityTests(unittest.TestCase):
         self.assertFalse(self.window.is_open())
         self.assertEqual(self.window._events, [])
 
+    def test_subscription_returning_after_close_is_removed_and_cannot_resume_loading(self):
+        window = self.window
+        observed = []
+
+        class LateEvent(runtime_fixtures.FakeEvent):
+            def __iadd__(self, callback):
+                observed.append(window._window)
+                window.close()
+                self.handlers.append(callback)
+                return self
+
+        event = LateEvent()
+        self.main.onSizeChanged = event
+        self.assertFalse(self.window.open())
+        self.assertIsNone(observed[0].proxy)
+        self.assertFalse(observed[0].shown)
+        self.assertEqual(observed[0].windowStatus, self.status.DESTROYED)
+        self.assertEqual(event.handlers, [])
+        self.assertEqual(self.window._events, [])
+        self.assertEqual(self.timer.callbacks, {})
+
+    def test_watchdog_returning_after_close_is_cancelled_without_showing_the_old_window(self):
+        original = self.timer.schedule
+        observed = []
+
+        def late(seconds, callback):
+            observed.append(self.window._window)
+            self.window.close()
+            return original(seconds, callback)
+
+        sys.modules['BigWorld'].callback = late
+        self.assertFalse(self.window.open())
+        self.assertIsNone(observed[0].proxy)
+        self.assertFalse(observed[0].shown)
+        self.assertIsNone(self.window._watchdog_id)
+        self.assertEqual(self.timer.callbacks, {})
+
+    def test_late_old_watchdog_cannot_overwrite_a_replacement_windows_timer(self):
+        original = self.timer.schedule
+        observed = []
+
+        def late(seconds, callback):
+            if not observed:
+                observed.append(self.window._window)
+                self.window.close()
+                self.assertTrue(self.window.open())
+            return original(seconds, callback)
+
+        sys.modules['BigWorld'].callback = late
+        self.assertTrue(self.window.open())
+        self.assertIsNot(self.window._window, observed[0])
+        self.assertIsNone(observed[0].proxy)
+        self.assertFalse(observed[0].shown)
+        self.assertEqual(len(self.timer.callbacks), 1)
+        self.assertIn(self.window._watchdog_id, self.timer.callbacks)
+        self.assertTrue(self.window._window.shown)
+
     def test_failed_destroy_keeps_ownership_blocks_duplicate_open_and_allows_close_retry(self):
         retained = RetainedEvent()
         self.main.onSizeChanged = retained

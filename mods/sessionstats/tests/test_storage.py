@@ -228,6 +228,55 @@ class StorageTests(unittest.TestCase):
         self.assertRaises(StorageError, self.store.save, self.payload(float('nan')))
         self.assertIsNone(GenerationStore(self.directory).load())
 
+    def _nested_payload(self, schema=1):
+        value = []
+        for unused in range(80):
+            value = [value]
+        return {'schema_version': schema, 'value': value}
+
+    def _write_nested_generation(self, payload):
+        envelope = {'storage_version': 1, 'generation': 2, 'payload': payload,
+                    'payload_checksum': hashlib.sha256(canonical_bytes(payload)).hexdigest()}
+        with open(os.path.join(self.directory, 'state-%020d.json' % 2), 'wb') as stream:
+            stream.write(canonical_bytes(envelope))
+
+    def test_checksum_valid_but_excessively_nested_generation_recovers_older_state(self):
+        self.store.save(self.payload(1))
+        self._write_nested_generation(self._nested_payload())
+        recovered = GenerationStore(self.directory)
+        self.assertEqual(recovered.load(), self.payload(1))
+        self.assertIsNotNone(recovered.warning)
+        self.assertEqual(recovered.save(self.payload(3)), 3)
+
+    def test_nested_newer_schema_still_refuses_fallback_and_mutations(self):
+        self.store.save(self.payload(1))
+        self._write_nested_generation(self._nested_payload(schema=2))
+        recovered = GenerationStore(self.directory)
+        self.assertRaises(UnsupportedSchemaError, recovered.load)
+        self.assertTrue(recovered.read_only)
+        self.assertRaises(StorageError, recovered.save, self.payload(3))
+
+    def test_nested_write_is_rejected_without_replacing_a_committed_generation(self):
+        self.store.save(self.payload(1))
+        self.assertRaises(StorageError, self.store.save, self._nested_payload())
+        self.assertEqual(self.store.sequence, 1)
+        self.assertEqual(GenerationStore(self.directory).load(), self.payload(1))
+
+    def test_encoder_runtime_failure_keeps_previous_committed_state(self):
+        self.store.save(self.payload(1))
+        original = storage.canonical_bytes
+
+        def fail(*args):
+            raise RuntimeError('simulated encoder failure')
+
+        storage.canonical_bytes = fail
+        try:
+            self.assertRaises(StorageError, self.store.save, self.payload(2))
+        finally:
+            storage.canonical_bytes = original
+        self.assertEqual(self.store.sequence, 1)
+        self.assertEqual(GenerationStore(self.directory).load(), self.payload(1))
+
     def test_windows_missing_msvcrt_can_save_with_explicit_fallback_warning(self):
         original_name = os.name
         original_import = builtins.__import__

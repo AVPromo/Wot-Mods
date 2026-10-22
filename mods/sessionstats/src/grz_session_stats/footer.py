@@ -275,25 +275,31 @@ class FooterInstallation(object):
             LOG.warning('Native footer did not attach statistics child; shortcut remains active.')
         except Exception:
             LOG.exception('Could not attach statistics footer child; shortcut remains active.')
-        if child is not None:
-            try:
-                view._unregisterChild(child.uniqueID, True)
-            except Exception:
-                LOG.warning('Could not detach incomplete statistics footer child.')
+        if child is not None and not self._remove_child(view, child):
+            # Registration may attach before throwing. Keep failed rollback
+            # owned so uninstall/reinstallation can retry the exact child.
+            self._children.append((weakref.ref(view), weakref.ref(child)))
+
+    def _remove_child(self, view, child):
+        try:
+            if view.getChildView(POSITION_ID) is not child:
+                return True
+            view._unregisterChild(child.uniqueID, True)
+            return view.getChildView(POSITION_ID) is not child
+        except Exception:
+            LOG.warning('Statistics footer child cleanup incomplete; cleanup will be retried.')
+            return False
 
     def uninstall(self):
         global _installed
         self._enabled = False
         self._on_open = None
+        retained = []
         for view_ref, child_ref in self._children:
             view, child = view_ref(), child_ref()
-            if view is not None and child is not None:
-                try:
-                    if view.getChildView(POSITION_ID) is child:
-                        view._unregisterChild(child.uniqueID, True)
-                except Exception:
-                    LOG.warning('Statistics footer child was already unavailable during teardown.')
-        self._children = []
+            if view is not None and child is not None and not self._remove_child(view, child):
+                retained.append((view_ref, child_ref))
+        self._children = retained
         # Another mod may have wrapped our wrapper. Leave its method alone;
         # this wrapper is now inert and only calls the original implementation.
         if self.footer_class.__dict__.get('_onLoading') is self._wrapper:
@@ -301,14 +307,22 @@ class FooterInstallation(object):
                 self.footer_class._onLoading = self._original
             else:
                 del self.footer_class._onLoading
-        if _installed is self:
+        if _installed is self and not retained:
             _installed = None
+        return not retained
 
 
 def install(on_open):
     global _installed
     if _installed is not None:
-        return _installed
+        if _installed._enabled:
+            return _installed
+        try:
+            _installed.uninstall()
+        except Exception:
+            LOG.warning('Previous statistics footer cleanup is still incomplete.')
+        if _installed is not None:
+            return None
     try:
         from openwg_gameface import gf_mod_inject
         from gui.impl.lobby.page.lobby_footer import LobbyFooter

@@ -2,6 +2,7 @@
 """Builder contracts; Python 2.7 runs only the game-runtime tests."""
 from __future__ import unicode_literals
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,10 +74,42 @@ class BuildContracts(unittest.TestCase):
             self.assertIn(marker, original)
             self.assertIn(marker, self.build.render_guide(name, original, '1.0.0', '2.5.0.0'))
 
-    def test_default_guides_are_byte_identical(self):
+    def test_guides_are_byte_identical_when_version_and_client_are_unchanged(self):
         for name in self.build.RELEASE_GUIDES:
             content = (self.build.ROOT/name).read_bytes()
-            self.assertEqual(self.build.render_guide(name, content, self.build.VERSION, '2.4.1.0'), content)
+            current = re.search(br'(?:mods/|Wargaming EU )([0-9]+(?:\.[0-9]+){3})', content)
+            client = current.group(1).decode('ascii') if current else '2.4.1.0'
+            self.assertEqual(self.build.render_guide(name, content, self.build.VERSION, client), content)
+
+    def test_rebuilt_guides_restamp_every_client_installation_and_target_field(self):
+        for name in self.build.RELEASE_GUIDES:
+            content = (self.build.ROOT/name).read_bytes()
+            for client in ('2.5.0.0', '2.6.0.0', '2.4.1.0'):
+                content = self.build.render_guide(name, content, self.build.VERSION, client)
+                for other in {'2.4.1.0', '2.5.0.0', '2.6.0.0'} - {client}:
+                    self.assertNotIn(other.encode('ascii'), content, name)
+                if name == 'README_PL.txt':
+                    for marker in ('target: Wargaming EU ', 'For client ',
+                                   'active mods directory is not ', '--client-version ', 'mods/'):
+                        self.assertIn((marker+client).encode('ascii'), content)
+                if name == 'CONTRACT.txt':
+                    self.assertIn(('Target: World of Tanks PC Wargaming EU '+client).encode('ascii'), content)
+                if name != 'README.md':
+                    self.assertIn(('mods/'+client+'/').encode('ascii'), content)
+
+    def test_client_restamping_preserves_historical_evidence_and_unrelated_versions(self):
+        content = b'Historical WoT 2.4.1 source; Python 2.7.18; OpenWG 1.2.2.\n'
+        self.assertEqual(self.build.render_guide('README.md', content, '0.2.8', '2.6.0.0'), content)
+        for name in ('ZMIANY.txt', 'docs/UI_0.2.2_SOURCE_EVIDENCE.md'):
+            content = (self.build.ROOT/name).read_bytes()
+            self.assertEqual(self.build.render_guide(name, content, '0.2.8', '2.6.0.0'), content)
+
+    def test_client_version_rejects_a_trailing_newline_before_invoking_the_compiler(self):
+        result = subprocess.run([sys.executable, str(self.build.ROOT/'tools/build.py'),
+                                 '--python27', 'unused-compiler', '--client-version', '2.5.0.0\n'],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(b'Client version must have four numeric parts', result.stderr)
 
     def test_installer_manifest_verifies_from_extracted_archive_root(self):
         files=[]
