@@ -21,9 +21,9 @@
   restarcie bez nowej bitwy nie utrzymują spinnera. Panel pokazuje wyjaśnienie.
   Szczegóły i granice działania: [RESTORED_RESULTS_ACTIVITY.md](RESTORED_RESULTS_ACTIVITY.md).
 
-Weryfikacja: 335 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
+Weryfikacja: 337 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
 z czterema pominiętymi testami narzędzia pakującego wymagającego Pythona 3.
-88 kontroli panelu obejmuje trwały i przejściowy błąd rejestracji callbacku,
+103 kontrole panelu obejmuje trwały i przejściowy błąd rejestracji callbacku,
 synchroniczne wywołanie podczas rejestracji oraz spóźnione zdarzenia po zamknięciu.
 Sprawdzono wydanie 0.2.8, rzeczywistą weryfikację sum po rozpakowaniu ZIP-a
 oraz identyczny ZIP po ponownym zbudowaniu z zawartych w nim źródeł.
@@ -43,3 +43,18 @@ Porównanie rastra zachowuje limit 16 zmienionych pikseli; tolerancja kanału 6/
 obejmuje zaobserwowane na Chromium 151 zaokrąglenie 10 pikseli z różnicą 5/255.
 Style i geometria nadal są porównywane dokładnie. Dodatkowa kontrola negatywna
 potwierdza odrzucenie rzeczywistej zmiany kolorów, promieni i przezroczystości.
+
+Review 5610518614:
+- Opóźnione odświeżenie premii zachowuje konto z chwili zaplanowania.
+  Po zmianie konta timer zwalnia swój stan i kończy pracę bez odczytu ani
+  przetwarzania wyników nowego konta. Ręczne Odśwież działa niezależnie
+  i nie przejmuje ani nie kasuje timera poprzedniego konta.
+- Cleanup panelu unieważnia lokalny stan powiązania i callbacku przed
+  wywołaniem mostka. Każde z trzech engine.off i usunięcie callbacku modelu
+  ma osobną osłonę. Błąd jednego wywołania nie blokuje pozostałych i nie
+  wydostaje się do beforeunload. Zachowany callback zmiany skali pozostaje
+  nieaktywny po zniszczeniu dokumentu.
+- Dwa testy Pythona obejmują zmianę konta w czasie oczekiwania na timer,
+  brak odczytu i rewizji nowego konta oraz niezależność ręcznego odświeżenia.
+  Piętnaście kontroli Chromium obejmuje osobną awarię każdego usunięcia,
+  wspólną awarię wszystkich, ponowne sprzątanie i spóźnione callbacki.

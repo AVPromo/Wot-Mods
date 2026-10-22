@@ -92,6 +92,7 @@ async function nativeHost(browser, options) {
     window.__grzWindowEvents=[];
     window.__grzHelperCalls={rem:0,resize:0,callback:0};
     window.__grzEngineOn=[];
+    window.__grzEngineOff=[];
     window.__grzRemovedCallbacks=[];
     window.isDomBuilt=true;
     window.model={payload:JSON.stringify(snapshot),onAction:function(args){
@@ -103,13 +104,19 @@ async function nativeHost(browser, options) {
         window.__grzEvents['viewEnv.onDataChanged']();
       }
     }};
-    window.engine={whenReady:Promise.resolve(),on:function(name,fn){window.__grzEngineOn.push(name);window.__grzEvents[name]=fn;},off:function(){}};
+    window.engine={whenReady:Promise.resolve(),on:function(name,fn){window.__grzEngineOn.push(name);window.__grzEvents[name]=fn;},off:function(name){
+      window.__grzEngineOff.push(name);
+      if(options.teardown===name || options.teardown==='all') throw new Error('Native unsubscribe rejected');
+    }};
     window.viewEnv={addDataChangedCallback:function(){
       const count=++window.__grzHelperCalls.callback;
       if(options.callback==='throw' || (options.callback==='throw-once' && count===1)) throw new Error('Optional model registration unavailable');
       if(options.callback==='synchronous' && count===1) window.__grzEvents['viewEnv.onDataChanged']();
       return 71;
-    },removeDataChangedCallback:function(id){window.__grzRemovedCallbacks.push(id);}};
+    },removeDataChangedCallback:function(id){
+      window.__grzRemovedCallbacks.push(id);
+      if(options.teardown==='callback' || options.teardown==='all') throw new Error('Native callback removal rejected');
+    }};
     if(options.drag==='supported' || options.drag==='throw') {
       window.viewEnv.handleViewEvent=function(event){
         if(options.drag==='throw') { throw new Error('Unavailable native move proxy'); }
@@ -508,6 +515,31 @@ async function nativeHost(browser, options) {
     check('Cleanup removes only a successfully registered callback ('+callback+')',await degraded.evaluate(mode=>
       !GRZSessionStats.getState().nativeBound && __grzHelperCalls.callback===__grzCallsBeforeDestroy &&
       __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
+    await degraded.close();
+  }
+  for(const teardown of ['viewEnv.onDataChanged','self.onScaleUpdated','self.onDomBuilt','callback','all']) {
+    const degraded=await nativeHost(browser,{teardown,drag:'supported'});
+    await degraded.locator('#ss-titlebar').dispatchEvent('mousedown',{button:0});
+    await degraded.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+    check('Teardown attempts every native removal despite rejection ('+teardown+')',await degraded.evaluate(()=>
+      __grzEngineOff.join(',')==='viewEnv.onDataChanged,self.onScaleUpdated,self.onDomBuilt' &&
+      __grzRemovedCallbacks.join(',')==='71' && !GRZSessionStats.getState().nativeBound &&
+      !GRZSessionStats.getState().dragging && __grzWindowEvents[__grzWindowEvents.length-1].on===false));
+    check('Repeated cleanup stays inert after rejected native removal ('+teardown+')',await degraded.evaluate(()=>{
+      GRZSessionStats.destroy();window.dispatchEvent(new Event('beforeunload'));
+      return __grzEngineOff.length===3 && __grzRemovedCallbacks.length===1;
+    }));
+    check('Retained native callbacks cannot render or send commands after cleanup ('+teardown+')',await degraded.evaluate(()=>{
+      const commands=__grzCommands.length, registrations=__grzHelperCalls.callback;
+      const summary=document.querySelector('#ss-summary .ss-kpi-value').textContent;
+      const changed=JSON.parse(model.payload);
+      Object.assign(changed.scopes.launch.summary,{battles:0,observed_battles:0,missing_results:0,partial_results:0});
+      model.payload=JSON.stringify(changed);
+      __grzEvents['viewEnv.onDataChanged']();__grzEvents['self.onScaleUpdated']();
+      return document.querySelector('#ss-summary .ss-kpi-value').textContent===summary &&
+        __grzCommands.length===commands && __grzHelperCalls.callback===registrations &&
+        !GRZSessionStats.getState().nativeBound;
+    }));
     await degraded.close();
   }
   const synchronous=await nativeHost(browser,{callback:'synchronous'});

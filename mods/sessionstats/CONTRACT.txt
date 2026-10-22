@@ -232,6 +232,8 @@ to the garage makes that known battle pending until WoT supplies usable data. A 
 whose battle began during this runtime can establish activity if avatar-ready was missed.
 Reconnecting into an ongoing battle observes it again, even if it began before startup.
 Processing wraps result normalization/storage and scheduled native XP bonus refresh.
+A bonus timer retains its scheduling account and skips result reads if the active
+account differs at delivery. Manual refresh is independent of the pending timer.
 Show the spinner when pending > 0 or processing; no artificial minimum busy duration.
 Manual reset changes the visible epoch, not the account queue. Persisted incomplete
 records from earlier runtimes remain in the ledger and background cache recovery, but
@@ -320,6 +322,8 @@ Guard own event callbacks so changed native signatures cannot escape into the ho
 Keep original native method return values and exceptions intact in scoped footer wrappers.
 Invalidate retained listeners and delayed callbacks on stop/cleanup; failed unsubscription
 must not let a previous lifecycle affect a later runtime or window. Continue other cleanup.
+Panel cleanup invalidates bound/callback ownership before native removals. Isolate each
+engine.off and removeDataChangedCallback failure; retained scale/model callbacks stay inert.
 Report unavailable result/bonus channels in snapshot.warnings; deduplicate recurring logs.
 No guessed substitute API names, currency indices, account IDs, outcomes or bonus values.
 Do not promise compatibility with an unknown result schema, Wulf bridge or bytecode format.

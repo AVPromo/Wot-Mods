@@ -401,7 +401,7 @@ node tests/ui-footer-activity.cjs — spinner, stan kolejki, podpowiedź i clean
 node tests/ui-appearance.cjs — style z konfiguracji, fallback i mnożnik rolki.
 Testy Pythona obejmują także walidację JSON, zgodność wartości domyślnych ze
 stylem, ustalanie ścieżki paczki oraz przekazanie konfiguracji do panelu i stopki.
-Weryfikacja źródeł po poprawkach PR #3: 335 testów pod Pythonem 3; ten sam zestaw
+Weryfikacja źródeł po poprawkach PR #3: 337 testów pod Pythonem 3; ten sam zestaw
 pod CPythonem 2.7.18 z 4 pominięciami testów buildera wymagającego Pythona 3.
 Testy obejmują zachowanie spinnera po restarcie i odzyskiwanie starych wyników.
 Style i geometria domyślnego panelu i ikony są porównywane z bazowym wyglądem;

@@ -908,20 +908,28 @@ class Runtime(object):
             self._service_diagnostics()
 
     def _on_bonus(self, *args):
-        if self.running and self._bonus_callback_id is None:
-            callback = self._guard(self._refresh_posted, 'bonus_timer')
+        if self.running and self.active_key is not None and self._bonus_callback_id is None:
+            account_key = self.active_key
+
+            def refresh_account():
+                self._bonus_callback_id = None
+                self._bonus_account_key = None
+                self._publish_activity()
+                if account_key == self.active_key:
+                    self._refresh_posted()
+
+            callback = self._guard(refresh_account, 'bonus_timer')
             try:
-                self._bonus_account_key = self.active_key
+                self._bonus_account_key = account_key
                 self._bonus_callback_id = self.api.schedule(0.1, callback)
                 self._publish_activity()
             except Exception:
                 callback._grz_enabled = False
+                self._bonus_account_key = None
                 self._warn_once('timer:bonus', 'Odświeżenie bonusowych PD jest niedostępne; po użyciu premii wybierz Odśwież.', exception=True)
 
     def _refresh_posted(self):
-        self._bonus_callback_id = None
-        self._bonus_account_key = None
-        self._publish_activity()
+        # Manual refresh targets the active account independently of any timer.
         if not self.running or self.api.is_replay() or self.api.in_battle():
             return
         for account_key, arena_id in list(self.recent):

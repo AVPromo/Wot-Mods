@@ -605,6 +605,7 @@
         } else { resizeNative(); }
     }
     function onScaleUpdated() {
+        if (state.destroyed) { return; }
         /* Fetch the current IGuiLoader scale before trusting the previous snapshot again. */
         invoke('viewport');
         queueResize();
@@ -637,16 +638,33 @@
         nodes.titlebar.removeEventListener('mousedown', beginNativeDrag);
         document.removeEventListener('mouseup', endNativeDrag);
         window.removeEventListener('blur', endNativeDrag);
-        if (state.bound && window.engine && typeof window.engine.off === 'function') {
-            window.engine.off('viewEnv.onDataChanged', readModel);
-            window.engine.off('self.onScaleUpdated', onScaleUpdated);
-            window.engine.off('self.onDomBuilt', bindModel);
-        }
-        if (state.callbackId !== null && window.viewEnv && typeof window.viewEnv.removeDataChangedCallback === 'function') {
-            window.viewEnv.removeDataChangedCallback(state.callbackId, 0);
-        }
+        // Invalidate local ownership before calling the disappearing bridge.
+        var wasBound = state.bound, callbackId = state.callbackId;
         state.callbackId = null;
+        state.callbackRegistering = false;
         state.bound = false;
+        if (wasBound) {
+            try {
+                if (window.engine && typeof window.engine.off === 'function') {
+                    window.engine.off('viewEnv.onDataChanged', readModel);
+                }
+            } catch (error) { /* Continue removing the other native listeners. */ }
+            try {
+                if (window.engine && typeof window.engine.off === 'function') {
+                    window.engine.off('self.onScaleUpdated', onScaleUpdated);
+                }
+            } catch (error) { /* Continue removing the other native listeners. */ }
+            try {
+                if (window.engine && typeof window.engine.off === 'function') {
+                    window.engine.off('self.onDomBuilt', bindModel);
+                }
+            } catch (error) { /* Model callback removal remains independent. */ }
+        }
+        try {
+            if (callbackId !== null && window.viewEnv && typeof window.viewEnv.removeDataChangedCallback === 'function') {
+                window.viewEnv.removeDataChangedCallback(callbackId, 0);
+            }
+        } catch (error) { /* The destroyed document no longer owns this callback. */ }
     }
     window.GRZSessionStats = {
         update: update,
