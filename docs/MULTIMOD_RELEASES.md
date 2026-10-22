@@ -100,12 +100,11 @@ Every mod needs its own `on.push.paths`, independent version tags and native
 GitHub tag-protection Ruleset for its prefix. The root SHA256SUMS.txt is always
 recreated for the complete snapshot, and release filenames must not collide.
 
-**Merge dependency:** PR #2 for Session Stats currently uses the removed
-`scripts/publish_release.py`, has a non-serialized publisher and invokes Stay
-Sharp's builder. **Do not merge PR #2 as it stands.** First integrate PR #5,
-then update PR #2 to this same job-level `queue: max` mutex and helper,
-without triggering Stay Sharp's builder. PR #3 is stacked on PR #2. Only
-then will A/B simultaneous-merge behavior be consistently protected.
+**Merge dependency:** PR #5 is accepted on main. PR #2 adapts Session Stats
+to the shared publication flow; source PR #3 remains stacked on #2. Accept
+and synchronize the infrastructure changes before validating and merging the
+source import. Keep this Stay Sharp namespace migration when updating either
+branch onto main.
 
 ## Testing and operating limits
 
@@ -125,3 +124,22 @@ runtime compatibility in the World of Tanks client.
 **Required PR check note:** Path-filter-skipped checks may be Pending if
 configured as required. Use an always-running required gate rather than
 requiring a check that is intentionally skipped for unrelated mods.
+
+## Per-mod namespaces and one shared publication lock
+
+| Mod | New tags | Tag Ruleset | Environment | Revision variables |
+|---|---|---|---|---|
+| Stay Sharp | `staysharp-v*` | `staysharp-release-tags` | `staysharp-release` | `STAYSHARP_REVIEWED_RULESET_ID`, `STAYSHARP_REVIEWED_RULESET_UPDATED_AT` |
+| Session Stats | `sessionstats-v*` | `sessionstats-release-tags` | `sessionstats-release` | `SESSIONSTATS_REVIEWED_RULESET_ID`, `SESSIONSTATS_REVIEWED_RULESET_UPDATED_AT` |
+
+Both Environments allow deployments only from **Branch `main`**. This is
+additional to the workflow's own main-ref checks. After the new workflow is
+accepted and old publishers are no longer running, retire the old
+`wotmod-release-tags` Ruleset and `wotmod-release` Environment. The new
+publisher has no fallback to legacy settings and needs no tag aliases.
+
+Separate mod namespaces do not mean separate publication locks. Every publisher
+must still use exactly `wotmod-release-${{ github.repository }}`. Concurrency
+protection applies to cooperating workflows; manual administrator publication,
+queue overflow or failed builds require operator attention and are not repaired
+by another mod's successful release.
