@@ -562,6 +562,79 @@ async function nativeHost(browser, options) {
   const dragEventsAfterDestroy=await native.evaluate(()=>__grzWindowEvents.length);
   await native.locator('#ss-titlebar').dispatchEvent('mousedown',{button:0});
   check('Destroy ends the native drag and removes titlebar listeners',await native.evaluate(count=>__grzWindowEvents.length===count && __grzWindowEvents[count-1].on===false && !GRZSessionStats.getState().dragging,dragEventsAfterDestroy));
+  const sessions=await nativeHost(browser,{});
+  check('Shared instance tab is absent from the default account-only view',!(await sessions.locator('#ss-scope-instance').isVisible()));
+  await sessions.evaluate(()=>{
+    const payload=JSON.parse(model.payload);
+    payload.account_key='fixture-account-a';
+    payload.scopes.instance=JSON.parse(JSON.stringify(payload.scopes.manual));
+    model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+  });
+  await sessions.locator('#ss-scope-instance').click();
+  check('Opt-in instance tab has a visible caption and its own results',await sessions.evaluate(()=>
+    GRZSessionStats.getState().scope==='instance' && document.querySelector('#ss-summary .ss-kpi-value').textContent==='25' &&
+    document.querySelector('#ss-scope-instance .ss-control-label').textContent==='Cała instancja'));
+  await sessions.locator('#ss-reset').click();
+  check('Instance reset confirmation explicitly preserves account histories',
+    (await sessions.locator('#ss-confirm-title').innerText()).includes('Cała instancja') &&
+    (await sessions.locator('#ss-confirm-message').innerText()).includes('Historie kont'));
+  await sessions.locator('#ss-reset-confirm').click();
+  check('Instance confirmation sends only the instance reset target and current account',await sessions.evaluate(()=>{
+    const reset=__grzCommands.filter(x=>x.action==='reset');
+    return reset.length===1 && reset[0].scope==='instance' && reset[0].account_key==='fixture-account-a';
+  }));
+  await sessions.locator('#ss-reset').click();
+  await sessions.evaluate(empty=>{
+    const payload=JSON.parse(model.payload);
+    payload.account_key='fixture-account-b';
+    payload.scopes.manual=JSON.parse(JSON.stringify(empty));
+    payload.scopes.launch=JSON.parse(JSON.stringify(empty));
+    model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+    document.getElementById('ss-reset-confirm').click();
+  },fixtures.reset.scopes.manual);
+  check('Switching accounts closes confirmation and blocks a stale reset',
+    !(await sessions.locator('#ss-reset-overlay').isVisible()) &&
+    await sessions.evaluate(()=>__grzCommands.filter(x=>x.action==='reset').length===1));
+  await sessions.locator('#ss-scope-manual').click();
+  check('Manual tab switches to the new account rather than shared statistics',
+    (await sessions.locator('#ss-summary .ss-kpi-value').first().innerText())==='0');
+  await sessions.locator('#ss-scope-instance').click();
+  check('Explicit shared tab retains the process results across an account switch',
+    (await sessions.locator('#ss-summary .ss-kpi-value').first().innerText())==='25');
+  let sessionLabelsFit=true;
+  const sessionLabelLayouts=[];
+  for(const width of [320,744]) {
+    await sessions.setViewportSize({width,height:900});
+    await sessions.evaluate(width=>{
+      const payload=JSON.parse(model.payload);payload.viewport.width=width;
+      model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+    },width);
+    const labels=await sessions.locator('.ss-scope').evaluateAll(buttons=>buttons.map(button=>{
+      const box=button.getBoundingClientRect(), label=button.querySelector('.ss-control-label').getBoundingClientRect();
+      return {text:button.textContent.trim(),width:box.width,labelWidth:label.width,
+        fits:box.width>0 && label.width>0 && label.left>=box.left+5 && label.right<=box.right-5};
+    }));
+    sessionLabelLayouts.push({width,labels});
+    sessionLabelsFit=sessionLabelsFit && labels.every(label=>label.fits);
+  }
+  check('Three session captions fit both narrow and full-width native panels'+
+    (sessionLabelsFit?'':' '+JSON.stringify(sessionLabelLayouts)),sessionLabelsFit);
+  await sessions.locator('#ss-reset').click();
+  await sessions.evaluate(()=>{
+    const payload=JSON.parse(model.payload);delete payload.scopes.instance;
+    model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+  });
+  check('Disabling the shared tab safely returns to the account view and closes its confirmation',
+    !(await sessions.locator('#ss-scope-instance').isVisible()) && !(await sessions.locator('#ss-reset-overlay').isVisible()) &&
+    await sessions.evaluate(()=>GRZSessionStats.getState().scope==='manual' &&
+      document.querySelector('#ss-scope-launch .ss-control-label').textContent==='Od uruchomienia'));
+  await sessions.locator('#ss-reset').click();
+  await sessions.locator('#ss-reset-confirm').click();
+  check('Manual confirmation explicitly targets only the newly active account',await sessions.evaluate(()=>{
+    const reset=__grzCommands.filter(x=>x.action==='reset');
+    return reset.length===2 && reset[1].scope==='manual' && reset[1].account_key==='fixture-account-b';
+  }));
+  await sessions.close();
   check('No browser JavaScript errors',errors.length===0);
   const report={passed:checks.length,checks,errors,overflow,textOverflow,largeTextOverflow,live_gameface_tested:false,
     regression_fixture:'Models the observed loss of direct button text; actual Coherent rendering still needs an in-game check.'};

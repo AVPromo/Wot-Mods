@@ -314,6 +314,8 @@ class Runtime(object):
         self._started_at = None
         self._cache_observer = None
         self._recovery_states = {}
+        self._instance_tab_enabled = False
+        self._instance_session = None
         self._footer_activity = None
         self._log_handle = None
         self.log_path = None
@@ -419,11 +421,14 @@ class Runtime(object):
             if path is None:
                 path = find_config_path()
             self.appearance_path = path
-            self._presentation = build_presentation(load_config(path))
+            config = load_config(path)
+            self._presentation = build_presentation(config)
+            self._instance_tab_enabled = config['sessions']['instance_tab']
         except Exception:
             # An unavailable optional configuration layer cannot stop result
             # collection. Static styles and the original wheel step remain.
             self._presentation = {'panel_css': '', 'footer_css': '', 'scroll_speed': 1.0}
+            self._instance_tab_enabled = False
             LOG.exception('CONFIG appearance unavailable; built-in styles and scrolling remain active.')
         self._publish_appearance()
 
@@ -554,6 +559,9 @@ class Runtime(object):
         self._log_notice_sent = False
         self._log_notice_after = 0
         self.monitor = ResultMonitor(self.now, self.log_path)
+        if self._instance_session is None:
+            from .sessions import InstanceSession
+            self._instance_session = InstanceSession(self._started_at)
         self._hotkey = self._parse_hotkey(self.config['hotkey'])
         self._ensure_window()
         handlers = (
@@ -889,7 +897,7 @@ class Runtime(object):
         if len(self.recent) > 128:
             oldest = sorted(self.recent, key=self.recent.get)[0]
             self.recent.pop(oldest, None)
-        if changed and service is self.active_service:
+        if changed and (service is self.active_service or self._instance_tab_enabled):
             self._window_call('refresh')
         return changed
 
@@ -1071,6 +1079,11 @@ class Runtime(object):
                     'scopes': {}, 'appearance': dict(self._presentation)}
         result = self.active_service.snapshot()
         result['appearance'] = dict(self._presentation)
+        instance_records = {}
+        if self._instance_tab_enabled and self._instance_session is not None:
+            instance_records = self._instance_session.records(self.services)
+            result['scopes']['instance'] = self.active_service.project_scope(
+                list(instance_records.values()), 'Cała instancja', self._instance_session.started_at)
         warnings = result.setdefault('warnings', [])
         pending, waiting = self._pending_activity()
         result['recovery'] = {'pending': len(pending),
@@ -1087,7 +1100,8 @@ class Runtime(object):
                             'Możesz też użyć przycisku Odśwież.'.format(backlog))
         try:
             from .visuals import enrich_snapshot
-            ledger = getattr(self.active_service, '_state', {}).get('battles', {})
+            ledger = dict(getattr(self.active_service, '_state', {}).get('battles', {}))
+            ledger.update(instance_records)
             enrich_snapshot(result, ledger)
             self.compatibility_warnings.pop('visuals', None)
         except Exception:
@@ -1129,7 +1143,16 @@ class Runtime(object):
             self._window_call('close')
         elif action == 'reset' and self.active_service is not None:
             # Confirmation is performed by the local UI before emitting reset.
-            self.active_service.reset_manual()
+            account_key = getter('account_key')
+            if account_key is not None and account_key != self.active_key:
+                return
+            scope = getter('scope')
+            if scope is None or scope == 'manual':
+                self.active_service.reset_manual()
+            elif scope == 'instance' and self._instance_tab_enabled and self._instance_session is not None:
+                self._instance_session.reset(self.services, self.now())
+            else:
+                return
             self._window_call('refresh')
         elif action == 'refresh':
             self._load_appearance()

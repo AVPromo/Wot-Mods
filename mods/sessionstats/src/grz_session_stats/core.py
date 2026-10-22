@@ -447,6 +447,15 @@ class StatsService(object):
     def _scope(self, key, identifier, label, started_at):
         records = [record for record in self._state['battles'].values()
                    if record.get(key) == identifier and record.get('mode') in (None, 'random')]
+        return self.project_scope(records, label, started_at)
+
+    def launch_records(self):
+        """Independent records from this account and game process only."""
+        return [copy.deepcopy(record) for record in self._state['battles'].values()
+                if record.get('_launch_id') == self.launch_id and record.get('mode') in (None, 'random')]
+
+    def project_scope(self, records, label, started_at):
+        """Project known records without changing their account/session ledger."""
         scope = {'label': label, 'started_at': started_at,
                  'pending': sum(1 for record in records if self._pending(record)),
                  'summary': aggregate_stats(records, self.expected_table), 'vehicles': [], 'maps': [], 'battles': []}

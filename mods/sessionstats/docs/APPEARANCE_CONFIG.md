@@ -24,6 +24,14 @@ Dołączony pełny JSON zawiera **obecny wygląd jako wartości domyślne**:
 mnożnik przewijania. Brak pliku, pusty obiekt `{}` i pominięte pola korzystają
 z wartości wbudowanych w mod.
 
+## Opcjonalna wspólna sesja
+
+W tym samym pliku można dodać `"sessions": {"instance_tab": true}`.
+Wartość domyślna to `false`; pole przyjmuje wyłącznie logiczne `true`/`false`.
+Włącza trzecią zakładkę „Cała instancja” ze wspólnymi wynikami bieżącego
+procesu i własnym resetem. Dwie zwykłe zakładki oraz ręczne resety kont
+pozostają rozdzielone. [Dokładne zasady](ACCOUNT_SESSIONS.md).
+
 ## Najczęściej przydatne pola
 
 | Pole | Wartość domyślna | Znaczenie |

@@ -3,6 +3,10 @@
 Źródła wersji 0.2.7: dwie niezależne sesje, WN8, PD, finanse z obligacjami,
 podział na czołgi/mapy/bitwy, healthcheck wyników, lokalny log i konfigurowalny wygląd.
 Szczegółowa instrukcja: [README_PL.txt](README_PL.txt), historia: [ZMIANY.txt](ZMIANY.txt).
+Obie domyślne sesje i ręczny reset są osobne dla konta i regionu.
+Opcjonalną trzecią zakładkę dla całego procesu gry włącza
+`"sessions": {"instance_tab": true}` w JSON obok moda. Ma niezależny reset;
+domyślnie jest wyłączona. Zasady: [ACCOUNT_SESSIONS.md](docs/ACCOUNT_SESSIONS.md).
 Poprawki po review importu: [REVIEW_FIXES_PR3.md](docs/REVIEW_FIXES_PR3.md).
 Pipeline budowania i walidacji jest dostarczany przez nadrzędny PR #2;
 PR ze źródłami jest na nim oparty i wymaga jego wcześniejszego merge.

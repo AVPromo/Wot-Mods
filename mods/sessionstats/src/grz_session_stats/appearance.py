@@ -183,7 +183,8 @@ DEFAULT_CONFIG = {'schema_version': 1,
            'confirmation': 5,
            'garage_spinner': 5},
  'opacity': {'window': 1.0, 'garage_button': 1.0, 'disabled_controls': 0.45},
- 'scroll': {'speed_multiplier': 1.0}}
+ 'scroll': {'speed_multiplier': 1.0},
+ 'sessions': {'instance_tab': False}}
 
 PANEL_TEMPLATE = '''/* Native Gameface view. Deliberately limited to block/flex layout. */
 html { font-size:1px; }
@@ -546,7 +547,7 @@ def validate_config(raw):
     for key in raw:
         if key not in result:
             reporter.issue(_key_label(key), 'unknown_field')
-    for section in ('colors', 'radii', 'opacity', 'scroll'):
+    for section in ('colors', 'radii', 'opacity', 'scroll', 'sessions'):
         if section not in raw:
             continue
         supplied = raw[section]
@@ -560,7 +561,10 @@ def validate_config(raw):
             if key not in supplied:
                 continue
             value = supplied[key]
-            if section == 'colors':
+            if section == 'sessions':
+                checked = value if isinstance(value, bool) else None
+                reason = 'expected_boolean'
+            elif section == 'colors':
                 checked = _color(value)
                 reason = 'expected_supported_color'
             elif section == 'radii':

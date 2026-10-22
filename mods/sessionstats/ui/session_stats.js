@@ -385,19 +385,30 @@
     function render() {
         var payload = state.payload;
         if (!payload || !payload.scopes) { return; }
+        var hasInstance = !!payload.scopes.instance;
+        if (state.scope === 'instance' && !hasInstance) { state.scope = 'manual'; showReset(false); }
+        var scopeNames = ['launch', 'manual', 'instance'], scopeIndex;
+        for (scopeIndex = 0; scopeIndex < scopeNames.length; scopeIndex += 1) {
+            var scopeButton = document.getElementById('ss-scope-' + scopeNames[scopeIndex]);
+            scopeButton.style.width = hasInstance ? (scopeNames[scopeIndex] === 'instance' ? '40%' : '30%') : '50%';
+            if (scopeNames[scopeIndex] === 'instance') { scopeButton.style.display = hasInstance ? 'flex' : 'none'; }
+        }
+        document.getElementById('ss-scope-launch').querySelector('.ss-control-label').textContent =
+            hasInstance ? 'Od startu' : 'Od uruchomienia';
         var scope = payload.scopes[state.scope];
         if (!scope || !scope.summary) { return; }
         var oldTop = nodes.scroll.scrollTop;
         selected('ss-scope-launch', state.scope === 'launch');
         selected('ss-scope-manual', state.scope === 'manual');
+        selected('ss-scope-instance', state.scope === 'instance');
         selected('ss-xp-base', state.xp === 'base');
         selected('ss-xp-received', state.xp === 'received');
         selected('ss-group-vehicles', state.group === 'vehicles');
         selected('ss-group-maps', state.group === 'maps');
         selected('ss-group-battles', state.group === 'battles');
-        nodes.started.textContent = 'Od ' + date(scope.started_at, false);
-        nodes.reset.style.display = state.scope === 'manual' ? 'flex' : 'none';
-        nodes.reset.disabled = state.scope !== 'manual';
+        nodes.started.textContent = (state.scope === 'instance' ? 'Wszystkie konta · Od ' : 'Od ') + date(scope.started_at, false);
+        nodes.reset.style.display = state.scope !== 'launch' ? 'flex' : 'none';
+        nodes.reset.disabled = state.scope === 'launch';
         renderSummary(scope.summary, scope);
         if (payload.warnings && payload.warnings.length) {
             var notices = append(nodes.summary, element('div', 'ss-data-notices'));
@@ -423,6 +434,7 @@
             if (typeof value === 'string') { value = JSON.parse(value); }
             if (!value || typeof value !== 'object' || !value.scopes ||
                     !value.scopes.launch || !value.scopes.manual) { throw new Error('Invalid snapshot'); }
+            if (state.dialog && state.payload && state.payload.account_key !== value.account_key) { showReset(false); }
             state.payload = value;
             state.actionError = null;
             applyAppearance(value.appearance);
@@ -494,10 +506,16 @@
     function showReset(show) {
         if (show) { endNativeDrag(); }
         state.dialog = !!show;
+        document.getElementById('ss-confirm-title').textContent = state.scope === 'instance' ?
+            'Wyzerować zakres „Cała instancja”?' : 'Wyzerować zakres „Od resetu”?';
+        document.getElementById('ss-confirm-message').textContent = state.scope === 'instance' ?
+            'Nowy wspólny zakres zacznie się teraz. Historie kont i ich ręczne resety pozostaną bez zmian.' :
+            'Nowy zakres zacznie się teraz tylko dla bieżącego konta. Pozostałe konta pozostaną bez zmian.';
         nodes['reset-overlay'].style.display = show ? 'flex' : 'none';
-        if (show) { focusControl(nodes['reset-cancel']); } else if (state.scope === 'manual') { focusControl(nodes.reset); }
+        if (show) { focusControl(nodes['reset-cancel']); } else if (state.scope !== 'launch') { focusControl(nodes.reset); }
     }
     function switchScope(scope) {
+        if (!state.payload || !state.payload.scopes[scope]) { return; }
         state.scope = scope; state.loadedCount = 40;
         showReset(false); nodes.scroll.scrollTop = 0; render();
     }
@@ -508,6 +526,7 @@
     function switchXP(xp) { state.xp = xp; render(); }
     document.getElementById('ss-scope-launch').onclick = function () { switchScope('launch'); };
     document.getElementById('ss-scope-manual').onclick = function () { switchScope('manual'); };
+    document.getElementById('ss-scope-instance').onclick = function () { switchScope('instance'); };
     document.getElementById('ss-xp-base').onclick = function () { switchXP('base'); };
     document.getElementById('ss-xp-received').onclick = function () { switchXP('received'); };
     document.getElementById('ss-group-vehicles').onclick = function () { switchGroup('vehicles'); };
@@ -515,9 +534,13 @@
     document.getElementById('ss-group-battles').onclick = function () { switchGroup('battles'); };
     nodes.close.onclick = function () { if (state.dialog) { showReset(false); } else { invoke('close'); } };
     nodes.refresh.onclick = function () { invoke('refresh'); };
-    nodes.reset.onclick = function () { if (state.scope === 'manual') { showReset(true); } };
+    nodes.reset.onclick = function () { if (state.scope !== 'launch') { showReset(true); } };
     nodes['reset-cancel'].onclick = function () { showReset(false); };
-    nodes['reset-confirm'].onclick = function () { if (state.scope === 'manual' && invoke('reset')) { showReset(false); } };
+    nodes['reset-confirm'].onclick = function () {
+        if (state.scope !== 'launch' && state.dialog && invoke('reset', {
+                scope:state.scope, account_key:state.payload.account_key
+            })) { showReset(false); }
+    };
     nodes.scroll.addEventListener('scroll', loadNearBottom);
     root.addEventListener('wheel', onNativeWheel, false);
     nodes.titlebar.addEventListener('mousedown', beginNativeDrag);

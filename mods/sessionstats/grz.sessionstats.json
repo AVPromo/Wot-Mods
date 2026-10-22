@@ -163,5 +163,8 @@
   },
   "scroll": {
     "speed_multiplier": 1.0
+  },
+  "sessions": {
+    "instance_tab": false
   }
 }

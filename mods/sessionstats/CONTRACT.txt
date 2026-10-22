@@ -23,6 +23,8 @@ begin_battle(arena_id, started_at=None, vehicle_id=None, map_id=None, mode=None,
              vehicle_name=None, vehicle_tier=None, vehicle_type=None, map_name=None)
 record_result(record) -> bool changed (deduplicate/update by arena_id)
 result_context(arena_id) -> independent dict of known contextual metadata only
+launch_records() -> detached records from this account's current launch only
+project_scope(records, label, started_at) -> read-only scope projection
 reset_manual(now=None) -> new manual id
 pending_arena_ids() -> list of string arena IDs
 snapshot() -> JSON-serializable payload described below
@@ -109,6 +111,22 @@ BATTLE_ROW = {id:string, name:vehicle_name, map:map_name, started_at:seconds,
               outcome:string, tier:int or null, stats:STATS}
 Runtime adds appearance to the snapshot, including snapshots without an active service.
 It is presentation state only; do not persist it in battle/session records or alter history.
+
+ACCOUNT AND OPTIONAL INSTANCE SCOPES
+Both launch and manual scopes belong exclusively to REGION:DBID. Switching accounts
+selects that account's saved manual epoch; resetting it never touches another account.
+Optional sessions.instance_tab is a strict JSON boolean, default false. If true,
+Runtime adds scopes.instance with the same scope shape and label 'Cała instancja'.
+It projects raw records from the current launch of all accounts loaded in this process,
+using account-aware opaque row aliases to avoid collisions without exposing account IDs.
+Recalculate WN8/averages/coverage from records; never average account summaries.
+InstanceSession is memory-only and has its own reset boundary and excluded beginnings.
+Late pre-reset results cannot reenter it. Toggling the tab preserves its epoch; a new
+game process starts it empty. It never changes any account ledger or manual epoch.
+reset actions optionally carry scope (manual/instance) and account_key. Missing scope
+means manual for compatibility; unknown/disabled targets and stale account keys do
+nothing. UI confirms the selected target and closes confirmation on account changes.
+Instance results do not broaden the active-account footer spinner.
 
 OFFLINE RESULT RECOVERY
 Persist beginnings before receiving results. On a later login use the native

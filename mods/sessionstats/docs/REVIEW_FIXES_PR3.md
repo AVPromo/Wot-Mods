@@ -21,9 +21,9 @@
   restarcie bez nowej bitwy nie utrzymują spinnera. Panel pokazuje wyjaśnienie.
   Szczegóły i granice działania: [RESTORED_RESULTS_ACTIVITY.md](RESTORED_RESULTS_ACTIVITY.md).
 
-Weryfikacja: 337 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
+Weryfikacja: 349 testów na Pythonie 3; ten sam zestaw na Pythonie 2.7
 z czterema pominiętymi testami narzędzia pakującego wymagającego Pythona 3.
-103 kontrole panelu obejmuje trwały i przejściowy błąd rejestracji callbacku,
+113 kontroli panelu obejmuje trwały i przejściowy błąd rejestracji callbacku,
 synchroniczne wywołanie podczas rejestracji oraz spóźnione zdarzenia po zamknięciu.
 Sprawdzono wydanie 0.2.8, rzeczywistą weryfikację sum po rozpakowaniu ZIP-a
 oraz identyczny ZIP po ponownym zbudowaniu z zawartych w nim źródeł.
@@ -58,3 +58,14 @@ Review 5610518614:
   brak odczytu i rewizji nowego konta oraz niezależność ręcznego odświeżenia.
   Piętnaście kontroli Chromium obejmuje osobną awarię każdego usunięcia,
   wspólną awarię wszystkich, ponowne sprzątanie i spóźnione callbacki.
+
+Sesje kont i opcjonalny zakres całego procesu:
+- Dwie domyślne zakładki i ręczny reset pozostają osobne dla każdego konta
+  i regionu. Stare potwierdzenie po zmianie konta nie resetuje nowego konta.
+- sessions.instance_tab=true włącza osobną trzecią zakładkę z niezależnym
+  resetem w pamięci procesu. Nie zmienia dzienników ani epok ręcznych kont.
+- Dwanaście testów Pythona obejmuje izolację kont/regionów, zmiany konta,
+  oba kierunki niezależności resetów, późne wyniki i restart procesu.
+  Dziesięć kontroli Chromium sprawdza wyłączenie domyślne, polecenia resetu,
+  zamykanie starego potwierdzenia, przełączanie kont i wąski panel z trzema
+  podpisami. Szczegóły: [ACCOUNT_SESSIONS.md](ACCOUNT_SESSIONS.md).

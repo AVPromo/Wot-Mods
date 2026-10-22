@@ -15,8 +15,9 @@
     </header>
     <div class="ss-controls">
       <div class="ss-scopes" role="group" aria-label="Zakres sesji">
-        <button id="ss-scope-launch" class="ss-control ss-scope is-active" type="button" tabindex="0" aria-pressed="true"><span class="ss-control-label">Od uruchomienia</span></button>
-        <button id="ss-scope-manual" class="ss-control ss-scope" type="button" tabindex="0" aria-pressed="false"><span class="ss-control-label">Od resetu</span></button>
+        <button id="ss-scope-launch" class="ss-control ss-scope is-active" title="Od uruchomienia gry — bieżące konto" type="button" tabindex="0" aria-pressed="true"><span class="ss-control-label">Od uruchomienia</span></button>
+        <button id="ss-scope-manual" class="ss-control ss-scope" title="Od ręcznego resetu — bieżące konto" type="button" tabindex="0" aria-pressed="false"><span class="ss-control-label">Od resetu</span></button>
+        <button id="ss-scope-instance" class="ss-control ss-scope" style="display:none" type="button" tabindex="0" aria-pressed="false"><span class="ss-control-label">Cała instancja</span></button>
       </div>
       <div class="ss-toolbar">
         <span id="ss-started" class="ss-period">Oczekiwanie na wyniki bitew…</span>
@@ -46,7 +47,7 @@
     <div id="ss-reset-overlay" class="ss-modal-overlay" style="display:none">
       <div class="ss-confirm" role="dialog" aria-modal="true" aria-labelledby="ss-confirm-title">
         <h2 id="ss-confirm-title">Wyzerować zakres „Od resetu”?</h2>
-        <p>Nowy zakres zacznie się teraz. Statystyki od uruchomienia gry pozostaną bez zmian.</p>
+        <p id="ss-confirm-message">Nowy zakres zacznie się teraz tylko dla bieżącego konta. Pozostałe konta pozostaną bez zmian.</p>
         <div class="ss-confirm-actions">
           <button id="ss-reset-cancel" class="ss-control ss-button" type="button" tabindex="0"><span class="ss-control-label">Anuluj</span></button>
           <button id="ss-reset-confirm" class="ss-control ss-button ss-gold" type="button" tabindex="0"><span class="ss-control-label">Wyzeruj zakres</span></button>
