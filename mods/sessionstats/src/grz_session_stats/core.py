@@ -256,7 +256,7 @@ class StatsService(object):
                     if previous.get('ended_at') is None:
                         # A crash has no known exit timestamp. Do not invent activity
                         # during the unobserved gap up to this process's start.
-                        previous['ended_at'] = previous.get('last_seen_at', previous['started_at'])
+                        previous['ended_at'] = self._last_seen(previous)
                 candidate['launch_sessions'].append({'id': self.launch_id, 'started_at': current_time,
                                                      'last_seen_at': current_time, 'ended_at': None})
             elif found.get('ended_at') is not None:
@@ -290,15 +290,51 @@ class StatsService(object):
             raise StorageError(message('core.ledger'))
         if not isinstance(state.get('manual_sessions'), list) or not state['manual_sessions']:
             raise StorageError(message('core.periods'))
-        for epoch in state['launch_sessions'] + state['manual_sessions']:
-            if not isinstance(epoch, dict) or not epoch.get('id') or _number(epoch.get('started_at'), True) is None:
-                raise StorageError(message('core.boundaries'))
-        manual_ids = [epoch.get('id') for epoch in state['manual_sessions']]
-        if state.get('current_manual_id') not in manual_ids:
+        period_ids = {}
+        for kind in ('launch_sessions', 'manual_sessions'):
+            periods = state[kind]
+            identifiers = set()
+            period_ids[kind] = identifiers
+            for epoch in periods:
+                if (not isinstance(epoch, dict) or not isinstance(epoch.get('id'), text_type)
+                        or not epoch['id'] or epoch['id'] in identifiers
+                        or _number(epoch.get('started_at'), True) is None):
+                    raise StorageError(message('core.boundaries'))
+                identifiers.add(epoch['id'])
+                for key in ('ended_at', 'last_seen_at'):
+                    if epoch.get(key) is not None and _number(epoch[key], True) is None:
+                        raise StorageError(message('core.boundaries'))
+        manual_periods = state['manual_sessions']
+        if (state.get('current_manual_id') != manual_periods[-1]['id']
+                or manual_periods[-1].get('ended_at') is not None
+                or any(epoch.get('ended_at') is None for epoch in manual_periods[:-1])):
             raise StorageError(message('core.current'))
         for arena_id, battle in state['battles'].items():
             if not isinstance(battle, dict) or battle.get('arena_id') != arena_id:
                 raise StorageError(message('core.battle'))
+            # Validate the same optional fields that later merges, summaries and
+            # sorting consume. Never repair a rejected generation in place.
+            clean = _clean_record(battle)
+            for key in ('started_at', 'ended_at') + _NUMBERS + ('vehicle_id', 'vehicle_tier',
+                    'vehicle_name', 'vehicle_type', 'map_id', 'map_name', 'mode', 'outcome',
+                    'warnings', 'currencies'):
+                if key in battle and (key not in clean or battle[key] != clean[key]):
+                    raise StorageError(message('core.battle'))
+            for key in ('complete', 'xp_bonus_applied', '_result_seen'):
+                if key in battle and not isinstance(battle[key], bool):
+                    raise StorageError(message('core.battle'))
+            for key in ('revision', '_updated_at'):
+                if key in battle and _number(battle[key], True) is None:
+                    raise StorageError(message('core.battle'))
+            for key, kind in (('_manual_id', 'manual_sessions'), ('_launch_id', 'launch_sessions')):
+                if battle.get(key) is not None and (not isinstance(battle[key], text_type)
+                        or battle[key] not in period_ids[kind]):
+                    raise StorageError(message('core.battle'))
+
+    @staticmethod
+    def _last_seen(epoch):
+        value = epoch.get('last_seen_at')
+        return epoch['started_at'] if value is None else value
 
     @staticmethod
     def _launch(state, identifier):
@@ -320,7 +356,7 @@ class StatsService(object):
     def _touch(self, candidate, timestamp):
         epoch = self._launch(candidate, self.launch_id)
         if epoch is not None:
-            epoch['last_seen_at'] = max(epoch.get('last_seen_at', epoch['started_at']), timestamp)
+            epoch['last_seen_at'] = max(self._last_seen(epoch), timestamp)
 
     def _memberships(self, timestamp, current_time):
         if timestamp is None or timestamp > current_time:
@@ -337,7 +373,7 @@ class StatsService(object):
             if epoch['id'] == self.launch_id and epoch.get('ended_at') is None:
                 launch_id = epoch['id']
                 break
-            if timestamp <= epoch.get('last_seen_at', epoch['started_at']):
+            if timestamp <= self._last_seen(epoch):
                 launch_id = epoch['id']
                 break
         return launch_id, manual_id
@@ -397,7 +433,16 @@ class StatsService(object):
                 merged['_launch_id'] = old['_launch_id']
             if old.get('_manual_id') is not None:
                 merged['_manual_id'] = old['_manual_id']
-        launch_id, manual_id = self._memberships(merged.get('started_at'), timestamp)
+        started_at = merged.get('started_at')
+        launch_id, manual_id = self._memberships(started_at, timestamp)
+        if not is_result and started_at is not None and started_at <= timestamp:
+            # begin_battle is a live observation, unlike a delayed cache result.
+            # It can precede service creation (late initialization/reconnect).
+            # Existing durable memberships below still take precedence.
+            launch_id = self.launch_id
+            if (manual_id is None and len(self._state['manual_sessions']) == 1
+                    and started_at < self._state['manual_sessions'][0]['started_at']):
+                manual_id = self._state['current_manual_id']
         if merged.get('_launch_id') is None:
             merged['_launch_id'] = launch_id
         if merged.get('_manual_id') is None:

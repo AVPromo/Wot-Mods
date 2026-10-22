@@ -119,6 +119,64 @@ class ServiceTests(unittest.TestCase):
     def summary(self, service=None, scope='launch'):
         return (service or self.service).snapshot()['scopes'][scope]['summary']
 
+    def test_live_observation_before_initialization_enters_both_scopes_durably(self):
+        self.assertTrue(self.service.begin_battle('1', started_at=90, mode='random'))
+        manual_id = self.service._state['current_manual_id']
+        self.assertEqual(self.summary()['observed_battles'], 1)
+        self.assertEqual(self.summary(scope='manual')['observed_battles'], 1)
+        restored = StatsService(self.directory, 'EU:1', 'launch-one', EXPECTED, self.clock)
+        self.assertTrue(restored.record_result(result(started_at=90)))
+        self.assertEqual(self.summary(restored)['battles'], 1)
+        self.assertEqual(self.summary(restored, 'manual')['battles'], 1)
+        self.assertEqual(restored._state['battles']['1']['_manual_id'], manual_id)
+        sequence = restored.store.sequence
+        self.assertFalse(restored.begin_battle('1', started_at=90, mode='random'))
+        self.assertEqual(restored.store.sequence, sequence)
+
+    def test_live_preinitialization_battle_respects_existing_manual_reset(self):
+        self.clock.value = 130
+        self.service.reset_manual()
+        self.clock.value = 140
+        self.assertTrue(self.service.begin_battle('1', started_at=90, mode='random'))
+        self.assertEqual(self.summary()['observed_battles'], 1)
+        self.assertEqual(self.summary(scope='manual')['observed_battles'], 0)
+        self.assertIsNone(self.service._state['battles']['1']['_manual_id'])
+        self.assertTrue(self.service.begin_battle('2', started_at=120, mode='random'))
+        self.assertEqual(self.service._state['battles']['2']['_manual_id'],
+                         self.service._state['manual_sessions'][0]['id'])
+
+    def test_reobserved_old_battle_preserves_both_durable_memberships(self):
+        self.service.begin_battle('1', started_at=90, mode='random')
+        original = copy.deepcopy(self.service._state['battles']['1'])
+        self.clock.value = 200
+        restored = StatsService(self.directory, 'EU:1', 'launch-two', EXPECTED, self.clock)
+        restored.reset_manual()
+        restored.begin_battle('1', started_at=90, mode='random', vehicle_id=1)
+        self.assertEqual(restored._state['battles']['1']['_launch_id'], original['_launch_id'])
+        self.assertEqual(restored._state['battles']['1']['_manual_id'], original['_manual_id'])
+        self.assertEqual(self.summary(restored)['observed_battles'], 0)
+        self.assertEqual(self.summary(restored, 'manual')['observed_battles'], 0)
+
+    def test_observed_gap_battle_enters_current_launch_without_reassigning_history(self):
+        self.service.record_result(result())
+        self.clock.value = 200
+        restored = StatsService(self.directory, 'EU:1', 'launch-two', EXPECTED, self.clock)
+        restored.begin_battle('2', started_at=170, mode='random')
+        self.assertEqual(restored._state['battles']['2']['_launch_id'], 'launch-two')
+        self.assertEqual(restored._state['battles']['1']['_launch_id'], 'launch-one')
+
+    def test_unobserved_old_result_does_not_enter_new_initial_scopes(self):
+        self.service.record_result(result(started_at=90))
+        self.assertEqual(self.summary()['battles'], 0)
+        self.assertEqual(self.summary(scope='manual')['battles'], 0)
+
+    def test_future_or_invalid_observed_start_does_not_gain_membership(self):
+        for index, invalid in enumerate((121, 'invalid', -1, True)):
+            self.assertTrue(self.service.begin_battle(str(index), started_at=invalid, mode='random'))
+            row = self.service._state['battles'][str(index)]
+            self.assertIsNone(row['_launch_id'])
+            self.assertIsNone(row['_manual_id'])
+
     def test_begin_is_durable_and_duplicate_result_is_idempotent(self):
         self.assertTrue(self.service.begin_battle('1', started_at=110, vehicle_id=1, mode='random'))
         reloaded = StatsService(self.directory, 'EU:1', 'launch-one', EXPECTED, self.clock)

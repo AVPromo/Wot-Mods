@@ -1,5 +1,32 @@
 # PR #3 review fixes
 
+## Review 5620722118: period timestamps and mid-battle initialization
+
+Generation selection now validates non-null optional `ended_at` and `last_seen_at`
+values for launch and manual periods as finite nonnegative numbers, rejecting
+booleans, strings and containers. Missing/null last-seen values consistently use
+the period start during crash closure, membership lookup and activity updates.
+Valid closed launches still cannot be reopened by selecting an older generation.
+
+The related-field audit also validates unique text period identities, current/manual reset consistency, battle
+membership references, normalized optional metadata/statistics/finances/warnings,
+strict flags and revision/update numbers before accepting a ledger. A malformed
+known-schema candidate recovers through the existing generation-selection path;
+no rejected file is rewritten. Account and installation ledgers share this path.
+
+`begin_battle` provides explicit live-observation evidence for the current launch,
+including a battle whose server start precedes service initialization. The first
+manual period can include such a live beginning; an explicit manual reset still
+uses the battle's real start and cannot pull a pre-reset battle into the new
+period. Existing durable memberships take precedence, and delayed result-only
+reads still use historical timestamp-based membership. Server timestamps remain
+unchanged in the record. The same behavior applies to the installation ledger.
+
+Regressions cover fresh runtime startup and first account creation mid-battle,
+missing/future/invalid beginnings, repeated events, restart/deduplication, manual
+resets, installation collection, both period types and subsequent recovery writes.
+
+
 ## Review 5620473401: application validation during generation selection
 
 `GenerationStore.load` accepts an optional application validator. StatsService

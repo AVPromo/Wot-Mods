@@ -4,6 +4,7 @@ from __future__ import unicode_literals
 
 import copy
 import hashlib
+import json
 import os
 import shutil
 import tempfile
@@ -27,6 +28,7 @@ class LedgerRecoveryTests(unittest.TestCase):
         self.clock.value = 160
         self.assertTrue(self.service.record_result(result('2', started_at=150, ended_at=160)))
         self.good = copy.deepcopy(self.service._state)
+        self.good_files = self.files()
 
     def tearDown(self):
         shutil.rmtree(self.directory)
@@ -74,6 +76,124 @@ class LedgerRecoveryTests(unittest.TestCase):
         self.assertEqual(set(reopened._state['battles']), {'1', '2', '3'})
         self.assertEqual(reopened._state['current_manual_id'], self.good['current_manual_id'])
         self.assertEqual(reopened.snapshot()['scopes']['manual']['summary']['battles'], 2)
+
+    def restore_case(self):
+        # Each parameterized case starts from exactly the same durable backup,
+        # without disabling the stale-writer guard after a recovery write.
+        shutil.rmtree(self.service.store.directory)
+        os.makedirs(self.service.store.directory)
+        for path, content in self.good_files.items():
+            with open(path, 'wb') as stream:
+                stream.write(content)
+        self.service.store.load()
+        self.clock.value = 160
+
+    def test_optional_period_boundaries_recover_for_both_period_types(self):
+        for kind in ('launch_sessions', 'manual_sessions'):
+            for key in ('ended_at', 'last_seen_at'):
+                for invalid in ('invalid', -1, True, [], {}, 10 ** 1000):
+                    self.restore_case()
+                    damaged = copy.deepcopy(self.good)
+                    damaged[kind][0][key] = invalid
+                    self.assert_recovery(damaged)
+
+    def test_nonfinite_optional_period_boundaries_are_not_valid_ledger_values(self):
+        # Strict JSON already rejects these on disk; application validation must
+        # also reject them rather than relying on one decoder implementation.
+        from grz_session_stats.storage import StorageError
+        for kind in ('launch_sessions', 'manual_sessions'):
+            for key in ('ended_at', 'last_seen_at'):
+                for invalid in (float('nan'), float('inf'), -float('inf')):
+                    damaged = copy.deepcopy(self.good)
+                    damaged[kind][0][key] = invalid
+                    with self.assertRaises(StorageError):
+                        self.service._validate_state(damaged)
+
+    def test_invalid_optional_boundary_recovers_when_reopening_the_same_launch(self):
+        for key in ('ended_at', 'last_seen_at'):
+            self.restore_case()
+            damaged = copy.deepcopy(self.good)
+            damaged['launch_sessions'][0][key] = 'invalid'
+            latest = self.service.store.save(damaged)
+            restored = StatsService(self.directory, 'EU:1', 'run-a', EXPECTED, self.clock)
+            self.assertFalse(restored.store.read_only)
+            self.assertIsNone(restored.last_error)
+            self.assertIsNotNone(restored.store.warning)
+            self.assertEqual(restored._state['battles'], self.good['battles'])
+            self.assertTrue(restored.record_result(result('3', started_at=150)))
+            self.assertGreater(restored.store.sequence, latest)
+
+    def test_null_or_missing_optional_boundaries_use_start_as_last_seen(self):
+        for null in (False, True):
+            self.restore_case()
+            valid = copy.deepcopy(self.good)
+            for periods in ('launch_sessions', 'manual_sessions'):
+                for epoch in valid[periods]:
+                    if null:
+                        epoch['last_seen_at'] = None
+                    else:
+                        epoch.pop('last_seen_at', None)
+            self.service.store.save(valid)
+            restored = StatsService(self.directory, 'EU:1', 'run-b', EXPECTED, self.clock)
+            self.assertIsNone(restored.last_error)
+            self.assertIsNone(restored.store.warning)
+            self.assertEqual(restored._state['launch_sessions'][0]['ended_at'], 100)
+            self.assertTrue(restored.record_result(result('3', started_at=150)))
+            json.dumps(restored.snapshot(), allow_nan=False)
+
+    def test_period_identity_damage_is_rejected_before_membership_selection(self):
+        for kind in ('launch_sessions', 'manual_sessions'):
+            for invalid in ([], {}, 1, True, ''):
+                self.restore_case()
+                damaged = copy.deepcopy(self.good)
+                damaged[kind][0]['id'] = invalid
+                self.assert_recovery(damaged)
+            self.restore_case()
+            damaged = copy.deepcopy(self.good)
+            damaged[kind].append(copy.deepcopy(damaged[kind][0]))
+            self.assert_recovery(damaged)
+
+    def test_current_manual_identity_and_open_boundary_agree(self):
+        for field in ('wrong_current', 'closed_current', 'unclosed_previous'):
+            self.restore_case()
+            damaged = copy.deepcopy(self.good)
+            if field == 'wrong_current':
+                damaged['current_manual_id'] = damaged['manual_sessions'][0]['id']
+            elif field == 'closed_current':
+                damaged['manual_sessions'][-1]['ended_at'] = 160
+            else:
+                damaged['manual_sessions'][0]['ended_at'] = None
+            self.assert_recovery(damaged)
+
+    def test_malformed_optional_battle_fields_recover_before_projection_or_merge(self):
+        changes = [('started_at', 'invalid'), ('ended_at', -1), ('damage', True),
+                   ('xp_received', []), ('vehicle_id', '1'), ('vehicle_name', {}),
+                   ('vehicle_type', 2), ('map_name', []), ('mode', []), ('outcome', 'invalid'),
+                   ('warnings', [dict(private='value')]), ('warnings', None),
+                   ('currencies', []), ('currencies', {'credits': {'income': 'invalid'}}),
+                   ('currencies', {'credits': {'breakdown': {'ammo': -1}}}),
+                   ('currencies', {'credits': []}), ('complete', 1), ('_result_seen', []),
+                   ('xp_bonus_applied', None), ('revision', 'invalid'), ('_updated_at', -1),
+                   ('_manual_id', []), ('_launch_id', 'missing')]
+        for key, invalid in changes:
+            self.restore_case()
+            damaged = copy.deepcopy(self.good)
+            damaged['battles']['2'][key] = invalid
+            self.assert_recovery(damaged)
+
+    def test_installation_optional_boundary_damage_recovers_its_valid_ledger(self):
+        shared = InstallationSession(self.directory, self.directory, 'run-a', EXPECTED, self.clock)
+        shared.begin('EU:1', result())
+        shared.result('EU:1', result())
+        manual_id = shared.service._state['current_manual_id']
+        damaged = copy.deepcopy(shared.service._state)
+        damaged['manual_sessions'][0]['last_seen_at'] = 'invalid'
+        shared.service.store.save(damaged)
+        restored = InstallationSession(self.directory, self.directory, 'run-b', EXPECTED, self.clock)
+        self.assertIsNone(restored.service.last_error)
+        self.assertIsNotNone(restored.service.store.warning)
+        self.assertEqual(restored.service._state['current_manual_id'], manual_id)
+        self.assertEqual(restored.snapshot()[0]['summary']['battles'], 1)
 
     def test_empty_manual_periods_recover_history_and_reset_epoch(self):
         damaged = copy.deepcopy(self.good)
