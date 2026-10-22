@@ -57,10 +57,10 @@ function gamefaceBackgrounds(css) {
     await page.addStyleTag({content:gamefaceBackgrounds(footerCSS)});
     await page.addScriptTag({path:path.join(__dirname,'../ui/footer.js')});
     await page.waitForSelector('#grz-session-stats-footer-button');
-    const button = page.getByRole('button', {name:'Statystyki sesji: bitwy, win rate i WN8', exact:true});
+    const button = page.getByRole('button', {name:'Session statistics: battles, win rate and WN8', exact:true});
     assert.strictEqual(await button.count(), 1);
     assert.strictEqual((await button.innerText()).trim(), 'WN8');
-    assert.strictEqual(await button.getAttribute('title'), 'Statystyki sesji: bitwy, win rate i WN8');
+    assert.strictEqual(await button.getAttribute('title'), 'Session statistics: battles, win rate and WN8');
     assert.strictEqual(await button.locator('.grz-session-footer-icon[aria-hidden="true"]').count(), 1);
     assert.strictEqual(await button.locator('.grz-session-footer-rating[aria-hidden="true"]').count(), 1);
     assert.strictEqual(await button.locator('.grz-session-footer-bar').count(), 3);
@@ -130,7 +130,7 @@ function gamefaceBackgrounds(css) {
       'standalone preview must contain the actual footer stylesheet');
     assert.ok(!/<script\b/i.test(preview), 'static icon preview must not bind to a native or demo model');
     await page.setContent(preview);
-    const staticButton = page.getByRole('button', {name:'Statystyki sesji: bitwy, win rate i WN8', exact:true});
+    const staticButton = page.getByRole('button', {name:'Session statistics: battles, win rate and WN8', exact:true});
     assert.strictEqual((await staticButton.innerText()).trim(), 'WN8');
     assert.strictEqual(await staticButton.locator('.grz-session-footer-bar').count(), 3);
     assert.strictEqual((await staticButton.boundingBox()).width, 44);

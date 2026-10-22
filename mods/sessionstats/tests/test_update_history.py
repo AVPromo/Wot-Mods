@@ -85,7 +85,7 @@ class UpdateHistoryTests(unittest.TestCase):
         self.assertEqual(manual['maps'][0]['id'], '17_map')
         self.assertEqual(manual['maps'][0]['name'], 'Mapa próbna')
         self.assertEqual(manual['summary']['currencies'], before['summary']['currencies'])
-        self.assertTrue(any('Nazwa mapy' in item for item in snapshot['warnings']))
+        self.assertTrue(any('Map name' in item for item in snapshot['warnings']))
 
     def test_current_verified_metadata_can_still_correct_an_older_label(self):
         api = FakeAPI()

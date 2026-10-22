@@ -14,6 +14,8 @@ No game networking, account mutation, automatic input or executable download.
 """
 from __future__ import absolute_import, unicode_literals
 
+from .localization import Localizer, FILENAME as LANGUAGES_FILENAME, message
+
 import io
 import json
 import logging
@@ -56,7 +58,7 @@ def resolve_data_dir(bigworld=None, environ=None):
     base = environ.get('USERPROFILE')
     if base:
         return os.path.join(_filesystem_text(base), 'AppData', 'Roaming', 'grz_wot_session_stats')
-    raise RuntimeError('Nie znaleziono lokalnego katalogu danych użytkownika.')
+    raise RuntimeError(message('runtime.data_dir'))
 
 
 def _load_json_file(path):
@@ -255,18 +257,21 @@ class GameAPI(object):
         import ResMgr
         section = ResMgr.openSection('grz_session_stats/wn8exp.json')
         if section is None:
-            raise RuntimeError('Brak dołączonej tabeli oczekiwanych wartości WN8.')
+            raise RuntimeError(message('runtime.wn8_missing'))
         raw = section.asBinary
         if isinstance(raw, bytes):
             raw = raw.decode('utf-8-sig')
         table = json.loads(raw)
         if not _looks_like_expected(table):
-            raise ValueError('Niepoprawna dołączona tabela WN8.')
+            raise ValueError(message('runtime.wn8_invalid'))
         return table
 
     def notify(self, message):
         try:
             from gui import SystemMessages
+            # Catalogs contain plain text. Native notifications support markup,
+            # so escape at this final boundary, including user-edited messages.
+            message = message.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             SystemMessages.pushMessage(message, type=SystemMessages.SM_TYPE.Warning)
             return True
         except Exception:
@@ -324,6 +329,10 @@ class Runtime(object):
         self._log_notice_sent = False
         self._log_notice_after = 0
         self.monitor = ResultMonitor(self.now)
+        self._localizer = Localizer()
+
+    def _notify(self, value):
+        return self.api.notify(self._localizer.translate(value))
 
     def _start_log(self):
         if self._log_handle is not None or self.data_dir is None:
@@ -334,7 +343,7 @@ class Runtime(object):
             self.log_path = self._log_handle.path
             self._log_error = self._log_handle.error
         except Exception:
-            self._log_error = 'Osobny log moda jest niedostępny.'
+            self._log_error = message('runtime.log_unavailable')
             LOG.exception('Could not initialize the dedicated mod log.')
 
     def _service_diagnostics(self):
@@ -342,7 +351,7 @@ class Runtime(object):
             self._service_diagnostics_impl()
         except Exception:
             self._warn_once('diagnostics',
-                            'Diagnostyka moda jest częściowo niedostępna; sprawdź game.log.',
+                            message('runtime.diagnostics'),
                             exception=True)
 
     def _service_diagnostics_impl(self):
@@ -353,7 +362,7 @@ class Runtime(object):
         self.monitor.log_path = self.log_path if handle is not None and handle.ok else None
         if self._log_error:
             self._warn_once('logging',
-                            'Nie można zapisywać osobnego logu moda. Diagnostyka pozostaje w game.log.')
+                            message('runtime.log_failed'))
         else:
             self.compatibility_warnings.pop('logging', None)
         if (not self.running or self.active_service is None or
@@ -362,12 +371,11 @@ class Runtime(object):
         if self._log_error and not self._log_notice_sent and self.now() >= self._log_notice_after:
             self._log_notice_after = self.now() + 60
             try:
-                self._log_notice_sent = self.api.notify(
-                    'Statystyki sesji: nie można zapisywać osobnego logu moda. '
-                    'Sprawdź dostęp do katalogu danych; szczegóły pozostają w game.log.') is not False
+                self._log_notice_sent = self._notify(
+                    message('runtime.log_notice')) is not False
             except Exception:
                 pass
-        self.monitor.flush_notice(self.api.notify)
+        self.monitor.flush_notice(self._notify, escape=False)
 
     def _pending_activity(self):
         if not self.running or self.active_service is None or self.api.is_replay():
@@ -423,6 +431,8 @@ class Runtime(object):
                 path = find_config_path()
             self.appearance_path = path
             config = load_config(path)
+            languages_path = os.path.join(os.path.dirname(path), LANGUAGES_FILENAME) if path else None
+            self._localizer = Localizer(config['language'], languages_path)
             self._presentation = build_presentation(config)
             self._instance_tab_enabled = config['sessions']['instance_tab']
         except Exception:
@@ -430,6 +440,7 @@ class Runtime(object):
             # collection. Static styles and the original wheel step remain.
             self._presentation = {'panel_css': '', 'footer_css': '', 'scroll_speed': 1.0}
             self._instance_tab_enabled = False
+            self._localizer = Localizer()
             LOG.exception('CONFIG appearance unavailable; built-in styles and scrolling remain active.')
         if not self._instance_tab_enabled:
             self.compatibility_warnings.pop('installation:identity', None)
@@ -440,6 +451,13 @@ class Runtime(object):
     def _publish_appearance(self):
         if not self.running:
             return
+        try:
+            language_setter = getattr(self.footer_handle, 'set_language', None)
+            if callable(language_setter):
+                language_setter(self._localizer.footer_labels())
+        except Exception:
+            self._warn_once('footer:language', 'I18N footer language update unavailable.',
+                            exception=True, visible=False)
         try:
             setter = getattr(self.footer_handle, 'set_appearance', None)
             if callable(setter):
@@ -469,7 +487,7 @@ class Runtime(object):
                 return callback(*args, **kwargs)
             except Exception:
                 self._warn_once('callback:' + name,
-                                'Nie udało się obsłużyć części zdarzeń klienta; statystyki mogą być niepełne.',
+                                message('runtime.events'),
                                 exception=True)
                 if name in ('onBattleResultsReceived', 'onResultPosted', 'bonus', 'bonus_timer'):
                     self.monitor.fault('callback_contract', name, 'supported result callback', 'exception')
@@ -484,7 +502,7 @@ class Runtime(object):
                 self.window = StatsWindow(self.snapshot, self.on_action)
             except Exception:
                 self._warn_once('window:init',
-                                'Panel statystyk jest niedostępny; zbieranie wyników pozostaje aktywne.',
+                                message('runtime.panel'),
                                 exception=True)
                 return False
         self.compatibility_warnings.pop('window:init', None)
@@ -499,7 +517,7 @@ class Runtime(object):
             return result
         except Exception:
             self._warn_once('window:' + method,
-                            'Nie udało się zaktualizować panelu; zapisane wyniki pozostają dostępne.',
+                            message('runtime.panel_update'),
                             exception=True)
             return False
 
@@ -512,7 +530,7 @@ class Runtime(object):
             except Exception:
                 callback._grz_enabled = False
                 self._warn_once('timer:results',
-                                'Okresowy odczyt zaległych wyników jest niedostępny; wyniki ze zdarzeń klienta pozostają aktywne.',
+                                message('runtime.polling'),
                                 exception=True)
 
     def start(self):
@@ -547,7 +565,7 @@ class Runtime(object):
                 self.expected_table = self.api.load_expected(self.data_dir)
             except Exception:
                 self.expected_table = {}
-                self.last_error = 'Nie udało się wczytać tabeli WN8; pozostałe statystyki są dostępne.'
+                self.last_error = message('runtime.wn8_load')
                 LOG.exception('WN8 table load failed.')
         self.running = True
         self._lifecycle = object()
@@ -583,7 +601,7 @@ class Runtime(object):
                 raw_results = ready
         if not raw_results:
             self._warn_once('results:raw',
-                            'Bezpośrednie zdarzenie wyniku jest niedostępne; część wyników może pojawić się z opóźnieniem.')
+                            message('runtime.direct'))
         input_handler = getattr(self.api, 'input', None)
         key_down = key_up = False
         if self._hotkey is not None:
@@ -591,15 +609,15 @@ class Runtime(object):
             key_up = self._subscribe(getattr(input_handler, 'onKeyUp', None), self._on_key_up, 'onKeyUp')
         if not key_down or not key_up:
             self._hotkey = None
-            self._warn_once('keyboard', 'Skrót klawiaturowy jest niedostępny; użyj przycisku statystyk w garażu.')
+            self._warn_once('keyboard', message('runtime.hotkey'))
         service = getattr(self.api, 'results_service', None)
         posted_results = self._subscribe(getattr(service, 'onResultPosted', None), self._on_posted, 'onResultPosted', optional=True)
         if not posted_results:
             self._warn_once('results:posted',
-                            'Powiadomienie o przetworzonym wyniku jest niedostępne; dodatkowe PD po bitwie mogą wymagać odświeżenia.')
+                            message('runtime.posted'))
         if service is None:
             self._warn_once('results:bonus',
-                            'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.')
+                            message('runtime.bonus'))
         bus = getattr(self.api, 'event_bus', None)
         bonus_event = getattr(self.api, 'bonus_event', None)
         bonus_callback = self._guard(self._on_bonus, 'bonus')
@@ -614,11 +632,11 @@ class Runtime(object):
                 except Exception:
                     pass
                 self._warn_once('event:bonus',
-                                'Automatyczne odświeżanie bonusowych PD jest niedostępne; po użyciu premii wybierz Odśwież.',
+                                message('runtime.bonus_refresh'),
                                 exception=True)
         else:
             self._warn_once('event:bonus',
-                            'Automatyczne odświeżanie bonusowych PD jest niedostępne; po użyciu premii wybierz Odśwież.')
+                            message('runtime.bonus_refresh'))
         if self.config.get('footer_button', True):
             try:
                 if self.footer_installer is None:
@@ -747,7 +765,7 @@ class Runtime(object):
             self.compatibility_warnings.pop('installation:identity', None)
         except Exception:
             self._warn_once('installation:identity',
-                            'Shared installation statistics are unavailable; account statistics remain active.',
+                            message('installation.unavailable'),
                             visible=self._instance_tab_enabled)
         return self._instance_session
 
@@ -767,7 +785,7 @@ class Runtime(object):
             return changed
         except Exception:
             self._warn_once('installation:storage',
-                            'Installation history could not be saved; previous data was preserved.')
+                            message('installation.save'))
             return False
 
     def _close_cache_observer(self):
@@ -799,7 +817,7 @@ class Runtime(object):
                 self.compatibility_warnings.pop('results:observer', None)
         except Exception:
             self._warn_once('results:observer',
-                            'Dodatkowy odczyt wyników klienta jest niedostępny; zdarzenia i kolejka odzyskiwania pozostają aktywne.')
+                            message('runtime.observer'))
 
     def _capture_cache_request(self):
         if not self.running or self.active_service is None or self.api.is_replay():
@@ -822,7 +840,7 @@ class Runtime(object):
         try:
             self._ensure_service()
         except Exception:
-            self.last_error = 'Nie udało się otworzyć zapisanych statystyk.'
+            self.last_error = message('runtime.saved')
             self._warn_once('account', 'Could not initialize account statistics.', exception=True, visible=False)
         self._schedule_tick()
         self._publish_activity()
@@ -854,7 +872,7 @@ class Runtime(object):
             self._window_call('close')
             self._publish_activity()
         except Exception:
-            self._warn_once('arena', 'Nie udało się odczytać początku bitwy; część wyników może oczekiwać na rozliczenie.', exception=True)
+            self._warn_once('arena', message('runtime.begin'), exception=True)
 
     def _on_results(self, is_player_vehicle, results, *args):
         if not self.running or not is_player_vehicle or self.api.is_replay():
@@ -864,7 +882,7 @@ class Runtime(object):
             if service is not None:
                 self._process(results, self.active_key, service)
         except Exception:
-            self._warn_once('results:received', 'Nie udało się odczytać części wyników bitew; statystyki mogą być niepełne.', exception=True)
+            self._warn_once('results:received', message('runtime.results'), exception=True)
             self.monitor.fault('result_reader', 'onBattleResultsReceived', 'readable result', 'exception')
             self._service_diagnostics()
 
@@ -922,7 +940,7 @@ class Runtime(object):
             except Exception:
                 self.monitor.fault('bonus_reader', 'postedResults.reusable', 'readable bonus data', 'exception', source)
                 self._warn_once('results:bonus',
-                                'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.',
+                                message('runtime.bonus'),
                                 exception=True)
         if reusable is not None:
             # Native service updates this value when the player applies the
@@ -937,7 +955,7 @@ class Runtime(object):
             except Exception:
                 self.monitor.fault('bonus_fields', 'reusable.personal.xpProgress', 'supported bonus fields', 'exception', source)
                 self._warn_once('results:bonus',
-                                'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.',
+                                message('runtime.bonus'),
                                 exception=True)
         changed = service.record_result(record)
         installation_changed = self._record_installation(account_key, record, is_result=True)
@@ -963,7 +981,7 @@ class Runtime(object):
             if service is not None:
                 self._process(raw, self.active_key, service, reusable, source='posted')
         except Exception:
-            self._warn_once('results:posted_callback', 'Nie udało się odczytać przetworzonego wyniku; wynik surowy pozostaje dostępny.', exception=True)
+            self._warn_once('results:posted_callback', message('runtime.processed'), exception=True)
             self.monitor.fault('posted_reader', 'onResultPosted', 'readable posted result', 'exception')
             self._service_diagnostics()
 
@@ -986,7 +1004,7 @@ class Runtime(object):
             except Exception:
                 callback._grz_enabled = False
                 self._bonus_account_key = None
-                self._warn_once('timer:bonus', 'Odświeżenie bonusowych PD jest niedostępne; po użyciu premii wybierz Odśwież.', exception=True)
+                self._warn_once('timer:bonus', message('runtime.bonus_timer'), exception=True)
 
     def _refresh_posted(self):
         # Manual refresh targets the active account independently of any timer.
@@ -1001,7 +1019,7 @@ class Runtime(object):
                 if raw is not None:
                     self._process(raw, account_key, self.services[account_key], getattr(bundle, 'reusable', None), source='refresh')
             except Exception:
-                self._warn_once('results:bonus', 'Odczyt dodatkowych PD zastosowanych po bitwie jest niedostępny; otrzymane PD mogą być niepełne.', exception=True)
+                self._warn_once('results:bonus', message('runtime.bonus'), exception=True)
                 self.monitor.fault('bonus_reader', 'postedResults.reusable', 'readable bonus data', 'exception', 'refresh')
         self._service_diagnostics()
 
@@ -1020,7 +1038,7 @@ class Runtime(object):
                 else:
                     self._poll_one(service, self.active_key)
         except Exception:
-            self._warn_once('tick', 'Okresowy odczyt wyników zgłosił błąd; statystyki mogą być niepełne.', exception=True)
+            self._warn_once('tick', message('runtime.tick'), exception=True)
         finally:
             self._publish_activity()
             self._service_diagnostics()
@@ -1067,7 +1085,7 @@ class Runtime(object):
                         try:
                             self._process(args[1], key[0], service, source='late_cache')
                         except Exception:
-                            self._warn_once('results:late_cache', 'Nie udało się uzupełnić spóźnionego wyniku; bitwa pozostaje do rozliczenia.')
+                            self._warn_once('results:late_cache', message('runtime.late'))
                             self.monitor.fault('cache_callback', 'battleResultsCache.callback',
                                                'readable late result', 'exception', 'cache')
                             self._service_diagnostics()
@@ -1105,7 +1123,7 @@ class Runtime(object):
                             LOG.info('Result recovery: status=%s code=%s attempt=%s pending=%s',
                                      status, safe_code, count + 1, len(service.pending_arena_ids()))
                 except Exception:
-                    self._warn_once('results:cache_callback', 'Nie udało się odczytać zaległego wyniku; bitwa pozostaje do rozliczenia.', exception=True)
+                    self._warn_once('results:cache_callback', message('runtime.pending'), exception=True)
                     self.monitor.fault('cache_callback', 'battleResultsCache.callback', 'status and result', 'exception', 'cache')
                 finally:
                     self._publish_activity()
@@ -1116,19 +1134,19 @@ class Runtime(object):
                 requested = self.api.request_result(arena_id, received)
             except Exception:
                 requested = False
-                self._warn_once('results:cache', 'Odczyt zaległych wyników jest niedostępny; brakujące bitwy pozostają do rozliczenia.', exception=True)
+                self._warn_once('results:cache', message('runtime.cache'), exception=True)
             if not requested:
                 if self.inflight.get(key) is request:
                     self.inflight.pop(key, None)
-                self._warn_once('results:cache', 'Odczyt zaległych wyników jest niedostępny; brakujące bitwy pozostają do rozliczenia.')
+                self._warn_once('results:cache', message('runtime.cache'))
             else:
                 self.compatibility_warnings.pop('results:cache', None)
             break
 
     def snapshot(self):
         if self.active_service is None:
-            return {'version': VERSION, 'warnings': ['Oczekiwanie na dane konta.'],
-                    'scopes': {}, 'appearance': dict(self._presentation)}
+            return self._localizer.snapshot({'version': VERSION, 'warnings': [message('runtime.account_wait')],
+                    'scopes': {}, 'appearance': dict(self._presentation)})
         result = self.active_service.snapshot()
         result['appearance'] = dict(self._presentation)
         instance_records = {}
@@ -1150,9 +1168,7 @@ class Runtime(object):
             states[status] = states.get(status, 0) + 1
         backlog = len(pending - waiting)
         if backlog:
-            warnings.append('Niepełne wyniki wcześniejszych bitew: {0}. '
-                            'Historia została zachowana; mod nadal próbuje uzupełnić dane. '
-                            'Możesz też użyć przycisku Odśwież.'.format(backlog))
+            warnings.append(message('runtime.backlog').format(backlog))
         try:
             from .visuals import enrich_snapshot
             ledger = dict(getattr(self.active_service, '_state', {}).get('battles', {}))
@@ -1160,7 +1176,7 @@ class Runtime(object):
             enrich_snapshot(result, ledger)
             self.compatibility_warnings.pop('visuals', None)
         except Exception:
-            self._warn_once('visuals', 'Miniatury są niedostępne w tej wersji klienta; wyniki pozostają dostępne.', exception=True)
+            self._warn_once('visuals', message('runtime.thumbnails'), exception=True)
         for value in [self.last_error, self.active_service.last_error] + [
                 self.compatibility_warnings[key] for key in sorted(self.compatibility_warnings)]:
             if value and value not in warnings:
@@ -1168,23 +1184,23 @@ class Runtime(object):
         health_warning = self.monitor.warning()
         if health_warning and health_warning not in warnings:
             warnings.append(health_warning)
-        return result
+        return self._localizer.snapshot(result)
 
     def open_window(self):
         if not self.running or self.api.is_replay() or self.api.in_battle():
             return False
         try:
             if self._ensure_service() is None:
-                self.api.notify('Statystyki sesji będą dostępne po załadowaniu konta w garażu.')
+                self._notify(message('runtime.garage'))
                 return False
             self._load_appearance()
             opened = self._ensure_window() and self._window_call('open')
             if not opened:
-                self.api.notify('Nie udało się otworzyć statystyk sesji. Sprawdź pliki moda i game.log.')
+                self._notify(message('runtime.open_files'))
             return opened
         except Exception:
             LOG.exception('Could not open the statistics window.')
-            self.api.notify('Nie udało się otworzyć statystyk sesji. Szczegóły zapisano w game.log.')
+            self._notify(message('runtime.open_log'))
             return False
 
     def on_action(self, arg):

@@ -14,6 +14,8 @@ costs already include directives, so autoEquipBoostersCost is only a breakdown.
 """
 from __future__ import absolute_import, division, unicode_literals
 
+from .localization import message
+
 import math
 
 try:
@@ -95,14 +97,14 @@ def _credit_income(data, warnings):
                           ('originalCreditsToDrawSquad', 'premSquadCreditsFactor100')):
         value = _number(data.get(field))
         if value is None:
-            warnings.append('Niepełne rozliczenie kredytów: brak potrąceń plutonu.')
+            warnings.append(message('normalize.platoon'))
             return None
         if not value:
             deductions.append(0)
             continue
         multiplier = _number(data.get(factor))
         if multiplier is None:
-            warnings.append('Niepełne rozliczenie kredytów: brak mnożnika potrącenia.')
+            warnings.append(message('normalize.factor'))
             return None
         scaled = value * multiplier / 100.0
         # The first subtraction is a rounded replay value. The squad sharing
@@ -123,7 +125,7 @@ def normalize_currencies(data, warnings=None):
             consumables = equipment - directives
         else:
             directives = None
-            warnings.append('Niespójny podział kosztu materiałów i dyrektyw.')
+            warnings.append(message('normalize.costs'))
     credit_costs = _sum_known([repair, ammo, equipment])
     bond_costs = _tuple_cost(data, 'autoEquipCost', 2)
     gold_costs = _sum_known([_tuple_cost(data, 'autoLoadCost', 1),
@@ -137,9 +139,9 @@ def normalize_currencies(data, warnings=None):
         'gold': _money(_number(data.get('gold')), gold_costs),
     }
     if _number(data.get('piggyBank')):
-        warnings.append('Rezerwa kredytów jest odroczona i nie zwiększa tego bilansu.')
+        warnings.append(message('normalize.reserve'))
     if any(value['net'] is None for value in result.values()):
-        warnings.append('Część danych finansowych nie jest jeszcze dostępna.')
+        warnings.append(message('normalize.finance'))
     return result
 
 
@@ -215,14 +217,14 @@ def normalize_result(results, context=None, random_bonus_type=1,
         try:
             info = vehicle_resolver(vehicle_id) or {}
         except Exception:
-            warnings.append('Nazwa pojazdu nie jest dostępna w tej wersji klienta.')
+            warnings.append(message('normalize.vehicle'))
     map_info = {}
     arena_type_id = _integer(common.get('arenaTypeID'))
     if map_resolver is not None and arena_type_id is not None:
         try:
             map_info = map_resolver(arena_type_id) or {}
         except Exception:
-            warnings.append('Nazwa mapy nie jest dostępna w tej wersji klienta.')
+            warnings.append(message('normalize.map'))
     map_id = map_info.get('id') or context.get('map_id')
     if not map_id:
         map_id = 'arena:{0}'.format(arena_type_id) if arena_type_id else 'unknown'
@@ -234,12 +236,12 @@ def normalize_result(results, context=None, random_bonus_type=1,
         'ended_at': started_at + duration if started_at is not None and duration is not None else None,
         'vehicle_id': vehicle_id,
         'vehicle_name': _text(info.get('name') or context.get('vehicle_name'),
-                              'Pojazd {0}'.format(vehicle_id)),
+                              message('unknown.vehicle_id').format(vehicle_id) if vehicle_id is not None else message('unknown.vehicle')),
         'vehicle_tier': _integer(info.get('tier') or context.get('vehicle_tier')),
         'vehicle_type': _text(info.get('type') or context.get('vehicle_type')) or None,
         'map_id': _text(map_id),
         'map_name': _text(map_info.get('name') or context.get('map_name'),
-                          'Mapa {0}'.format(arena_type_id) if arena_type_id else 'Nieznana mapa'),
+                          message('unknown.map_id').format(arena_type_id) if arena_type_id else message('unknown.map')),
         'mode': 'random', 'outcome': outcome,
         'damage': _number(data.get('damageDealt')),
         'frags': _number(data.get('kills')),

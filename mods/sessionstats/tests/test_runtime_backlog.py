@@ -43,7 +43,7 @@ class BacklogActivityTests(unittest.TestCase):
         snapshot = self.mod.snapshot()
         self.assertEqual(snapshot['scopes']['launch']['pending'], 0)
         self.assertEqual(snapshot['scopes']['manual']['pending'], 1)
-        self.assertTrue(any('Niepełne wyniki wcześniejszych bitew: 1.' in warning
+        self.assertTrue(any('Incomplete earlier battle results: 1.' in warning
                             for warning in snapshot['warnings']))
 
     def test_background_cache_not_ready_cannot_restart_historical_spinner(self):

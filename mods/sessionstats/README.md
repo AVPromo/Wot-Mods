@@ -59,3 +59,11 @@ Interfejsy WoT mogą zmienić się po aktualizacji. Healthcheck nie gwarantuje w
 zmiany znaczenia pola przy zachowaniu jego typu i struktury.
 Wersja 0.2.4 została sprawdzona przez użytkownika w grze; 0.2.7 była sprawdzana
 w testach automatycznych i wymaga testu w aktualnym kliencie.
+# Interface languages
+
+English is the default interface language. Select `en`, `ru`, `fr`, `pl`, `de`,
+`es` or `uk` with the root `language` property in `grz.sessionstats.json`.
+All mod labels and messages are customizable in `grz.sessionstats.languages.json`.
+The installation ZIP includes the editable catalog; the `.wotmod` also bundles
+all seven languages. See [language configuration](docs/LANGUAGES.md).
+

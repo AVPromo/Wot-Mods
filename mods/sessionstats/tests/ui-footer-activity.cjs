@@ -74,14 +74,14 @@ async function setActivity(page, pending, processing, wrapped = false) {
     const button = page.locator('#grz-session-stats-footer-button');
     const spinner = button.locator('.grz-session-footer-spinner');
     check('Idle model keeps the original label and hidden, non-animating spinner',
-      await button.getAttribute('title') === 'Statystyki sesji: bitwy, win rate i WN8' &&
+      await button.getAttribute('title') === 'Session statistics: battles, win rate and WN8' &&
       await button.getAttribute('aria-busy') === 'false' &&
       await spinner.evaluate(el => getComputedStyle(el).display === 'none' && getComputedStyle(el).animationName === 'none'));
 
     await setActivity(page,3,false);
     check('Known pending results show the spinner through a native model event',
       await spinner.isVisible() && await button.getAttribute('aria-busy') === 'true' &&
-      (await button.getAttribute('title')).includes('Oczekiwanie na wyniki: 3'));
+      (await button.getAttribute('title')).includes('Waiting for results: 3'));
     check('Active indicator uses one CSS rotation without a script animation loop',
       await spinner.evaluate(el => getComputedStyle(el).animationName === 'grz-session-footer-spin' &&
         getComputedStyle(el).animationIterationCount === 'infinite' && el.getAnimations().length === 1));
@@ -117,10 +117,10 @@ async function setActivity(page, pending, processing, wrapped = false) {
 
     await setActivity(page,2,true,true);
     check('Wrapped native model/property values show processing and pending count',
-      (await button.getAttribute('title')).includes('Przetwarzanie wyników (oczekujące: 2)') && await spinner.isVisible());
+      (await button.getAttribute('title')).includes('Processing results (Pending: 2)') && await spinner.isVisible());
     await setActivity(page,0,true);
     check('Processing alone remains busy even before a pending count is available',
-      await spinner.isVisible() && (await button.getAttribute('title')).includes('Przetwarzanie wyników.'));
+      await spinner.isVisible() && (await button.getAttribute('title')).includes('Processing results.'));
     for (const scale of [1.5,2]) {
       await page.evaluate(scale=>{document.documentElement.style.fontSize=scale+'px';},scale);
       check('Spinner and button scale with native rem at '+scale+'x',
@@ -130,7 +130,7 @@ async function setActivity(page, pending, processing, wrapped = false) {
     await page.evaluate(()=>{document.documentElement.style.fontSize='1px';});
     await setActivity(page,0,false);
     check('Completing work restores the exact idle label and removes the CSS animation',
-      await button.getAttribute('title')==='Statystyki sesji: bitwy, win rate i WN8' &&
+      await button.getAttribute('title')==='Session statistics: battles, win rate and WN8' &&
       await button.getAttribute('aria-busy')==='false' &&
       await spinner.evaluate(el=>getComputedStyle(el).display==='none' && el.getAnimations().length===0));
 
@@ -153,10 +153,20 @@ async function setActivity(page, pending, processing, wrapped = false) {
     check('Removing the native child removes its active spinner with the button',await button.count()===0);
     await page.evaluate(()=>{testID=57;emitChange();});
     check('A recreated native child immediately shows its current waiting state',
-      await spinner.isVisible() && (await button.getAttribute('title')).includes('Oczekiwanie na wyniki: 1') &&
+      await spinner.isVisible() && (await button.getAttribute('title')).includes('Waiting for results: 1') &&
       await page.evaluate(()=>JSON.stringify(testCallbacks)===JSON.stringify([['add',41],['remove',41],['add',57]])));
     check('Native footer content is preserved throughout activity transitions',
       await page.locator('.SessionStats_base_original').textContent()==='19' && await page.locator('#native-button').count()===1);
+    const languages=JSON.parse(fs.readFileSync(path.join(root,'grz.sessionstats.languages.json'),'utf8')).languages;
+    for(const [language,messages] of Object.entries(languages)) {
+      await page.evaluate(messages=>{
+        testModel.activity=JSON.stringify({pending:3,processing:true,labels:messages});emitChange();
+      },Object.fromEntries(['footer.idle','footer.processing','footer.waiting','status.pending','metric.wn8'].map(key=>[key,messages[key]])));
+      const expected=messages['footer.idle']+'. '+messages['footer.processing']+' ('+messages['status.pending'].replace('{0}','3')+').';
+      check('Localized active footer tooltip and accessible label for '+language,
+        await button.getAttribute('title')===expected && await button.getAttribute('aria-label')===expected &&
+        await button.getAttribute('aria-busy')==='true');
+    }
     await page.close();
 
     const late=await fixture(browser,true);

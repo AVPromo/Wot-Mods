@@ -9,7 +9,9 @@
     var bound = false;
     var destroyed = false;
     var reported = {};
-    var idleLabel = 'Statystyki sesji: bitwy, win rate i WN8';
+    var idleLabel = 'Session statistics: battles, win rate and WN8';
+    var defaultLabels = {'footer.idle':idleLabel, 'footer.processing':'Processing results',
+        'footer.waiting':'Waiting for results: {0}', 'status.pending':'Pending: {0}', 'metric.wn8':'WN8'};
     var appearanceNode = null;
     var appearanceCSS = '';
 
@@ -64,7 +66,7 @@
             raw = feature ? unwrap(feature.activity) : undefined;
             // Older/missing optional models keep the normal, usable icon.
             if (raw === undefined || raw === null) { return {pending:0, processing:false}; }
-            if (typeof raw !== 'string' || raw.length > 512) { throw new Error('activity shape'); }
+            if (typeof raw !== 'string' || raw.length > 131072) { throw new Error('activity shape'); }
             value = JSON.parse(raw);
             if (!value || typeof value !== 'object' ||
                     typeof value.pending !== 'number' || !isFinite(value.pending) ||
@@ -79,14 +81,21 @@
     function updateActivity() {
         if (!button) { return; }
         var activity = readActivity();
+        function text(key, count) {
+            var value = activity.labels && activity.labels[key];
+            if (typeof value !== 'string' || !value || value.length > 4096) { value = defaultLabels[key]; }
+            return value.replace(/\{0\}/g, String(count));
+        }
         var busy = activity.processing || activity.pending > 0;
         var className = 'grz-session-footer-button' + (busy ? ' grz-session-footer-busy' : '');
-        var label = idleLabel;
+        var label = text('footer.idle');
         if (activity.processing) {
-            label += '. Przetwarzanie wyników' + (activity.pending > 0 ? ' (oczekujące: ' + activity.pending + ')' : '') + '.';
+            label += '. ' + text('footer.processing') + (activity.pending > 0 ? ' (' + text('status.pending', activity.pending) + ')' : '') + '.';
         } else if (activity.pending > 0) {
-            label += '. Oczekiwanie na wyniki: ' + activity.pending + '.';
+            label += '. ' + text('footer.waiting', activity.pending) + '.';
         }
+        var rating = button.querySelector('.grz-session-footer-rating');
+        if (rating) { rating.textContent = text('metric.wn8'); }
         if (button.className !== className) { button.className = className; }
         if (button.getAttribute('title') !== label) { button.setAttribute('title', label); }
         if (button.getAttribute('aria-label') !== label) { button.setAttribute('aria-label', label); }

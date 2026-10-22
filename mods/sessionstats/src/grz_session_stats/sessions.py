@@ -6,6 +6,7 @@ import hashlib
 import os
 import sys
 
+from .localization import message
 from .core import StatsService
 from .normalize import text_type
 
@@ -53,7 +54,7 @@ class InstallationSession(object):
     def snapshot(self):
         snapshot = self.service.snapshot()
         scope = snapshot['scopes']['manual']
-        scope['label'] = 'Installation'
+        scope['label'] = message('scope.instance')
         records = dict((row['id'], self.service.result_context(row['id'])) for row in scope['battles'])
         return scope, records, snapshot['warnings']
 

@@ -2,6 +2,8 @@
 """Statistics and sessions; no dependency on the World of Tanks runtime."""
 from __future__ import unicode_literals
 
+from .localization import message
+
 import copy
 import hashlib
 import math
@@ -23,7 +25,7 @@ _OUTCOMES = ('win', 'loss', 'draw')
 _CURRENCIES = ('credits', 'bonds', 'gold')
 _BREAKDOWN = ('repair', 'ammo', 'consumables', 'directives')
 _NUMBERS = ('damage', 'frags', 'spots', 'defense', 'xp_base', 'xp_received', 'free_xp')
-_UNKNOWN_MEMBERSHIP = 'Nie ustalono okresu cz\u0119\u015bci wynik\u00f3w: brakuje wiarygodnego czasu rozpocz\u0119cia.'
+_UNKNOWN_MEMBERSHIP = message('core.membership')
 
 
 def _text(value):
@@ -77,7 +79,7 @@ class ExpectedTable(object):
         document = document if isinstance(document, dict) else {}
         header = document.get('header', {})
         header = header if isinstance(header, dict) else {}
-        self.metadata = {'version': _text(header.get('version', document.get('version', 'nieznana'))),
+        self.metadata = {'version': _text(header.get('version', document.get('version', message('unknown')))),
                          'source': 'XVM Wargaming', 'count': 0}
         raw = document.get('data', document)
         if isinstance(raw, list):
@@ -168,10 +170,10 @@ def aggregate_stats(records, expected_table):
 
 def _clean_record(record):
     if not isinstance(record, dict) or record.get('arena_id') is None:
-        raise ValueError('Brakuje identyfikatora bitwy.')
+        raise ValueError(message('core.missing_id'))
     clean = {'arena_id': _text(record['arena_id'])}
     if not clean['arena_id'] or len(clean['arena_id']) > 128:
-        raise ValueError('Nieprawid\u0142owy identyfikator bitwy.')
+        raise ValueError(message('core.invalid_id'))
     for key in ('started_at', 'ended_at') + _NUMBERS:
         if key in record:
             clean[key] = _number(record[key], True)
@@ -259,20 +261,20 @@ class StatsService(object):
                 candidate['launch_sessions'].append({'id': self.launch_id, 'started_at': current_time,
                                                      'last_seen_at': current_time, 'ended_at': None})
             elif found.get('ended_at') is not None:
-                raise StorageError('Ten identyfikator uruchomienia jest ju\u017c zamkni\u0119ty. Wczytaj dane w nowym procesie.')
+                raise StorageError(message('core.closed'))
             if existing is None or candidate != self._state:
                 if not self._commit(candidate):
-                    raise StorageError(self.last_error or 'Nie uda\u0142o si\u0119 utworzy\u0107 sesji.')
+                    raise StorageError(self.last_error or message('core.create'))
         except (StorageError, IOError, OSError, ValueError, TypeError, KeyError) as error:
             self.store.read_only = True
-            self.last_error = 'Nie mo\u017cna bezpiecznie wczyta\u0107 lub zainicjowa\u0107 statystyk. Dane pozostaj\u0105 tylko do odczytu.'
+            self.last_error = message('core.load')
             if isinstance(error, StorageError):
                 self.last_error = _text(error)
 
     def _time(self):
         value = _number(self._now(), True)
         if value is None:
-            raise ValueError('Nieprawid\u0142owy czas.')
+            raise ValueError(message('core.time'))
         return value
 
     def _empty_state(self, timestamp):
@@ -284,20 +286,20 @@ class StatsService(object):
 
     def _validate_state(self, state):
         if state.get('account_key') != self.account_key:
-            raise StorageError('Zapis nale\u017cy do innego konta lub regionu. Odmowa nadpisania.')
+            raise StorageError(message('core.account'))
         if not isinstance(state.get('battles'), dict) or not isinstance(state.get('launch_sessions'), list):
-            raise StorageError('Nieprawid\u0142owa struktura dziennika. Odmowa nadpisania.')
+            raise StorageError(message('core.ledger'))
         if not isinstance(state.get('manual_sessions'), list) or not state['manual_sessions']:
-            raise StorageError('Brakuje zapisanych okres\u00f3w. Odmowa nadpisania.')
+            raise StorageError(message('core.periods'))
         for epoch in state['launch_sessions'] + state['manual_sessions']:
             if not isinstance(epoch, dict) or not epoch.get('id') or _number(epoch.get('started_at'), True) is None:
-                raise StorageError('Nieprawid\u0142owe granice sesji. Odmowa nadpisania.')
+                raise StorageError(message('core.boundaries'))
         manual_ids = [epoch.get('id') for epoch in state['manual_sessions']]
         if state.get('current_manual_id') not in manual_ids:
-            raise StorageError('Nieprawid\u0142owy bie\u017c\u0105cy okres. Odmowa nadpisania.')
+            raise StorageError(message('core.current'))
         for arena_id, battle in state['battles'].items():
             if not isinstance(battle, dict) or battle.get('arena_id') != arena_id:
-                raise StorageError('Nieprawid\u0142owy rekord bitwy. Odmowa nadpisania.')
+                raise StorageError(message('core.battle'))
 
     @staticmethod
     def _launch(state, identifier):
@@ -354,7 +356,7 @@ class StatsService(object):
 
     def record_result(self, record):
         if not isinstance(record, dict):
-            self.last_error = 'Nieprawid\u0142owy rekord wyniku.'
+            self.last_error = message('core.result')
             return False
         if record.get('mode') not in (None, 'random') or record.get('is_replay') or record.get('isReplay'):
             return False
@@ -426,7 +428,7 @@ class StatsService(object):
         timestamp = self._time() if now is None else _number(now, True)
         active = self._state['manual_sessions'][-1]
         if timestamp is None or timestamp < active['started_at']:
-            self.last_error = 'Nieprawid\u0142owy czas resetu.'
+            self.last_error = message('core.reset_time')
             return None
         new_id = uuid.uuid4().hex
         candidate = copy.deepcopy(self._state)
@@ -467,7 +469,7 @@ class StatsService(object):
             for identifier, group_records in groups.items():
                 named = [row for row in group_records if row.get(name_field)]
                 latest = max(named or group_records, key=lambda row: row.get('_updated_at', 0))
-                fallback = 'Nieznany pojazd' if group_type == 'vehicles' else 'Nieznana mapa'
+                fallback = message('unknown.vehicle') if group_type == 'vehicles' else message('unknown.map')
                 group = {'id': identifier, 'name': latest.get(name_field) or fallback,
                          'tier': latest.get('vehicle_tier') if group_type == 'vehicles' else None,
                          'type': latest.get('vehicle_type') if group_type == 'vehicles' else None,
@@ -475,8 +477,8 @@ class StatsService(object):
                 scope[group_type].append(group)
             scope[group_type].sort(key=lambda group: (-group['stats']['battles'], group['name'].lower(), group['id']))
         for record in sorted(records, key=lambda row: (row.get('started_at') or 0, row['arena_id']), reverse=True):
-            scope['battles'].append({'id': record['arena_id'], 'name': record.get('vehicle_name') or 'Nieznany pojazd',
-                                     'map': record.get('map_name') or 'Nieznana mapa', 'started_at': record.get('started_at'),
+            scope['battles'].append({'id': record['arena_id'], 'name': record.get('vehicle_name') or message('unknown.vehicle'),
+                                     'map': record.get('map_name') or message('unknown.map'), 'started_at': record.get('started_at'),
                                      'outcome': record.get('outcome'), 'tier': record.get('vehicle_tier'),
                                      'stats': aggregate_stats([record], self.expected_table)})
         return scope
@@ -492,7 +494,7 @@ class StatsService(object):
         if self.last_error:
             warnings.append(self.last_error)
         if not self.expected_table.values:
-            warnings.append('Brakuje poprawnej tabeli WN8. Pozosta\u0142e statystyki nadal s\u0105 dost\u0119pne.')
+            warnings.append(message('core.wn8'))
         if any(record.get('_manual_id') is None or record.get('_launch_id') is None
                for record in self._state['battles'].values()):
             warnings.append(_UNKNOWN_MEMBERSHIP)
@@ -501,6 +503,6 @@ class StatsService(object):
                 warnings.extend(record.get('warnings', []))
         return {'version': VERSION, 'account_key': self.account_key, 'generated_at': timestamp,
                 'expected': copy.deepcopy(self.expected_table.metadata), 'warnings': sorted(set(warnings)),
-                'scopes': {'launch': self._scope('_launch_id', self.launch_id, 'Od uruchomienia',
+                'scopes': {'launch': self._scope('_launch_id', self.launch_id, message('scope.launch'),
                                                  launch['started_at'] if launch else timestamp),
-                           'manual': self._scope('_manual_id', manual['id'], 'Od resetu', manual['started_at'])}}
+                           'manual': self._scope('_manual_id', manual['id'], message('scope.manual'), manual['started_at'])}}

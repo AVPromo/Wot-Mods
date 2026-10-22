@@ -64,7 +64,7 @@ class NormalizerTests(unittest.TestCase):
         self.assertEqual(money['net'], 32000)
         self.assertEqual(money['breakdown'], {'repair': 10000, 'ammo': 18000,
                                              'consumables': 10000, 'directives': 5000})
-        self.assertTrue(any('Rezerwa' in item for item in record['warnings']))
+        self.assertTrue(any('Deferred credits' in item for item in record['warnings']))
 
     def test_credit_replay_rounds_first_deduction_but_preserves_subcoeff(self):
         raw = raw_result()
@@ -178,7 +178,7 @@ class NormalizerTests(unittest.TestCase):
         def fail(value):
             raise AttributeError('changed client metadata API')
         record = normalize_result(raw_result(), vehicle_resolver=fail, map_resolver=fail)
-        self.assertEqual(record['vehicle_name'], 'Pojazd 1')
+        self.assertEqual(record['vehicle_name'], 'Vehicle 1')
         self.assertEqual(record['map_id'], 'arena:17')
         self.assertEqual(record['damage'], 2100)
         self.assertTrue(record['warnings'])

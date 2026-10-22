@@ -109,7 +109,7 @@ class RuntimeCompatibilityTests(unittest.TestCase):
         self.assertEqual(self.summary()['battles'], 1)
         self.assertEqual(self.summary()['currencies']['bonds']['net'], 28)
         self.assertTrue(self.mod.open_window())
-        self.assertTrue(any('Skrót' in value for value in self.mod.snapshot()['warnings']))
+        self.assertTrue(any('Keyboard shortcut' in value for value in self.mod.snapshot()['warnings']))
 
     def test_window_constructor_failure_keeps_collection_and_can_recover(self):
         original = views.StatsWindow
@@ -155,7 +155,7 @@ class RuntimeCompatibilityTests(unittest.TestCase):
         self.api.results_service.onResultPosted(None, Obj(getResults=lambda: bundle))
         self.assertEqual(self.summary()['battles'], 1)
         warnings = self.mod.snapshot()['warnings']
-        self.assertTrue(any('Bezpośrednie zdarzenie' in value for value in warnings))
+        self.assertTrue(any('Direct result events' in value for value in warnings))
         self.assertFalse(any('Powiadomienie o przetworzonym' in value for value in warnings))
 
     def test_posted_event_and_bonus_bus_failure_leave_raw_results_enabled(self):
@@ -191,7 +191,7 @@ class RuntimeCompatibilityTests(unittest.TestCase):
             self.assertEqual(summary['currencies']['gold']['net'], offset + 1)
             self.assertFalse(self.mod.active_service._state['battles'][arena_id]['xp_bonus_applied'])
         warnings = self.mod.snapshot()['warnings']
-        self.assertTrue(any('otrzymane PD mogą być niepełne' in value for value in warnings))
+        self.assertTrue(any('received XP may be incomplete' in value for value in warnings))
         self.assertEqual(warnings.count(self.mod.compatibility_warnings['results:bonus']), 1)
 
     def test_rejected_lifecycle_subscription_does_not_interrupt_remaining_setup(self):
@@ -258,7 +258,7 @@ class RuntimeCompatibilityTests(unittest.TestCase):
             snapshot = self.mod.snapshot()
             self.assertEqual(snapshot['scopes']['launch']['summary']['battles'], 1)
             self.assertEqual(snapshot['scopes']['launch']['summary']['currencies']['bonds']['net'], 28)
-            self.assertTrue(any('Miniatury' in value for value in snapshot['warnings']))
+            self.assertTrue(any('Thumbnails' in value for value in snapshot['warnings']))
         finally:
             visuals.enrich_snapshot = original
         self.mod.snapshot()

@@ -42,6 +42,22 @@ class FooterActivityTests(unittest.TestCase):
     def state(self, commands):
         return json.loads(commands.props[0][1])
 
+    def test_language_updates_preserve_activity_and_survive_footer_recreation(self):
+        from grz_session_stats.localization import Localizer
+        handle, lobby_class = self.install()
+        handle.set_activity(3, True)
+        handle.set_language(Localizer('ru').footer_labels())
+        lobby, child, commands = self.attach(lobby_class)
+        payload = self.state(commands)
+        self.assertEqual((payload['pending'], payload['processing']), (3, True))
+        self.assertEqual(payload['labels']['footer.idle'], Localizer('ru').text('footer.idle'))
+        handle.set_language(Localizer('uk').footer_labels())
+        self.assertEqual(self.state(commands)['labels'], Localizer('uk').footer_labels())
+        handle.set_activity(0, False)
+        next_lobby, next_child, next_commands = self.attach(lobby_class)
+        self.assertEqual(self.state(next_commands)['labels'], self.state(commands)['labels'])
+        self.assertEqual(self.state(next_commands)['pending'], 0)
+
     def test_pending_state_before_footer_exists_reaches_new_child(self):
         handle, lobby_class = self.install()
         handle.set_activity(3, False)

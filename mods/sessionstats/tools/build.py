@@ -47,11 +47,13 @@ def render_guide(relative, content, version, client_version):
     return text.encode('utf-8')
 
 
-def installer_checksums(package, dependency, config, client_version):
+def installer_checksums(package, dependency, config, client_version, languages=None):
     target = 'mods/'+client_version+'/'
     entries = [(package, target+package.name),
                (dependency, target+'net.openwg/'+dependency.name),
                (config, target+config.name)]
+    if languages is not None:
+        entries.append((languages, target+languages.name))
     return ''.join(digest(path)+'  '+name+'\n' for path, name in entries).encode('ascii')
 
 
@@ -72,6 +74,9 @@ def check_package(path):
         assert layout in names, 'Registered layout missing'
         expected = json.loads(package.read('res/grz_session_stats/wn8exp.json'))
         assert len(expected['data']) >= 300
+        languages = json.loads(package.read('res/grz_session_stats/languages.json'))
+        assert set(languages['languages']) == {'en', 'ru', 'fr', 'pl', 'de', 'es', 'uk'}
+        assert isinstance(languages['languages']['en'].get('title'), str)
     return len(names)
 
 
@@ -100,13 +105,16 @@ def main():
             raise RuntimeError('UI file missing: '+name)
     source_paths = sorted((ROOT/'src').rglob('*.py'))
     expected_modules = ['core', 'storage', 'runtime', 'normalize', 'views', 'footer', 'visuals',
-                        'health', 'monitor', 'diagnostics', 'appearance', 'config_path']
+                        'health', 'monitor', 'diagnostics', 'appearance', 'config_path',
+                        'localization', 'language_defaults']
     for name in expected_modules:
         if not (ROOT/'src'/'grz_session_stats'/(name+'.py')).is_file():
             raise RuntimeError('Python module missing: '+name)
     sys.path.insert(0, str(ROOT/'src'))
     from grz_session_stats.appearance import CONFIG_FILENAME, default_config
     config_path = ROOT/CONFIG_FILENAME
+    languages_path = ROOT/'grz.sessionstats.languages.json'
+    subprocess.check_call([sys.executable, str(ROOT/'tools/sync_languages.py'), '--check'])
     if json.loads(config_path.read_text(encoding='utf-8')) != default_config():
         raise RuntimeError('Shipped appearance configuration must match built-in defaults')
     with tempfile.TemporaryDirectory(prefix='grz-wotmod-') as temporary:
@@ -143,6 +151,7 @@ def main():
             put(z, 'res/gui/gen_resources/grz.sessionstats.json', (ROOT/'resources'/'grz.sessionstats.json').read_bytes())
             for path in sorted((ROOT/'data').glob('*.json')):
                 put(z, 'res/grz_session_stats/'+path.name, path.read_bytes())
+            put(z, 'res/grz_session_stats/languages.json', languages_path.read_bytes())
     entries = check_package(package)
     dependency = ROOT/'third_party'/'openwg'/'net.openwg.gameface_1.2.2.wotmod'
     depmeta = json.loads((dependency.parent/'source.json').read_text())
@@ -151,12 +160,13 @@ def main():
     bundle = dist / ('wot-statystyki-sesji-v'+version_tag+'.zip')
     shutil.copyfile(dependency, dist/dependency.name)
     shutil.copyfile(config_path, dist/CONFIG_FILENAME)
-    inner_checksums = installer_checksums(package, dependency, config_path, args.client_version)
+    inner_checksums = installer_checksums(package, dependency, config_path, args.client_version, languages_path)
     report = {
         'version': version_tag, 'client_target': args.client_version, 'python_bytecode': '2.7',
         'package_compression': 'ZIP_STORED', 'package_entries': entries,
         'package_sha256': digest(package), 'openwg_sha256': digest(dependency),
         'appearance_config': CONFIG_FILENAME, 'appearance_config_sha256': digest(config_path),
+        'languages_config': languages_path.name, 'languages_config_sha256': digest(languages_path),
         'expected': json.loads((ROOT/'data'/'wn8-source.json').read_text()),
         'live_client_tested': False,
     }
@@ -165,6 +175,7 @@ def main():
         target = 'mods/'+args.client_version+'/'
         put(z, target+package.name, package.read_bytes())
         put(z, target+CONFIG_FILENAME, config_path.read_bytes())
+        put(z, target+languages_path.name, languages_path.read_bytes())
         put(z, target+'net.openwg/'+dependency.name, dependency.read_bytes())
         for name in ['README_PL.txt', 'ZMIANY.txt', 'LICENSE.txt', 'THIRD_PARTY.txt']:
             put(z, name, render_guide(name, (ROOT/name).read_bytes(), version_tag, args.client_version))
@@ -179,7 +190,7 @@ def main():
                     content = re.sub(rb"(?m)^VERSION = '[^']+'$", ("VERSION = '"+version_tag+"'").encode('ascii'), content)
                 relative = path.relative_to(ROOT).as_posix()
                 put(z, 'source/'+relative, render_guide(relative, content, version_tag, args.client_version))
-        for name in ['meta.xml','VERSION','README.md','CONTRACT.txt','LICENSE.txt','README_PL.txt','ZMIANY.txt','THIRD_PARTY.txt',CONFIG_FILENAME]:
+        for name in ['meta.xml','VERSION','README.md','CONTRACT.txt','LICENSE.txt','README_PL.txt','ZMIANY.txt','THIRD_PARTY.txt',CONFIG_FILENAME,languages_path.name]:
             content = (ROOT/name).read_bytes()
             if name == 'meta.xml': content = metadata
             if name == 'VERSION': content = (version_tag+'\n').encode('ascii')

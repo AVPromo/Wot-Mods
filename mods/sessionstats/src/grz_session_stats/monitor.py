@@ -2,6 +2,8 @@
 """Bounded result diagnostics and notification batching, independent of WoT UI."""
 from __future__ import absolute_import, unicode_literals
 
+from .localization import message
+
 import logging
 import re
 
@@ -80,7 +82,7 @@ class ResultMonitor(object):
             if path not in self._queued and len(self._queued) < 8:
                 self._queued.append(path)
 
-    def flush_notice(self, notify):
+    def flush_notice(self, notify, escape=True):
         if not self._queued:
             return False
         now = self.now()
@@ -90,14 +92,12 @@ class ResultMonitor(object):
         fields = ', '.join(self._queued[:3])
         if len(self._queued) > 3:
             fields += ', ...'
-        location = self.log_path or 'game.log (osobny log jest niedostępny)'
-        message = ('Statystyki sesji: kontrola zgodności wykryła nieobsługiwany lub '
-                   'niepełny format danych albo błąd odczytu wyników. '
-                   'Część statystyk może być niepełna. Pola: {0}. '
-                   'Szczegóły: {1}').format(_escape(fields), _escape(location))
+        location = self.log_path or message('health.log')
+        notice = message('health.notice').format(_escape(fields) if escape else fields,
+                                                _escape(location) if escape else location)
         try:
             # Existing integrations may return None after a successful push.
-            if notify(message) is False:
+            if notify(notice) is False:
                 raise RuntimeError('Native notification unavailable')
         except Exception:
             if not self._notice_failed:
@@ -111,5 +111,4 @@ class ResultMonitor(object):
     def warning(self):
         if not self.has_problems:
             return None
-        return ('Kontrola zgodności wykryła problem z formatem lub odczytem wyniku '
-                'w tym uruchomieniu. Szczegóły w logu moda.')
+        return (message('health.warning'))

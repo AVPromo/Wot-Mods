@@ -9,6 +9,41 @@
         nativeWidth: 0, nativeHeight: 0, nativeScale: 1, diagnostics: {}, dragging: false,
         scrollSpeed: 1, appearanceNode: null, appearanceCSS: '', destroyed: false,
         list: [], loadedCount: 40, renderedCount: 0 };
+    // BEGIN GENERATED ENGLISH
+    var english = {"cancel": "Cancel", "close": "Close", "close.symbol": "\u00d7", "core.account": "This save belongs to another account or region. Overwrite refused.", "core.battle": "Invalid battle record. Overwrite refused.", "core.boundaries": "Invalid session boundaries. Overwrite refused.", "core.closed": "This launch identifier is already closed. Reload data in a new process.", "core.create": "Could not create a session.", "core.current": "Invalid current period. Overwrite refused.", "core.invalid_id": "Invalid battle identifier.", "core.ledger": "Invalid ledger structure. Overwrite refused.", "core.load": "Could not safely load or initialize statistics. Data remains read-only.", "core.membership": "Some results have no known period: a reliable battle start time is missing.", "core.missing_id": "Missing battle identifier.", "core.periods": "Saved periods are missing. Overwrite refused.", "core.reset_time": "Invalid reset time.", "core.result": "Invalid result record.", "core.time": "Invalid time.", "core.wn8": "No valid WN8 table. Other statistics remain available.", "coverage.battles": "{0} battles", "coverage.missing": "Incomplete statistics: results for {0} of {1} recorded battles. Percentages, averages and totals use received data.", "coverage.partial": "Incomplete data in {0} results. Missing values are marked beside each statistic.", "coverage.wn8.battle": "Insufficient data to calculate this battle\u2019s WN8.", "coverage.wn8.period": "Period WN8: data for {0} battles.", "error.action": "Could not complete the action. Try again.", "error.connection": "No connection to the game.", "error.snapshot": "Could not read statistics data.", "explain.costs": "Costs include settled battle expenses.", "explain.wn8": "Average battle WN8 may differ from period WN8.", "finance.battle": "Battle finances", "finance.bonds": "Bonds", "finance.costs": "Costs", "finance.credits": "Credits", "finance.currency": "Currency", "finance.gold": "Gold", "finance.income": "Income", "finance.net": "Net", "finance.period": "Battle finances", "footer.idle": "Session statistics: battles, win rate and WN8", "footer.processing": "Processing results", "footer.waiting": "Waiting for results: {0}", "format.date": "{0}.{1}.{2}, {3}:{4}", "format.date.short": "{0}.{1}, {2}:{3}", "format.decimal": ".", "format.missing": "\u2014", "format.thousands": "\u00a0", "groups.battles": "Battles", "groups.battles.aria": "Battle results", "groups.battles.count": "{0} battles \u00b7 newest first", "groups.empty": "No recorded battles in this period. Results appear after a battle ends.", "groups.label": "Group results", "groups.maps": "Maps", "groups.maps.aria": "Results by map", "groups.maps.count": "{0} maps \u00b7 most battles first", "groups.vehicles": "Vehicles", "groups.vehicles.aria": "Results by vehicle", "groups.vehicles.count": "{0} vehicles \u00b7 most battles first", "health.log": "game.log (dedicated log unavailable)", "health.notice": "Session statistics: the compatibility check detected an unsupported or incomplete data format, or a result read error. Some statistics may be incomplete. Fields: {0}. Details: {1}", "health.warning": "A result format or read problem was detected during this launch. See the mod log.", "installation.save": "Installation history could not be saved; previous data was preserved.", "installation.unavailable": "Shared installation statistics are unavailable; account statistics remain active.", "log.close": "Could not close the mod log ({0}).", "log.prepare": "Could not prepare a log entry ({0}).", "log.start": "Could not start the mod log ({0}).", "log.write": "Could not write the mod log ({0}).", "metric.avg": "Average", "metric.battle_wn8": "WN8", "metric.battles": "Battles", "metric.confirmed": "Results received", "metric.draws": "Draws", "metric.losses": "Losses", "metric.max": "Max", "metric.min": "Min", "metric.period_wn8": "Period WN8", "metric.win_rate": "Win rate", "metric.wins": "Wins", "metric.wn8": "WN8", "mode.random": "Random battles", "normalize.costs": "Inconsistent consumable/directive cost breakdown.", "normalize.factor": "Incomplete credits: the deduction multiplier is missing.", "normalize.finance": "Some financial data is not yet available.", "normalize.map": "Map name is unavailable in this client version.", "normalize.platoon": "Incomplete credits: platoon deductions are missing.", "normalize.reserve": "Deferred credits do not increase this balance.", "normalize.vehicle": "Vehicle name is unavailable in this client version.", "outcome.draw": "Draw", "outcome.loss": "Defeat", "outcome.unknown": "Unknown result", "outcome.win": "Victory", "performance.battle": "Battle performance", "performance.period": "Battle performance", "period.installation": "All accounts \u00b7 Since {0}", "period.since": "Since {0}", "refresh": "Refresh", "reset": "Reset period", "reset.instance.body": "A new shared period starts for this installation and persists across game restarts. Account histories and their manual resets remain unchanged.", "reset.instance.title": "Reset \u201cInstallation\u201d?", "reset.manual.body": "A new period starts now for the current account. Other accounts keep their history.", "reset.manual.title": "Reset \u201cSince reset\u201d?", "runtime.account_wait": "Waiting for account data.", "runtime.backlog": "Incomplete earlier battle results: {0}. History is preserved; recovery continues in the background. You can also select Refresh.", "runtime.begin": "Could not read a battle beginning; some results may remain pending.", "runtime.bonus": "Post-battle bonus XP cannot be read; received XP may be incomplete.", "runtime.bonus_refresh": "Automatic bonus XP refresh is unavailable; select Refresh after using a bonus.", "runtime.bonus_timer": "Bonus XP refresh is unavailable; select Refresh after using a bonus.", "runtime.cache": "Pending results cannot be read; missing battles remain pending.", "runtime.data_dir": "Local user data directory was not found.", "runtime.diagnostics": "Some mod diagnostics are unavailable; check game.log.", "runtime.direct": "Direct result events are unavailable; some results may be delayed.", "runtime.events": "Some client events could not be handled; statistics may be incomplete.", "runtime.garage": "Session statistics will be available after the account loads in the garage.", "runtime.hotkey": "Keyboard shortcut is unavailable; use the garage statistics button.", "runtime.late": "Could not complete a late result; the battle remains pending.", "runtime.log_failed": "Cannot write the dedicated mod log. Diagnostics remain in game.log.", "runtime.log_notice": "Session statistics: cannot write the dedicated mod log. Check access to the data directory; details remain in game.log.", "runtime.log_unavailable": "Dedicated mod log is unavailable.", "runtime.observer": "Additional client result reads are unavailable; events and recovery queue remain active.", "runtime.open_files": "Could not open session statistics. Check mod files and game.log.", "runtime.open_log": "Could not open session statistics. Details were recorded in game.log.", "runtime.panel": "Statistics panel is unavailable; result collection remains active.", "runtime.panel_update": "Could not update the panel; saved results remain available.", "runtime.pending": "Could not read a pending result; the battle remains pending.", "runtime.polling": "Periodic backlog reads are unavailable; client result events remain active.", "runtime.posted": "Processed result notifications are unavailable; bonus XP may require Refresh.", "runtime.processed": "Could not read a processed result; the raw result remains available.", "runtime.results": "Could not read some battle results; statistics may be incomplete.", "runtime.saved": "Could not open saved statistics.", "runtime.thumbnails": "Thumbnails are unavailable in this client version; results remain available.", "runtime.tick": "Periodic result reading failed; statistics may be incomplete.", "runtime.wn8_invalid": "Bundled WN8 table is invalid.", "runtime.wn8_load": "Could not load the WN8 table; other statistics remain available.", "runtime.wn8_missing": "Bundled WN8 expected values table is missing.", "scope.group": "Session period", "scope.instance": "Installation", "scope.instance.title": "All accounts in this installation; saved until manual reset", "scope.launch": "Since launch", "scope.launch.short": "Since launch", "scope.launch.title": "Since game launch \u2014 current account", "scope.manual": "Since reset", "scope.manual.title": "Since manual reset \u2014 current account", "stats.period": "Whole period", "stats.region": "Statistics and results", "status.incomplete": "Incomplete data: results {0} / {1}", "status.notes": "Data notices: {0}", "status.pending": "Pending: {0}", "status.settled": "{0} completed battles", "storage.busy": "Data is in use by another process or the file lock is unavailable.", "storage.changed": "Another process changed the data. Reload it before saving.", "storage.collision": "Save generation conflict; previous data is preserved.", "storage.corrupt": "No valid save was found. Corrupted files were not overwritten.", "storage.failed": "Could not save statistics durably. The previous valid save is preserved.", "storage.format": "Unsupported storage format. Data remains read-only.", "storage.no_lock": "System file locking is unavailable; process protection and generation conflict detection remain active. Use one client to write this data.", "storage.readonly": "Saving is blocked: data is read-only.", "storage.recovered": "Recovered the previous valid save; the latest save was corrupted. Some recent results may need to be retrieved again.", "storage.schema": "Unsupported storage schema. Data remains read-only.", "storage.unsupported_write": "Cannot write an unsupported schema.", "title": "Session statistics", "unknown": "Unknown", "unknown.map": "Unknown map", "unknown.map_id": "Map {0}", "unknown.vehicle": "Unknown vehicle", "unknown.vehicle_id": "Vehicle {0}", "vehicle.AT_SPG": "Tank destroyer", "vehicle.SPG": "SPG", "vehicle.heavyTank": "Heavy tank", "vehicle.lightTank": "Light tank", "vehicle.mediumTank": "Medium tank", "visual.map": "Map", "visual.vehicle": "Vehicle", "waiting.data": "Waiting for data", "waiting.game": "Waiting for game data.", "waiting.results": "Waiting for battle results\u2026", "xp.base": "Base XP", "xp.free": "Free XP:", "xp.group": "Experience type", "xp.received": "Received XP"};
+    // END GENERATED ENGLISH
+    var translations = english;
+    function t(key, args) {
+        var value = translations[key];
+        if (typeof value !== 'string') { value = english[key] || key; }
+        return value.replace(/\{([0-9])\}/g, function (match, index) {
+            return args && args[index] !== undefined ? String(args[index]) : match;
+        });
+    }
+    function applyLanguage(value) {
+        translations = value && value.messages && typeof value.messages === 'object' ? value.messages : english;
+        var language = value && typeof value.language === 'string' ? value.language : 'en';
+        if (document.documentElement.getAttribute('lang') !== language) {
+            document.documentElement.setAttribute('lang', language);
+        }
+        var attributes = [['data-i18n', null], ['data-i18n-title', 'title'], ['data-i18n-aria', 'aria-label']];
+        var index, list, item;
+        for (index = 0; index < attributes.length; index += 1) {
+            list = document.querySelectorAll('[' + attributes[index][0] + ']');
+            for (item = 0; item < list.length; item += 1) {
+                var text = t(list[item].getAttribute(attributes[index][0]));
+                if (attributes[index][1]) { list[item].setAttribute(attributes[index][1], text); }
+                else if (list[item].textContent !== text) { list[item].textContent = text; }
+            }
+        }
+        var labels = document.querySelectorAll('.ss-control-label');
+        for (index = 0; index < labels.length; index += 1) {
+            if (!labels[index].parentNode.hasAttribute('data-i18n-title')) {
+                labels[index].parentNode.setAttribute('title', labels[index].textContent);
+            }
+        }
+        if (state.dialog) { resetText(); }
+    }
     var nodes = {};
     var ids = ['started', 'summary', 'groups', 'scroll', 'status', 'reset',
         'reset-overlay', 'reset-cancel', 'reset-confirm', 'close', 'refresh',
@@ -25,27 +60,27 @@
     function append(parent, child) { parent.appendChild(child); return child; }
     function clear(node) { while (node.firstChild) { node.removeChild(node.firstChild); } }
     function hasNumber(value) { return typeof value === 'number' && isFinite(value); }
-    function integer(value) { return hasNumber(value) ? String(Math.round(value)) : '—'; }
+    function integer(value) { return hasNumber(value) ? String(Math.round(value)) : t('format.missing'); }
     function number(value) {
-        if (!hasNumber(value)) { return '—'; }
-        return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+        if (!hasNumber(value)) { return t('format.missing'); }
+        return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, function () { return t('format.thousands'); });
     }
     function signed(value) {
-        if (!hasNumber(value)) { return '—'; }
+        if (!hasNumber(value)) { return t('format.missing'); }
         return value > 0 ? '+' + number(value) : (value < 0 ? '-' + number(-value) : '0');
     }
     function cost(value) {
-        if (!hasNumber(value)) { return '—'; }
+        if (!hasNumber(value)) { return t('format.missing'); }
         return value === 0 ? '0' : '-' + number(Math.abs(value));
     }
-    function rate(value) { return hasNumber(value) ? value.toFixed(1).replace('.', ',') + '%' : '—'; }
+    function rate(value) { return hasNumber(value) ? value.toFixed(1).replace('.', t('format.decimal')) + '%' : t('format.missing'); }
     function pad(value) { return value < 10 ? '0' + value : String(value); }
     function date(value, shortDate) {
-        if (!hasNumber(value)) { return '—'; }
+        if (!hasNumber(value)) { return t('format.missing'); }
         var d = new Date(value * 1000);
-        if (!isFinite(d.getTime())) { return '—'; }
-        return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) +
-            (shortDate ? '' : '.' + d.getFullYear()) + ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        if (!isFinite(d.getTime())) { return t('format.missing'); }
+        return shortDate ? t('format.date.short', [pad(d.getDate()), pad(d.getMonth() + 1), pad(d.getHours()), pad(d.getMinutes())]) :
+            t('format.date', [pad(d.getDate()), pad(d.getMonth() + 1), d.getFullYear(), pad(d.getHours()), pad(d.getMinutes())]);
     }
     function unwrap(value) {
         if (value && typeof value === 'object' && value.value !== undefined) { return value.value; }
@@ -135,7 +170,7 @@
         var name = append(row, element('div', 'ss-metric-name'));
         append(name, element('span', 'ss-cell-value', label));
         var partial = coverage(data.count, total);
-        if (partial) { append(name, element('span', 'ss-cell-coverage', partial + ' bitew')); }
+        if (partial) { append(name, element('span', 'ss-cell-coverage', t('coverage.battles', [partial]))); }
         append(row, element('div', 'ss-metric-number', wn8 ? integer(data.min) : number(data.min)));
         append(row, element('div', 'ss-metric-number', wn8 ? integer(data.avg) : number(data.avg)));
         append(row, element('div', 'ss-metric-number', wn8 ? integer(data.max) : number(data.max)));
@@ -168,83 +203,82 @@
         var total = observedTotal(stats);
         var holder = append(parent, element('div', 'ss-details' + (battle ? ' ss-battle-details' : '')));
         var performance = append(holder, element('div', 'ss-performance' + (battle ? ' ss-battle-performance' : '')));
-        append(performance, element('h3', 'ss-detail-title', battle ? 'Wynik bitwy' : 'Skuteczność bojowa'));
-        var xpLabel = state.xp === 'base' ? 'Bazowe PD' : 'Otrzymane PD';
+        append(performance, element('h3', 'ss-detail-title', battle ? t('performance.battle') : t('performance.period')));
+        var xpLabel = state.xp === 'base' ? t('xp.base') : t('xp.received');
         var xp = series(state.xp === 'base' ? stats.xp_base : stats.xp_received);
         if (battle) {
             /* A battle row represents one result, not a distribution. Check
                coverage so a missing value cannot become a plausible zero. */
             battleMeasure(performance, xpLabel, xp.count === 1 ? xp.sum : null, false);
-            battleMeasure(performance, 'WN8', stats.wn8_count === 1 ? stats.wn8 : null, true);
+            battleMeasure(performance, t('metric.wn8'), stats.wn8_count === 1 ? stats.wn8 : null, true);
         } else {
             var header = append(performance, element('div', 'ss-metric-head'));
             append(header, element('div', 'ss-metric-name', ''));
-            append(header, element('div', 'ss-metric-number', 'Min'));
-            append(header, element('div', 'ss-metric-number', 'Średnia'));
-            append(header, element('div', 'ss-metric-number', 'Max'));
+            append(header, element('div', 'ss-metric-number', t('metric.min')));
+            append(header, element('div', 'ss-metric-number', t('metric.avg')));
+            append(header, element('div', 'ss-metric-number', t('metric.max')));
             measureRow(performance, xpLabel, xp, false, total);
-            measureRow(performance, 'WN8 bitew', series(stats.battle_wn8), true, total);
+            measureRow(performance, t('metric.battle_wn8'), series(stats.battle_wn8), true, total);
         }
         var free = append(performance, element('div', 'ss-free-xp'));
-        append(free, element('span', '', 'Wolne PD:'));
+        append(free, element('span', '', t('xp.free')));
         append(free, element('strong', '', number(series(stats.free_xp).sum)));
         var partialFree = coverage(series(stats.free_xp).count, total);
-        if (partialFree) { append(free, element('span', '', ' (' + partialFree + ' bitew)')); }
+        if (partialFree) { append(free, element('span', '', ' (' + t('coverage.battles', [partialFree]) + ')')); }
         if (global) {
             append(performance, element('div', 'ss-explainer',
-                'Średnia WN8 bitew może różnić się od WN8 zakresu.'));
+                t('explain.wn8')));
         }
         var economy = append(holder, element('div', 'ss-economy'));
-        append(economy, element('h3', 'ss-detail-title', battle ? 'Finanse bitwy' : 'Finanse z bitew'));
+        append(economy, element('h3', 'ss-detail-title', battle ? t('finance.battle') : t('finance.period')));
         var moneyHeader = append(economy, element('div', 'ss-money-head'));
-        append(moneyHeader, element('div', 'ss-money-label', 'Waluta'));
-        append(moneyHeader, element('div', 'ss-money-value', 'Przychód'));
-        append(moneyHeader, element('div', 'ss-money-value', 'Koszty'));
-        append(moneyHeader, element('div', 'ss-money-value', 'Netto'));
+        append(moneyHeader, element('div', 'ss-money-label', t('finance.currency')));
+        append(moneyHeader, element('div', 'ss-money-value', t('finance.income')));
+        append(moneyHeader, element('div', 'ss-money-value', t('finance.costs')));
+        append(moneyHeader, element('div', 'ss-money-value', t('finance.net')));
         var currencies = stats.currencies || {};
-        moneyRow(economy, 'Kredyty', currencies.credits, total);
-        moneyRow(economy, 'Obligacje', currencies.bonds, total);
+        moneyRow(economy, t('finance.credits'), currencies.credits, total);
+        moneyRow(economy, t('finance.bonds'), currencies.bonds, total);
         var gold = currencies.gold || {};
         if ((hasNumber(gold.income) && gold.income !== 0) ||
                 (hasNumber(gold.costs) && gold.costs !== 0) ||
                 (hasNumber(gold.net) && gold.net !== 0)) {
-            moneyRow(economy, 'Złoto', gold, total);
+            moneyRow(economy, t('finance.gold'), gold, total);
         }
         if (global) {
             append(economy, element('div', 'ss-explainer',
-                'Koszty obejmują rozliczone wydatki związane z bitwami.'));
+                t('explain.costs')));
         }
         var wnPartial = coverage(stats.wn8_count, total);
         if (wnPartial) {
             append(parent, element('div', 'ss-coverage-note',
-                battle ? 'Brak danych do obliczenia WN8 tej bitwy.' :
-                    'WN8 zakresu: dane dla ' + wnPartial + ' bitew.'));
+                battle ? t('coverage.wn8.battle') :
+                    t('coverage.wn8.period', [wnPartial])));
         }
     }
     function renderSummary(stats, scope) {
         clear(nodes.summary);
         var headline = append(nodes.summary, element('div', 'ss-headline'));
         var missing = observedTotal(stats) > (stats.battles || 0);
-        headlineStat(headline, missing ? 'Bitwy z wynikiem' : 'Bitwy', battleCount(stats), false, false);
-        headlineStat(headline, missing ? 'Win rate*' : 'Win rate', rate(stats.win_rate), false, false);
-        headlineStat(headline, 'WN8 zakresu', integer(stats.wn8), true, false);
+        headlineStat(headline, missing ? t('metric.confirmed') : t('metric.battles'), battleCount(stats), false, false);
+        headlineStat(headline, missing ? t('metric.win_rate') + '*' : t('metric.win_rate'), rate(stats.win_rate), false, false);
+        headlineStat(headline, t('metric.period_wn8'), integer(stats.wn8), true, false);
         var outcomes = append(nodes.summary, element('p', 'ss-outcomes'));
-        append(outcomes, element('span', '', 'Zwycięstwa '));
+        append(outcomes, element('span', '', t('metric.wins') + ' '));
         append(outcomes, element('strong', '', number(stats.wins)));
-        append(outcomes, element('span', '', '  ·  Porażki '));
+        append(outcomes, element('span', '', '  ·  ' + t('metric.losses') + ' '));
         append(outcomes, element('strong', '', number(stats.losses)));
-        append(outcomes, element('span', '', '  ·  Remisy '));
+        append(outcomes, element('span', '', '  ·  ' + t('metric.draws') + ' '));
         append(outcomes, element('strong', '', number(stats.draws)));
         if (scope.pending > 0) {
-            append(outcomes, element('span', '', '  ·  Oczekujące: ' + number(scope.pending)));
+            append(outcomes, element('span', '', '  ·  ' + t('status.pending', [number(scope.pending)])));
         }
         if (missing) {
             append(nodes.summary, element('p', 'ss-data-notice',
-                'Niepełne statystyki: wyniki ' + number(stats.battles) + ' z ' + number(observedTotal(stats)) +
-                ' zarejestrowanych bitew. Procenty, średnie i sumy dotyczą odebranych danych.'));
+                t('coverage.missing', [number(stats.battles), number(observedTotal(stats))])));
         } else if (stats.partial_results > 0) {
             append(nodes.summary, element('p', 'ss-data-notice',
-                'Niepełne dane w ' + number(stats.partial_results) + ' wynikach. Braki są oznaczone przy poszczególnych statystykach.'));
+                t('coverage.partial', [number(stats.partial_results)])));
         }
         details(nodes.summary, stats, true);
     }
@@ -252,12 +286,12 @@
         return ['','I','II','III','IV','V','VI','VII','VIII','IX','X','XI'][tier] || '';
     }
     function vehicleType(type) {
-        var labels = { lightTank:'Czołg lekki', mediumTank:'Czołg średni', heavyTank:'Czołg ciężki',
-            AT_SPG:'Niszczyciel czołgów', SPG:'Działo samobieżne' };
+        var labels = { lightTank:t('vehicle.lightTank'), mediumTank:t('vehicle.mediumTank'), heavyTank:t('vehicle.heavyTank'),
+            AT_SPG:t('vehicle.AT_SPG'), SPG:t('vehicle.SPG') };
         return labels[type] || '';
     }
     function battleOutcome(outcome) {
-        return { win:'Zwycięstwo', loss:'Porażka', draw:'Remis' }[outcome] || 'Nieznany wynik';
+        return { win:t('outcome.win'), loss:t('outcome.loss'), draw:t('outcome.draw') }[outcome] || t('outcome.unknown');
     }
     function ordered(items) {
         var copy = items.slice(0);
@@ -300,18 +334,18 @@
             header = append(group, element('div', 'ss-group-header'));
             appendVisual(header, item);
             identity = append(header, element('div', 'ss-group-name'));
-            append(identity, element('h2', 'ss-group-title', item.name || 'Nieznany'));
+            append(identity, element('h2', 'ss-group-title', item.name || t('unknown')));
             subtitle = state.group === 'vehicles' ?
                 (tierText(item.tier) + (vehicleType(item.type) ? ' · ' + vehicleType(item.type) : '')) :
-                (battle ? date(item.started_at, true) + ' · ' + (item.map || 'Nieznana mapa') : '');
+                (battle ? date(item.started_at, true) + ' · ' + (item.map || t('unknown.map')) : '');
             if (subtitle) { append(identity, element('div', 'ss-group-subtitle', subtitle)); }
             if (battle) {
                 outcome = {win: 'win', loss: 'loss', draw: 'draw'}[item.outcome] || 'unknown';
                 append(header, element('span', 'ss-battle-outcome ss-outcome-' + outcome, battleOutcome(item.outcome)));
             } else {
-                headlineStat(header, 'Bitwy', battleCount(stats), false, true);
-                headlineStat(header, 'Win rate', rate(stats.win_rate), false, true);
-                headlineStat(header, 'WN8', integer(stats.wn8), true, true);
+                headlineStat(header, t('metric.battles'), battleCount(stats), false, true);
+                headlineStat(header, t('metric.win_rate'), rate(stats.win_rate), false, true);
+                headlineStat(header, t('metric.wn8'), integer(stats.wn8), true, true);
             }
             details(group, stats, false, battle);
         }
@@ -321,15 +355,13 @@
     }
     function renderGroups(scope) {
         clear(nodes.groups);
-        var labels = {vehicles:'czołgów', maps:'map', battles:'bitew'};
         state.list = ordered(scope[state.group] || []);
         state.renderedCount = 0;
-        nodes.groups.setAttribute('aria-label', 'Wyniki według ' + labels[state.group]);
-        nodes['list-meta'].textContent = number(state.list.length) + ' ' + labels[state.group] +
-            (state.group === 'battles' ? ' · od najnowszej' : ' · najwięcej bitew na początku');
+        nodes.groups.setAttribute('aria-label', t('groups.' + state.group + '.aria'));
+        nodes['list-meta'].textContent = t('groups.' + state.group + '.count', [number(state.list.length)]);
         if (!state.list.length) {
             append(nodes.groups, element('p', 'ss-empty',
-                'Brak rozliczonych bitew w tym zakresie. Wyniki pojawią się po zakończeniu bitwy.'));
+                t('groups.empty')));
             return;
         }
         appendGroupBatch(state.loadedCount);
@@ -394,7 +426,7 @@
             if (scopeNames[scopeIndex] === 'instance') { scopeButton.style.display = hasInstance ? 'flex' : 'none'; }
         }
         document.getElementById('ss-scope-launch').querySelector('.ss-control-label').textContent =
-            hasInstance ? 'Od startu' : 'Od uruchomienia';
+            hasInstance ? t('scope.launch.short') : t('scope.launch');
         var scope = payload.scopes[state.scope];
         if (!scope || !scope.summary) { return; }
         var oldTop = nodes.scroll.scrollTop;
@@ -406,7 +438,7 @@
         selected('ss-group-vehicles', state.group === 'vehicles');
         selected('ss-group-maps', state.group === 'maps');
         selected('ss-group-battles', state.group === 'battles');
-        nodes.started.textContent = (state.scope === 'instance' ? 'Wszystkie konta · Od ' : 'Od ') + date(scope.started_at, false);
+        nodes.started.textContent = t(state.scope === 'instance' ? 'period.installation' : 'period.since', [date(scope.started_at, false)]);
         nodes.reset.style.display = state.scope !== 'launch' ? 'flex' : 'none';
         nodes.reset.disabled = state.scope === 'launch';
         renderSummary(scope.summary, scope);
@@ -418,12 +450,12 @@
             }
         }
         renderGroups(scope);
-        var text = number(scope.summary.battles) + ' rozliczonych bitew';
+        var text = t('status.settled', [number(scope.summary.battles)]);
         if (observedTotal(scope.summary) > (scope.summary.battles || 0)) {
-            text = 'Niepełne dane: wyniki ' + number(scope.summary.battles) + ' / ' + number(observedTotal(scope.summary));
+            text = t('status.incomplete', [number(scope.summary.battles), number(observedTotal(scope.summary))]);
         }
-        if (scope.pending > 0) { text += ' · ' + number(scope.pending) + ' oczekujących'; }
-        if (payload.warnings && payload.warnings.length) { text += ' · Uwagi do danych: ' + payload.warnings.length; }
+        if (scope.pending > 0) { text += ' · ' + t('status.pending', [number(scope.pending)]); }
+        if (payload.warnings && payload.warnings.length) { text += ' · ' + t('status.notes', [payload.warnings.length]); }
         setStatus(state.actionError || text);
         nodes.scroll.scrollTop = oldTop;
     }
@@ -437,12 +469,13 @@
             if (state.dialog && state.payload && state.payload.account_key !== value.account_key) { showReset(false); }
             state.payload = value;
             state.actionError = null;
+            applyLanguage(value.localization);
             applyAppearance(value.appearance);
             render();
             if (state.bound) { queueResize(); }
             return true;
         } catch (error) {
-            setStatus('Nie udało się odczytać danych statystyk.');
+            setStatus(t('error.snapshot'));
             return false;
         }
     }
@@ -459,12 +492,12 @@
             }
         } catch (error) {
             if (action !== 'resize' && action !== 'diagnostic' && action !== 'viewport') {
-                state.actionError = 'Nie udało się wykonać polecenia. Spróbuj ponownie.';
+                state.actionError = t('error.action');
                 setStatus(state.actionError);
             }
             return false;
         }
-        if (action !== 'resize' && action !== 'diagnostic' && action !== 'viewport') { setStatus('Brak połączenia z grą.'); }
+        if (action !== 'resize' && action !== 'diagnostic' && action !== 'viewport') { setStatus(t('error.connection')); }
         return false;
     }
     function focusControl(node) {
@@ -506,13 +539,16 @@
     function showReset(show) {
         if (show) { endNativeDrag(); }
         state.dialog = !!show;
-        document.getElementById('ss-confirm-title').textContent = state.scope === 'instance' ?
-            'Wyzerować zakres „Instalacja”?' : 'Wyzerować zakres „Od resetu”?';
-        document.getElementById('ss-confirm-message').textContent = state.scope === 'instance' ?
-            'Nowy wspólny zakres tej instalacji zacznie się teraz i zachowa się po ponownym uruchomieniu gry. Historie kont i ich ręczne resety pozostaną bez zmian.' :
-            'Nowy zakres zacznie się teraz tylko dla bieżącego konta. Pozostałe konta pozostaną bez zmian.';
+        resetText();
         nodes['reset-overlay'].style.display = show ? 'flex' : 'none';
         if (show) { focusControl(nodes['reset-cancel']); } else if (state.scope !== 'launch') { focusControl(nodes.reset); }
+    }
+    function resetText() {
+        document.getElementById('ss-confirm-title').textContent = state.scope === 'instance' ?
+            t('reset.instance.title') : t('reset.manual.title');
+        document.getElementById('ss-confirm-message').textContent = state.scope === 'instance' ?
+            t('reset.instance.body') :
+            t('reset.manual.body');
     }
     function switchScope(scope) {
         if (!state.payload || !state.payload.scopes[scope]) { return; }

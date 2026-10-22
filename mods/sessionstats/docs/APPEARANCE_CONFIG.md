@@ -203,3 +203,10 @@ wymaga aktualizacji tego jawnego kontraktu.
 Publiczne funkcje: `default_config()`, `load_config(path)`,
 `validate_config(object)` i `build_presentation(config)`. Ostatnia zwraca
 `panel_css`, `footer_css` oraz `scroll_speed` do przekazania istniejącym modelom UI.
+# Language selection
+
+The same configuration accepts a root `"language": "en"` setting. English is
+the default; `ru`, `fr`, `pl`, `de`, `es` and `uk` are also bundled. Editable
+translations live in the neighboring `grz.sessionstats.languages.json` file.
+See [LANGUAGES.md](LANGUAGES.md) for overrides, added languages and fallbacks.
+

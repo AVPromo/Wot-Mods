@@ -158,7 +158,9 @@ async function footer(browser) {
 
 (async()=>{
     const localChrome=path.resolve(root,'../.wot-design-tools/chrome-testing/chrome-headless-shell-linux64/chrome-headless-shell');
-    const browser=await chromium.launch({executablePath:process.env.GRZ_CHROME||localChrome,headless:true,args:['--no-sandbox']});
+    // Grayscale text avoids RGB subpixel repaint artifacts when translated
+    // glyphs touch a clipping edge. Keep the exact layout/paint and raster bounds.
+    const browser=await chromium.launch({executablePath:process.env.GRZ_CHROME||localChrome,headless:true,args:['--no-sandbox','--disable-lcd-text']});
     try {
         const page=await panel(browser);
         const baseline=await paint(page,'#grz-session-stats');

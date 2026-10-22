@@ -166,5 +166,6 @@
   },
   "sessions": {
     "instance_tab": false
-  }
+  },
+  "language": "en"
 }

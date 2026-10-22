@@ -71,3 +71,28 @@ Account scopes and the optional durable installation scope:
   corrupted generations and identity discovery. An additional browser check
   verifies that confirmation explains restart persistence.
 - Details and migration rules: [ACCOUNT_SESSIONS.md](ACCOUNT_SESSIONS.md).
+
+## English defaults and editable language catalogs
+
+- All mod interface text now uses an English default and a configurable local
+  JSON catalog with complete English, Russian, French, Polish, German, Spanish
+  and Ukrainian dictionaries (178 message keys per language).
+- Root `language` in `grz.sessionstats.json` selects the language. The neighboring
+  `grz.sessionstats.languages.json` can override individual messages or add
+  languages. The installation ZIP includes the editable file and verifies its
+  checksum; the `.wotmod` includes all bundled translations as an offline fallback.
+- Translation validation rejects unsafe placeholders and malformed catalogs;
+  valid partial overrides retain per-message fallbacks. Native notifications
+  escape markup and panel/footer labels use text nodes. Catalog values and
+  private paths are omitted from diagnostics.
+- Canonical English and legacy Polish warning templates are translated at
+  presentation time. Account histories, session/reset boundaries and game-supplied
+  map/vehicle names remain intact. Language reloads require opening the panel or
+  Refresh, with no per-tick file reads.
+- Local validation: 375 Python tests on both runtime interpreters (four builder
+  cases skipped on Python 2.7), 183 infrastructure/Medkit tests, 165 panel checks,
+  29 footer activity checks, 22 wheel checks, 12 footer compatibility checks and
+  31 appearance checks. Raster checks use grayscale text to avoid RGB subpixel
+  repaint artifacts while retaining the original exact style/layout comparison
+  and pixel thresholds. All six assets reproduce; recursive privacy and
+  cross-mod integration checks pass. Native Gameface still needs in-game review.

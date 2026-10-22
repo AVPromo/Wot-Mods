@@ -9,6 +9,8 @@ added here; exception messages/source lines are omitted from this local log.
 """
 from __future__ import absolute_import, unicode_literals
 
+from .localization import message
+
 from collections import deque
 import copy
 import errno
@@ -166,7 +168,7 @@ class _ModLogHandler(RotatingFileHandler):
                     # Contention is temporary; keep the bounded queue and the
                     # last real error status until a later tick can flush it.
         except Exception as error:
-            self.error = 'Nie udało się zapisać logu moda (%s).' % type(error).__name__
+            self.error = message('log.write').format(type(error).__name__)
         finally:
             self.release()
 
@@ -183,7 +185,7 @@ class _ModLogHandler(RotatingFileHandler):
         except Exception as error:
             # Never delegate to handleError(): logging.raiseExceptions in the
             # host must not print a raw record or leak this failure to the UI.
-            self.error = 'Nie udało się przygotować wpisu logu (%s).' % type(error).__name__
+            self.error = message('log.prepare').format(type(error).__name__)
 
     def close(self):
         self.flush()
@@ -191,7 +193,7 @@ class _ModLogHandler(RotatingFileHandler):
         try:
             super(_ModLogHandler, self).close()
         except Exception as error:
-            self.error = 'Nie udało się zamknąć logu moda (%s).' % type(error).__name__
+            self.error = message('log.close').format(type(error).__name__)
 
 
 class LogState(object):
@@ -282,5 +284,5 @@ def start_logging(data_dir):
         _active[state._key] = state
         return state
     except Exception as error:
-        state._error = 'Nie udało się uruchomić logu moda (%s).' % type(error).__name__
+        state._error = message('log.start').format(type(error).__name__)
         return state

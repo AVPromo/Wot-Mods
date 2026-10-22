@@ -9,11 +9,11 @@ const errors = [];
 const checks = [];
 const check = (name, pass) => { assert(pass, name); checks.push(name); };
 const captions = {
-  'ss-close':'×', 'ss-scope-launch':'Od uruchomienia', 'ss-scope-manual':'Od resetu',
-  'ss-xp-base':'Bazowe PD', 'ss-xp-received':'Otrzymane PD',
-  'ss-group-vehicles':'Czołgi', 'ss-group-maps':'Mapy', 'ss-group-battles':'Bitwy',
-  'ss-refresh':'Odśwież', 'ss-reset':'Wyzeruj zakres',
-  'ss-reset-cancel':'Anuluj', 'ss-reset-confirm':'Wyzeruj zakres'
+  'ss-close':'×', 'ss-scope-launch':'Since launch', 'ss-scope-manual':'Since reset',
+  'ss-xp-base':'Base XP', 'ss-xp-received':'Received XP',
+  'ss-group-vehicles':'Vehicles', 'ss-group-maps':'Maps', 'ss-group-battles':'Battles',
+  'ss-refresh':'Refresh', 'ss-reset':'Reset period',
+  'ss-reset-cancel':'Cancel', 'ss-reset-confirm':'Reset period'
 };
 
 // Always serve the current shipped sources, not a previously bundled preview.
@@ -168,7 +168,7 @@ async function nativeHost(browser, options) {
       Array.from(button.childNodes).filter(node=>node.nodeType===3).forEach(node=>button.removeChild(node));
     }
     const oldButton=document.createElement('button');
-    oldButton.textContent='Od uruchomienia';
+    oldButton.textContent='Since launch';
     discardDirectText(oldButton);
     Object.keys(expected).forEach(id=>discardDirectText(document.getElementById(id)));
     return {legacyFails:oldButton.textContent==='',
@@ -202,19 +202,19 @@ async function nativeHost(browser, options) {
   const missingStats=JSON.parse(JSON.stringify(fixtures.reset.scopes.manual.summary));
   missingStats.observed_battles=1;
   missingStats.missing_results=1;
-  missingScope.battles.push({id:'missing-result-fixture',name:'Nieznany pojazd',map:'Nieznana mapa',
+  missingScope.battles.push({id:'missing-result-fixture',name:'Unknown vehicle',map:'Unknown map',
     started_at:missingScope.started_at+1,outcome:null,stats:missingStats});
   await page.evaluate(p=>GRZSessionStats.update(p),missingFixture);
   check('Missing battle exposes 16 of 17 results and marks averages incomplete',
-    (await kpis())[0]==='16 / 17' && (await page.locator('#ss-status').innerText()).includes('wyniki 16 / 17') &&
-    (await page.locator('#ss-summary').innerText()).includes('Niepełne statystyki') &&
+    (await kpis())[0]==='16 / 17' && (await page.locator('#ss-status').innerText()).includes('results 16 / 17') &&
+    (await page.locator('#ss-summary').innerText()).includes('Incomplete statistics') &&
     (await page.locator('#ss-summary .ss-kpi-label').allTextContents()).includes('Win rate*'));
   check('Financial coverage includes the registered battle with no result',
     (await page.locator('#ss-summary .ss-money-row .ss-cell-coverage').allTextContents()).includes('16/17'));
   await page.locator('#ss-group-battles').click();
   const missingCard=(await battleCards(page)).find(row=>row.id==='missing-result-fixture');
   check('Unrecovered battle stays listed with unknown outcome and dashes rather than fabricated zeros',
-    missingCard && missingCard.outcome==='Nieznany wynik' && missingCard.values.every(row=>row.value==='—') &&
+    missingCard && missingCard.outcome==='Unknown result' && missingCard.values.every(row=>row.value==='—') &&
     missingCard.money.every(row=>row.values.every(value=>value==='—')));
   await page.evaluate(p=>GRZSessionStats.update(p),fixtures.normal);
   await page.locator('#ss-group-vehicles').click();
@@ -231,7 +231,7 @@ async function nativeHost(browser, options) {
   const before=await page.locator('#ss-summary .ss-metric-row').first().innerText();
   await page.locator('#ss-xp-received').click();
   const after=await page.locator('#ss-summary .ss-metric-row').first().innerText();
-  check('Received XP differs from base XP',before!==after && after.includes('Otrzymane PD'));
+  check('Received XP differs from base XP',before!==after && after.includes('Received XP'));
   await page.locator('#ss-group-maps').click();
   check('Map grouping contains all five maps',await page.locator('#ss-groups .ss-group').count()===5);
   await page.locator('#ss-scroll').evaluate(el=>el.scrollTop=el.scrollHeight);
@@ -247,24 +247,24 @@ async function nativeHost(browser, options) {
     battles.every(row=>row.values.length===2 && row.aggregateRows===0));
   check('Received XP and WN8 match each individual battle result',battles.every(row=>{
     const stats=expectedBattles.get(row.id).stats;
-    return row.values[0].label==='Otrzymane PD' && row.values[0].value===formattedInteger(stats.xp_received.sum) &&
+    return row.values[0].label==='Received XP' && row.values[0].value===formattedInteger(stats.xp_received.sum) &&
       row.values[1].label==='WN8' && row.values[1].value===String(Math.round(stats.wn8));
   }));
   check('Battle header shows the actual outcome without one-battle count or win-rate KPIs',battles.every(row=>{
-    const outcomes={win:'Zwycięstwo',loss:'Porażka',draw:'Remis'};
+    const outcomes={win:'Victory',loss:'Defeat',draw:'Draw'};
     return row.aggregateKPIs===0 && row.outcome===outcomes[expectedBattles.get(row.id).outcome];
   }));
   check('Aggregate summary still has min/mean/max while the battle list is selected',
-    (await page.locator('#ss-summary .ss-metric-head .ss-metric-number').allTextContents()).join('|')==='Min|Średnia|Max' &&
+    (await page.locator('#ss-summary .ss-metric-head .ss-metric-number').allTextContents()).join('|')==='Min|Average|Max' &&
     await page.locator('#ss-summary .ss-metric-row').count()===2);
   await page.locator('#ss-xp-base').click();
   battles=await battleCards(page);
   check('XP switch changes every battle to its single base-XP result',battles.every(row=>
-    row.values[0].label==='Bazowe PD' && row.values[0].value===formattedInteger(expectedBattles.get(row.id).stats.xp_base.sum)));
+    row.values[0].label==='Base XP' && row.values[0].value===formattedInteger(expectedBattles.get(row.id).stats.xp_base.sum)));
   const knownBattle=battles.find(row=>row.id==='2000015');
   check('Battle finances retain separate income, costs and net including bonds',
-    knownBattle.money[0].label==='Kredyty' && knownBattle.money[0].values.join('|')==='78\u00a0935|-41\u00a0385|+37\u00a0550' &&
-    knownBattle.money[1].label==='Obligacje' && knownBattle.money[1].values.join('|')==='0|-6|-6');
+    knownBattle.money[0].label==='Credits' && knownBattle.money[0].values.join('|')==='78\u00a0935|-41\u00a0385|+37\u00a0550' &&
+    knownBattle.money[1].label==='Bonds' && knownBattle.money[1].values.join('|')==='0|-6|-6');
   await page.locator('#ss-reset').click();
   controls=await controlLayout(page);
   check('Reset and confirmation captions also have visible fitted boxes',controls.filter(c=>['ss-reset','ss-reset-cancel','ss-reset-confirm'].includes(c.id)).every(c=>c.visible && c.flex && c.block && c.fits));
@@ -343,7 +343,7 @@ async function nativeHost(browser, options) {
   await page.locator('#ss-group-vehicles').click();
 
   const malformed=await page.evaluate(()=>GRZSessionStats.update('{bad json'));
-  check('Malformed payload returns readable error',malformed===false && (await page.locator('#ss-status').innerText()).includes('Nie udało'));
+  check('Malformed payload returns readable error',malformed===false && (await page.locator('#ss-status').innerText()).includes('Could not'));
   await page.evaluate(p=>GRZSessionStats.update(p),fixtures.normal);
   await page.evaluate(p=>{const q=JSON.parse(JSON.stringify(p));q.scopes.launch.summary.wn8=10420;GRZSessionStats.update(q);},fixtures.normal);
   check('WN8 above 9999 is not truncated',(await kpis())[2]==='10420');
@@ -385,14 +385,14 @@ async function nativeHost(browser, options) {
     check('Unavailable XP/WN8 remain dashes in a single battle ('+xpMode+')',
       missing.values.every(value=>value.value==='—'));
     check('Unknown battle outcome and unavailable bond balance stay explicit ('+xpMode+')',
-      missing.outcome==='Nieznany wynik' && missing.money[1].values[2]==='—');
+      missing.outcome==='Unknown result' && missing.money[1].values[2]==='—');
   }
   await page.evaluate(p=>GRZSessionStats.update(p),fixtures.normal);
   for(const grouping of ['maps','vehicles']) {
     await page.locator('#ss-group-'+grouping).click();
     check('Min/mean/max battle statistics remain available for '+grouping,
       await page.locator('#ss-groups .ss-battle-measure').count()===0 &&
-      (await page.locator('#ss-groups .ss-group').first().locator('.ss-metric-head .ss-metric-number').allTextContents()).join('|')==='Min|Średnia|Max' &&
+      (await page.locator('#ss-groups .ss-group').first().locator('.ss-metric-head .ss-metric-number').allTextContents()).join('|')==='Min|Average|Max' &&
       await page.locator('#ss-groups .ss-group').first().locator('.ss-metric-row').count()===2);
   }
   await page.locator('#ss-xp-base').click();
@@ -573,13 +573,13 @@ async function nativeHost(browser, options) {
   await sessions.locator('#ss-scope-instance').click();
   check('Opt-in instance tab has a visible caption and its own results',await sessions.evaluate(()=>
     GRZSessionStats.getState().scope==='instance' && document.querySelector('#ss-summary .ss-kpi-value').textContent==='25' &&
-    document.querySelector('#ss-scope-instance .ss-control-label').textContent==='Instalacja'));
+    document.querySelector('#ss-scope-instance .ss-control-label').textContent==='Installation'));
   await sessions.locator('#ss-reset').click();
   check('Instance reset confirmation explicitly preserves account histories',
-    (await sessions.locator('#ss-confirm-title').innerText()).includes('Instalacja') &&
-    (await sessions.locator('#ss-confirm-message').innerText()).includes('Historie kont'));
+    (await sessions.locator('#ss-confirm-title').innerText()).includes('Installation') &&
+    (await sessions.locator('#ss-confirm-message').innerText()).includes('Account histories'));
   check('Installation confirmation explains that the shared period survives game restarts',
-    (await sessions.locator('#ss-confirm-message').innerText()).includes('zachowa się po ponownym uruchomieniu'));
+    (await sessions.locator('#ss-confirm-message').innerText()).includes('persists across game restarts'));
   await sessions.locator('#ss-reset-confirm').click();
   check('Instance confirmation sends only the instance reset target and current account',await sessions.evaluate(()=>{
     const reset=__grzCommands.filter(x=>x.action==='reset');
@@ -629,7 +629,7 @@ async function nativeHost(browser, options) {
   check('Disabling the shared tab safely returns to the account view and closes its confirmation',
     !(await sessions.locator('#ss-scope-instance').isVisible()) && !(await sessions.locator('#ss-reset-overlay').isVisible()) &&
     await sessions.evaluate(()=>GRZSessionStats.getState().scope==='manual' &&
-      document.querySelector('#ss-scope-launch .ss-control-label').textContent==='Od uruchomienia'));
+      document.querySelector('#ss-scope-launch .ss-control-label').textContent==='Since launch'));
   await sessions.locator('#ss-reset').click();
   await sessions.locator('#ss-reset-confirm').click();
   check('Manual confirmation explicitly targets only the newly active account',await sessions.evaluate(()=>{
@@ -637,6 +637,67 @@ async function nativeHost(browser, options) {
     return reset.length===2 && reset[1].scope==='manual' && reset[1].account_key==='fixture-account-b';
   }));
   await sessions.close();
+  const languages=JSON.parse(fs.readFileSync(path.join(root,'grz.sessionstats.languages.json'),'utf8')).languages;
+  const localized=await nativeHost(browser,{});
+  for(const [language,messages] of Object.entries(languages)) {
+    const snapshot=JSON.parse(JSON.stringify(fixtures.normal));
+    snapshot.scopes.instance=JSON.parse(JSON.stringify(snapshot.scopes.manual));
+    snapshot.localization={language,messages};
+    await localized.evaluate(payload=>{
+      model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+    },snapshot);
+    check('Translated title, accessibility labels and XP for '+language,
+      await localized.title()===messages.title &&
+      await localized.locator('html').getAttribute('lang')===language &&
+      await localized.locator('#ss-close').getAttribute('aria-label')===messages.close &&
+      await localized.locator('#ss-xp-received .ss-control-label').textContent()===messages['xp.received']);
+    await localized.locator('#ss-scope-instance').click();
+    await localized.locator('#ss-reset').click();
+    check('Translated installation reset and persistence explanation for '+language,
+      await localized.locator('#ss-confirm-title').textContent()===messages['reset.instance.title'] &&
+      await localized.locator('#ss-confirm-message').textContent()===messages['reset.instance.body']);
+    await localized.locator('#ss-reset-cancel').click();
+    await localized.locator('#ss-scope-manual').click();
+    await localized.locator('#ss-reset').click();
+    check('Translated account reset explanation for '+language,
+      await localized.locator('#ss-confirm-message').textContent()===messages['reset.manual.body']);
+    await localized.locator('#ss-reset-cancel').click();
+    await localized.locator('#ss-group-battles').click();
+    check('Translated battle outcomes and finance headers for '+language,
+      (await localized.locator('.ss-battle-outcome').allTextContents()).every(value=>
+        ['win','loss','draw'].some(outcome=>value===messages['outcome.'+outcome])) &&
+      await localized.locator('#ss-summary .ss-money-head .ss-money-label').textContent()===messages['finance.currency']);
+    for(const width of [320,744]) {
+      await localized.setViewportSize({width,height:900});
+      await localized.evaluate(width=>{
+        const payload=JSON.parse(model.payload);payload.viewport={width,height:900};
+        model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+      },width);
+      check('Localized controls fit the '+width+'px panel for '+language,await localized.evaluate(()=>
+        Array.from(document.querySelectorAll('.ss-control')).every(control=>{
+          const box=control.getBoundingClientRect(), label=control.querySelector('.ss-control-label');
+          if(!box.width || !box.height || !label)return true;
+          const text=label.getBoundingClientRect();
+          return text.left>=box.left-1 && text.right<=box.right+1 &&
+            text.top>=box.top-1 && text.bottom<=box.bottom+1 && control.title.length>0;
+        })));
+    }
+    await localized.evaluate(()=>GRZSessionStats.update('invalid JSON'));
+    check('Translated parse error for '+language,
+      await localized.locator('#ss-status').textContent()===messages['error.snapshot']);
+  }
+  const custom=JSON.parse(JSON.stringify(fixtures.normal));
+  custom.localization={language:'en',messages:{title:'<img src=x onerror=alert(1)>',refresh:'Reload'}};
+  await localized.evaluate(payload=>GRZSessionStats.update(payload),custom);
+  check('Partial catalogs fall back to English and custom text cannot inject markup',
+    await localized.locator('#ss-refresh .ss-control-label').textContent()==='Reload' &&
+    await localized.locator('#ss-xp-base .ss-control-label').textContent()==='Base XP' &&
+    await localized.locator('.ss-titlebar h1').textContent()===custom.localization.messages.title &&
+    await localized.locator('.ss-titlebar h1 img').count()===0);
+  await localized.evaluate(payload=>GRZSessionStats.update(payload),fixtures.normal);
+  check('Legacy payload without localization restores English',
+    await localized.title()==='Session statistics' && await localized.locator('html').getAttribute('lang')==='en');
+  await localized.close();
   check('No browser JavaScript errors',errors.length===0);
   const report={passed:checks.length,checks,errors,overflow,textOverflow,largeTextOverflow,live_gameface_tested:false,
     regression_fixture:'Models the observed loss of direct button text; actual Coherent rendering still needs an in-game check.'};

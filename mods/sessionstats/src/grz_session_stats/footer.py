@@ -35,12 +35,15 @@ IDLE_ACTIVITY = '{"pending":0,"processing":false}'
 MAX_APPEARANCE_CHARS = 65536
 
 
-def _activity_json(pending_count, processing):
+def _activity_json(pending_count, processing, labels=None):
     # The activity bridge carries counts/state only, never result/account data.
     if (isinstance(pending_count, bool) or
             not isinstance(pending_count, integer_types) or pending_count < 0):
         pending_count = 0
-    return json.dumps({'pending': pending_count, 'processing': processing is True},
+    payload = {'pending': pending_count, 'processing': processing is True}
+    if labels:
+        payload['labels'] = labels
+    return json.dumps(payload,
                       sort_keys=True, separators=(',', ':'))
 
 
@@ -131,6 +134,8 @@ class FooterInstallation(object):
         self._enabled = True
         self._children = []
         self._activity = IDLE_ACTIVITY
+        self._labels = None
+        self._activity_state = (0, False)
         self._activity_warning = False
         self._appearance = ''
         self._appearance_warning = False
@@ -170,7 +175,8 @@ class FooterInstallation(object):
     def set_activity(self, pending_count, processing):
         if not self._enabled:
             return False
-        payload = _activity_json(pending_count, processing)
+        self._activity_state = (pending_count, processing)
+        payload = _activity_json(pending_count, processing, self._labels)
         changed = payload != self._activity
         self._activity = payload
         retained = []
@@ -190,6 +196,19 @@ class FooterInstallation(object):
                 self._warn_activity()
         self._children = retained
         return changed
+
+    def set_language(self, labels):
+        if not self._enabled:
+            return False
+        from .localization import valid_text
+        keys = ('footer.idle', 'footer.processing', 'footer.waiting', 'status.pending', 'metric.wn8')
+        checked = dict((key, labels[key]) for key in keys
+                       if key in labels and valid_text(key, labels[key]))
+        if checked == self._labels:
+            return False
+        self._labels = checked
+        self.set_activity(*self._activity_state)
+        return True
 
     def _warn_appearance(self, exception=False):
         if not self._appearance_warning:

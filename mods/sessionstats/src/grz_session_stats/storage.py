@@ -7,6 +7,8 @@ Readers validate checksums and can recover a previous complete generation.
 """
 from __future__ import unicode_literals
 
+from .localization import message
+
 import errno
 import hashlib
 import json
@@ -82,7 +84,7 @@ class _WriteLock(object):
                 self.handle.close()
             self.handle = None
             _PROCESS_LOCK.release()
-            raise StorageError('Dane s\u0105 zaj\u0119te przez inne uruchomienie lub blokada pliku jest niedost\u0119pna.')
+            raise StorageError(message('storage.busy'))
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -125,7 +127,7 @@ class GenerationStore(object):
         if not isinstance(envelope, dict):
             raise ValueError('invalid envelope')
         if envelope.get('storage_version') != STORAGE_VERSION:
-            raise UnsupportedSchemaError('Nieobs\u0142ugiwana wersja formatu zapisu. Dane pozostaj\u0105 tylko do odczytu.')
+            raise UnsupportedSchemaError(message('storage.format'))
         if envelope.get('generation') != generation:
             raise ValueError('generation mismatch')
         payload = envelope.get('payload')
@@ -135,7 +137,7 @@ class GenerationStore(object):
         if not isinstance(payload, dict):
             raise ValueError('invalid payload')
         if payload.get('schema_version') != self.schema_version:
-            raise UnsupportedSchemaError('Nieobs\u0142ugiwana wersja schematu. Dane pozostaj\u0105 tylko do odczytu.')
+            raise UnsupportedSchemaError(message('storage.schema'))
         return payload
 
     def load(self):
@@ -154,30 +156,28 @@ class GenerationStore(object):
                 continue
             self.sequence = generation
             if damaged:
-                self.warning = ('Odzyskano poprzedni poprawny zapis; najnowszy zapis by\u0142 uszkodzony. '
-                                'Cz\u0119\u015b\u0107 ostatnich wynik\u00f3w mo\u017ce wymaga\u0107 ponownego pobrania.')
+                self.warning = (message('storage.recovered'))
             return payload
         if files:
             self.read_only = True
-            raise StorageError('Nie znaleziono poprawnego zapisu. Uszkodzone pliki nie zosta\u0142y nadpisane.')
+            raise StorageError(message('storage.corrupt'))
         self.sequence = 0
         return None
 
     def save(self, payload):
         if self.read_only:
-            raise StorageError('Zapis jest zablokowany: dane s\u0105 tylko do odczytu.')
+            raise StorageError(message('storage.readonly'))
         if payload.get('schema_version') != self.schema_version:
-            raise UnsupportedSchemaError('Odmowa zapisu nieobs\u0142ugiwanego schematu.')
+            raise UnsupportedSchemaError(message('storage.unsupported_write'))
         try:
             _ensure_directory(self.directory)
             with _WriteLock(self.directory) as lock:
                 if lock.fallback:
-                    self.warning = ('Brak systemowej blokady zapisu: dzia\u0142a ochrona w bie\u017c\u0105cym procesie '
-                                    'i wykrywanie kolizji generacji. U\u017cywaj jednego klienta zapisuj\u0105cego te dane.')
+                    self.warning = (message('storage.no_lock'))
                 files = self._files()
                 on_disk = files[0][0] if files else 0
                 if on_disk != self._observed_generation:
-                    raise StorageError('Dane zmieni\u0142o inne uruchomienie. Wczytaj je ponownie przed zapisem.')
+                    raise StorageError(message('storage.changed'))
                 generation = on_disk + 1
                 final_name = 'state-%020d.json' % generation
                 final_path = os.path.join(self.directory, final_name)
@@ -195,7 +195,7 @@ class GenerationStore(object):
                         os.fsync(handle.fileno())
                     self._decode(temporary, generation)
                     if os.path.exists(final_path):
-                        raise StorageError('Kolizja generacji zapisu; poprzednie dane pozostaj\u0105 zachowane.')
+                        raise StorageError(message('storage.collision'))
                     os.rename(temporary, final_path)
                     self._sync_directory()
                 finally:
@@ -216,7 +216,7 @@ class GenerationStore(object):
         except StorageError:
             raise
         except (IOError, OSError, ValueError, TypeError, UnicodeError):
-            raise StorageError('Nie uda\u0142o si\u0119 trwale zapisa\u0107 statystyk. Poprzedni poprawny zapis jest zachowany.')
+            raise StorageError(message('storage.failed'))
 
     def _sync_directory(self):
         if os.name == 'nt' or not hasattr(os, 'O_DIRECTORY'):

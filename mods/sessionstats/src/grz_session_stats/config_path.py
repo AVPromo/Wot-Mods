@@ -232,7 +232,7 @@ def find_config_path(package_name=None, resmgr=None, cwd=None):
     except Exception:
         code = 'unexpected_location_error'
     try:
-        LOG.warning('CONFIG_PATH code=%s; nie ustalono pliku obok aktywnego .wotmod; użyto ustawień domyślnych.', code)
+        LOG.warning('CONFIG_PATH code=%s; configuration next to the active .wotmod was not resolved; using defaults.', code)
     except Exception:
         pass
     return None

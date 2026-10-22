@@ -15,6 +15,8 @@ The native img:// loader also accepts DDS. No remote graphics or URL guessing.
 """
 from __future__ import absolute_import, unicode_literals
 
+from .localization import message
+
 import re
 
 try:
@@ -217,7 +219,7 @@ def enrich_snapshot(payload, battle_records=None, resolver=None):
         if not source:
             return None
         return {'kind': kind, 'src': source,
-                'alt': _text(name) if name else ('Czo\u0142g' if kind == 'vehicle' else 'Mapa')}
+                'alt': _text(name) if name else (message('visual.vehicle') if kind == 'vehicle' else message('visual.map'))}
 
     for scope in payload['scopes'].values():
         if not isinstance(scope, dict):

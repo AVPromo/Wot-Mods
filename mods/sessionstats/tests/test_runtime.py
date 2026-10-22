@@ -414,7 +414,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(stats['battles'], 1)
         self.assertIsNone(stats['wn8'])
         self.assertEqual(stats['currencies']['bonds']['net'], 28)
-        self.assertTrue(any('tabeli WN8' in warning for warning in self.mod.snapshot()['warnings']))
+        self.assertTrue(any('WN8 table' in warning for warning in self.mod.snapshot()['warnings']))
 
     def test_refresh_uses_pending_cache_and_model_actions_are_limited(self):
         self.begin()

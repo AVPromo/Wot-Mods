@@ -30,6 +30,7 @@ except NameError:
 NUMBER_TYPES = integer_types + (float,)
 
 DEFAULT_CONFIG = {'schema_version': 1,
+ 'language': 'en',
  'colors': {'body_text': '#e5e2cb',
             'body_background': 'transparent',
             'window_border': '#646044',
@@ -197,14 +198,14 @@ body { color:{{colors.body_text}}; font-family:Warhelios, Arial, sans-serif; fon
 /* Gameface has partial button support and its own default text layout.
    Keep captions in explicit boxes, as in the working native footer button. */
 .ss-control { display:flex; align-items:center; justify-content:center; flex-shrink:0; font-family:Warhelios, Arial, sans-serif; font-size:14rem; cursor:pointer; }
-.ss-control-label { display:block; flex-shrink:0; font-family:Warhelios, Arial, sans-serif; font-size:14rem; line-height:18rem; text-align:center; pointer-events:none; }
+.ss-control-label { display:block; flex-shrink:1; min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:Warhelios, Arial, sans-serif; font-size:14rem; line-height:18rem; text-align:center; pointer-events:none; }
 .ss-small-toggle .ss-control-label, .ss-button .ss-control-label { font-size:12rem; line-height:17rem; }
 .ss-close .ss-control-label { font-size:25rem; line-height:28rem; }
 button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-window { position:relative; display:flex; flex-direction:column; width:700rem; height:620rem; max-width:100%; max-height:100%; min-width:300px; border:1rem solid {{colors.window_border}}; border-radius:{{radii.window}}rem; background:{{colors.window_background}}; box-shadow:inset 0 1rem 1rem {{colors.window_shadow_1}}, inset 0 0 28rem {{colors.window_shadow_2}}; }
 .ss-window.is-native { max-width:none; max-height:none; }
 .ss-titlebar { position:relative; display:flex; align-items:center; flex-shrink:0; height:43rem; padding:0 48rem 0 13rem; border-radius:{{radii.titlebar}}rem {{radii.titlebar}}rem 0 0; background:linear-gradient({{colors.titlebar_background_start}}, {{colors.titlebar_background_end}}); }
-.ss-titlebar h1 { font-size:22rem; line-height:26rem; margin:0; font-weight:bold; color:{{colors.title_text}}; text-shadow:0 1rem 2rem {{colors.title_text_shadow}}; }
+.ss-titlebar h1 { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:22rem; line-height:26rem; margin:0; font-weight:bold; color:{{colors.title_text}}; text-shadow:0 1rem 2rem {{colors.title_text_shadow}}; }
 .ss-game-mode { display:block; color:{{colors.game_mode_text}}; font-size:12rem; margin-left:12rem; }
 .ss-close { position:absolute; top:6rem; right:9rem; border:0; background:{{colors.close_background}}; color:{{colors.close_text}}; width:27rem; height:30rem; margin:0; padding:0; font-size:25rem; }
 .ss-close:hover { color:{{colors.close_hover_text}}; }
@@ -547,6 +548,13 @@ def validate_config(raw):
     for key in raw:
         if key not in result:
             reporter.issue(_key_label(key), 'unknown_field')
+    if 'language' in raw:
+        from .localization import LANGUAGE
+        value = raw['language']
+        if isinstance(value, text_type) and LANGUAGE.match(value):
+            result['language'] = value
+        else:
+            reporter.issue('language', 'expected_language_code')
     for section in ('colors', 'radii', 'opacity', 'scroll', 'sessions'):
         if section not in raw:
             continue
