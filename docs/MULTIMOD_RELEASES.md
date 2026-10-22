@@ -115,6 +115,9 @@ The publisher checks the exact revision; missing protection blocks publishing.
 Creating that owner-managed policy is a deployment prerequisite, not something
 this workflow grants to itself.
 
+PR #6 is also accepted on main. Keep its dedicated Stay Sharp tag namespace,
+Ruleset, Environment and approval variables when synchronizing either branch.
+
 ## Testing and operating limits
 
 `tests/test_release_snapshot.py` checks A→B and B→A snapshot assembly using
@@ -133,3 +136,22 @@ runtime compatibility in the World of Tanks client.
 **Required PR check note:** Path-filter-skipped checks may be Pending if
 configured as required. Use an always-running required gate rather than
 requiring a check that is intentionally skipped for unrelated mods.
+
+## Per-mod namespaces and one shared publication lock
+
+| Mod | New tags | Tag Ruleset | Environment | Revision variables |
+|---|---|---|---|---|
+| Stay Sharp | `staysharp-v*` | `staysharp-release-tags` | `staysharp-release` | `STAYSHARP_REVIEWED_RULESET_ID`, `STAYSHARP_REVIEWED_RULESET_UPDATED_AT` |
+| Session Stats | `sessionstats-v*` | `sessionstats-release-tags` | `sessionstats-release` | `SESSIONSTATS_REVIEWED_RULESET_ID`, `SESSIONSTATS_REVIEWED_RULESET_UPDATED_AT` |
+
+Both Environments allow deployments only from **Branch `main`**. This is
+additional to the workflow's own main-ref checks. After the new workflow is
+accepted and old publishers are no longer running, retire the old
+`wotmod-release-tags` Ruleset and `wotmod-release` Environment. The new
+publisher has no fallback to legacy settings and needs no tag aliases.
+
+Separate mod namespaces do not mean separate publication locks. Every publisher
+must still use exactly `wotmod-release-${{ github.repository }}`. Concurrency
+protection applies to cooperating workflows; manual administrator publication,
+queue overflow or failed builds require operator attention and are not repaired
+by another mod's successful release.
