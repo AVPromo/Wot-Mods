@@ -30,9 +30,40 @@ Local tests do not prove rendering correctness inside the game; test each new bu
 
 GitHub's `gh release create` internally creates a draft, uploads assets and publishes the Release as separate requests. **No implementation can guarantee these three steps are atomic.** If a draft is interrupted, the workflow fails visibly; it does not delete the draft or falsely report success. There is intentionally **no custom recovery script or workflow**.
 
+## Required GitHub tag protection (before merging)
+
+The publication workflow **fails closed** unless an active native GitHub
+**tag ruleset** named `wotmod-release-tags` prevents moving/deleting version
+tags. This addresses a race in which `gh release create --verify-tag` only
+checks the existence of the tag; GitHub's Immutable Releases protects tags
+**after publishing**, not during the draft upload.
+
+Configure once in **Settings → Rules → Rulesets → New ruleset → New tag ruleset**:
+
+- **Name:** `wotmod-release-tags`; **Enforcement:** Active.
+- **Target tags:** `v*`, stored by GitHub as `refs/tags/v*`; no exclusions.
+- **Rules:** Restrict updates and Restrict deletions.
+- **Bypass actors:** none. Leave **Restrict creations** unchecked, because
+  GitHub Actions needs to create new version tags.
+
+The publishing job checks these exact conditions with a **read-only**
+`gh api -X GET` call from GitHub's own CLI. This is not a custom HTTP client,
+PAT, outside API or third-party service. It will refuse to publish until
+the native repository protection has been enabled. GitHub's tag ruleset
+configuration requires an authorized repository administrator; the GitHub
+connector used for this PR cannot create or edit repository rulesets.
+
+The script also resolves the tag from the **remote Git server** immediately
+before and after publication and after downloading/verifying release files.
+Unlike a local `git rev-parse`, this detects an unexpected move of the remote
+tag, but the native tag ruleset is the mechanism that *prevents* changes by
+ordinary writers during `gh release create`'s multi-request draft phase.
+A repository administrator capable of disabling the ruleset remains part of
+the trusted computing base.
+
 ## One-time GitHub setting: Immutable Releases
 
-Before the first successful public release, enable **Settings → Releases → Enable release immutability** in this repository. GitHub then protects new published release assets and their associated tags from modification, and generates release attestations. This setting applies to **future** published releases and cannot be enabled by this source-code PR alone.
+Before the first successful public release, enable **Settings → Releases → Enable release immutability** in this repository. GitHub then protects new published release assets and their associated tags from modification, and generates release attestations. This setting applies to **future** published releases and cannot be enabled by this source-code PR alone. **It does not replace the required version-tag ruleset above.**
 
 Check published assets using `gh release verify <tag>` and `gh release verify-asset <tag> <filename>` after enabling immutability. The workflow also always verifies actual downloaded bytes independently of this setting.
 

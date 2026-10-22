@@ -97,6 +97,46 @@ jobs:
           tag="$RELEASE_TAG"
           mod="com.staysharp.medkitreminder_${RELEASE_VERSION}.wotmod"
 
+          # PRECONDITION: native GitHub tag protection is the race-free guard.
+          # --verify-tag only checks existence; immutable Releases protect the
+          # tag AFTER publication, not while gh is uploading its draft assets.
+          # A ruleset blocking updates and deletes (with no bypass actors)
+          # ensures no other writer can retarget the tag mid-publication.
+          policy_ids="$(gh api -X GET "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true" \
+            --jq '.[] | select(.name == "wotmod-release-tags" and .target == "tag" and .enforcement == "active") | .id')"
+          if [[ ! "$policy_ids" =~ ^[0-9]+$ ]]; then
+            echo '::error::Missing active wotmod-release-tags ruleset. Protect refs/tags/v* against updates/deletions (no bypass), then rerun; no Release was created.' >&2
+            exit 1
+          fi
+          policy="$(gh api -X GET "repos/$GITHUB_REPOSITORY/rulesets/$policy_ids")"
+          if ! printf '%s' "$policy" | jq -e '
+            .name == "wotmod-release-tags" and .target == "tag" and .enforcement == "active" and
+            .conditions.ref_name.include == ["refs/tags/v*"] and
+            (.conditions.ref_name.exclude // []) == [] and
+            (.bypass_actors // []) == [] and
+            ([.rules[]?.type] | index("creation") == null and index("update") != null and index("deletion") != null)
+          ' >/dev/null; then
+            echo '::error::Tag ruleset must target refs/tags/v*, be active, prohibit updates/deletion and have no bypass actors.' >&2
+            exit 1
+          fi
+
+          # Read the tag directly from the server, never from a local cache.
+          # Annotated tags need peeling to the commit they reference.
+          check_remote_tag() {
+            local peeled direct sha
+            peeled="$(git ls-remote --tags origin "refs/tags/$tag^{}")"
+            if [[ -n "$peeled" ]]; then
+              sha="${peeled%%$'\t'*}"
+            else
+              direct="$(git ls-remote --tags origin "refs/tags/$tag")"
+              sha="${direct%%$'\t'*}"
+            fi
+            if [[ "$sha" != "$GITHUB_SHA" ]]; then
+              echo "::error::Release tag $tag no longer points to expected build commit; stop publication." >&2
+              return 1
+            fi
+          }
+
           # Ask GitHub CLI about drafts BEFORE creating any tag or Release.
           # No automated deletion or repair of existing releases.
           state="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 2000 --json tagName,isDraft | \
@@ -120,6 +160,8 @@ jobs:
           git fetch --force --no-tags origin "refs/tags/$tag:refs/tags/$tag"
           resolved="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
           test "$resolved" = "$GITHUB_SHA" || { echo 'Tag points to another commit' >&2; exit 1; }
+          # Also check the CURRENT remote target; the local ref may be cached.
+          check_remote_tag
 
           if [[ "$state" == absent ]]; then
             gh release create "$tag" "dist/$mod" dist/SHA256SUMS.txt \
@@ -128,6 +170,10 @@ jobs:
           else
             echo 'Existing published release: verify only, never overwrite.'
           fi
+
+          # Independent check immediately after gh's multi-request publication.
+          # Native tag rules enforce immutability during its draft phase.
+          check_remote_tag
 
           # Verify actual published assets, not merely file names or remote metadata.
           metadata="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets)"
@@ -140,4 +186,6 @@ jobs:
           cmp -- "dist/$mod" "$remote/$mod"
           cmp -- dist/SHA256SUMS.txt "$remote/SHA256SUMS.txt"
           (cd "$remote" && sha256sum --check SHA256SUMS.txt)
+          # Final check re-resolves the Git ref; a local rev-parse is NOT enough.
+          check_remote_tag
           echo "Published and verified: https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag"

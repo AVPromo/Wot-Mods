@@ -45,6 +45,12 @@ No custom HTTP client, third-party publication service or Java is involved; GitH
 
 The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. See [build and release documentation](docs/BUILD_RELEASE.md).
 
+**Mandatory protection before merge:** enable the active GitHub tag
+ruleset `wotmod-release-tags` for `v*`, with **Restrict updates**, **Restrict
+deletions**, and **no bypass actors**. Without it, the publishing workflow
+intentionally stops **before creating a tag or Release**. Details:
+[required release-tag protection](docs/BUILD_RELEASE.md#required-github-tag-protection-before-merging).
+
 ## Privacy and safety
 
 No player ID, nickname, account token, email, API key, machine identifier, private path, telemetry collector or crash dump is shipped in source or releases. The build process scans for common secret/PII patterns. This does **not** anonymize commit author/committer names or prior PR/Actions activity. Runtime logging is local-only and is never uploaded by the mod.

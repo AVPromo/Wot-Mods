@@ -5,6 +5,7 @@ destructive recovery scripts or unsafe token use. Actual publication is
 integration-tested only after a reviewed merge to the main branch.
 """
 from pathlib import Path
+import json
 import re
 import subprocess
 import unittest
@@ -40,12 +41,67 @@ class GitHubNativeReleaseTests(unittest.TestCase):
         self.assertIn('git rev-parse', WORKFLOW)
 
     def test_no_http_api_or_destructive_release_mutation(self):
-        self.assertNotIn('gh api', WORKFLOW)
+        # Official gh api is used *read-only* to validate native tag rules.
+        # No custom HTTP client or GitHub API writes are permitted.
+        self.assertIn('gh api -X GET', WORKFLOW)
+        self.assertNotIn('gh api --method', WORKFLOW)
+        self.assertNotIn('gh api -X POST', WORKFLOW)
+        self.assertNotIn('gh api -X PATCH', WORKFLOW)
+        self.assertNotIn('gh api -X DELETE', WORKFLOW)
         self.assertNotIn('gh release delete', WORKFLOW)
         self.assertNotIn('gh release upload', WORKFLOW)
         self.assertNotIn('--clobber', WORKFLOW)
         self.assertNotIn('--latest=false', WORKFLOW)
         self.assertIn('gh release create', WORKFLOW)
+
+    def test_protection_rules_checked_before_tag_or_release_creation(self):
+        self.assertIn('wotmod-release-tags', WORKFLOW)
+        self.assertIn('refs/tags/v*', WORKFLOW)
+        self.assertLess(WORKFLOW.index('policy_ids='), WORKFLOW.index('git push origin'))
+        self.assertLess(WORKFLOW.index('policy_ids='), WORKFLOW.index('gh release create'))
+        self.assertIn('(.bypass_actors // []) == []', WORKFLOW)
+        self.assertIn('index("update")', WORKFLOW)
+        self.assertIn('index("deletion")', WORKFLOW)
+
+    def test_ruleset_policy_matches_only_effective_immutable_tag_rules(self):
+        # Execute the actual jq policy used in the release workflow against
+        # positive and negative GitHub-style ruleset responses.
+        marker = "if ! printf '%s' \"$policy\" | jq -e '\n"
+        self.assertIn(marker, WORKFLOW)
+        predicate = WORKFLOW.split(marker, 1)[1].split("\n          ' >/dev/null", 1)[0]
+        ruleset = {
+            'name': 'wotmod-release-tags', 'target': 'tag', 'enforcement': 'active',
+            'conditions': {'ref_name': {'include': ['refs/tags/v*'], 'exclude': []}},
+            'bypass_actors': [], 'rules': [{'type': 'update'}, {'type': 'deletion'}]
+        }
+        def policy_ok(value):
+            proc = subprocess.run(['jq', '-e', predicate], input=json.dumps(value),
+                                  text=True, capture_output=True)
+            return proc.returncode == 0
+        self.assertTrue(policy_ok(ruleset))
+        for changes in (
+            {'target': 'branch'}, {'enforcement': 'disabled'},
+            {'conditions': {'ref_name': {'include': ['refs/tags/v2*'], 'exclude': []}}},
+            {'conditions': {'ref_name': {'include': ['refs/tags/v*'], 'exclude': ['refs/tags/v1*']}}},
+            {'bypass_actors': [{'actor_type': 'RepositoryRole', 'actor_id': 5, 'bypass_mode': 'always'}]},
+            {'rules': [{'type': 'deletion'}]}, {'rules': [{'type': 'update'}]},
+            {'rules': [{'type': 'creation'}, {'type': 'update'}, {'type': 'deletion'}]}
+        ):
+            with self.subTest(changes=changes):
+                self.assertFalse(policy_ok({**ruleset, **changes}))
+
+    def test_live_remote_tag_checked_after_publication_and_final_verification(self):
+        first = WORKFLOW.index('          check_remote_tag\n')
+        publish = WORKFLOW.index('            gh release create')
+        after = WORKFLOW.index('          check_remote_tag\n', publish)
+        manifest = WORKFLOW.index('          (cd "$remote" && sha256sum --check SHA256SUMS.txt)')
+        final = WORKFLOW.index('          check_remote_tag\n', manifest)
+        self.assertLess(first, publish)
+        self.assertLess(publish, after)
+        self.assertLess(after, manifest)
+        self.assertLess(manifest, final)
+        self.assertIn('git ls-remote --tags origin "refs/tags/$tag^{}"', WORKFLOW)
+        self.assertIn('git ls-remote --tags origin "refs/tags/$tag"', WORKFLOW)
 
     def test_asset_integrity_and_fail_closed_drafts(self):
         self.assertIn('sha256sum --check SHA256SUMS.txt', WORKFLOW)
