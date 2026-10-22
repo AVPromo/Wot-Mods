@@ -109,6 +109,14 @@
     function coverage(count, total) {
         return hasNumber(count) && count < total ? String(count) + '/' + String(total) : '';
     }
+    function observedTotal(stats) {
+        return hasNumber(stats.observed_battles) && stats.observed_battles >= (stats.battles || 0) ?
+            stats.observed_battles : (stats.battles || 0);
+    }
+    function battleCount(stats) {
+        var total = observedTotal(stats);
+        return number(stats.battles) + (total > (stats.battles || 0) ? ' / ' + number(total) : '');
+    }
     function selected(id, active) {
         var button = document.getElementById(id);
         button.className = button.className.replace(/\s*is-active/g, '') + (active ? ' is-active' : '');
@@ -157,7 +165,7 @@
     }
     function details(parent, stats, global, battle) {
         stats = stats || {};
-        var total = stats.battles || 0;
+        var total = observedTotal(stats);
         var holder = append(parent, element('div', 'ss-details' + (battle ? ' ss-battle-details' : '')));
         var performance = append(holder, element('div', 'ss-performance' + (battle ? ' ss-battle-performance' : '')));
         append(performance, element('h3', 'ss-detail-title', battle ? 'Wynik bitwy' : 'Skuteczność bojowa'));
@@ -216,8 +224,9 @@
     function renderSummary(stats, scope) {
         clear(nodes.summary);
         var headline = append(nodes.summary, element('div', 'ss-headline'));
-        headlineStat(headline, 'Bitwy', number(stats.battles), false, false);
-        headlineStat(headline, 'Win rate', rate(stats.win_rate), false, false);
+        var missing = observedTotal(stats) > (stats.battles || 0);
+        headlineStat(headline, missing ? 'Bitwy z wynikiem' : 'Bitwy', battleCount(stats), false, false);
+        headlineStat(headline, missing ? 'Win rate*' : 'Win rate', rate(stats.win_rate), false, false);
         headlineStat(headline, 'WN8 zakresu', integer(stats.wn8), true, false);
         var outcomes = append(nodes.summary, element('p', 'ss-outcomes'));
         append(outcomes, element('span', '', 'Zwycięstwa '));
@@ -228,6 +237,14 @@
         append(outcomes, element('strong', '', number(stats.draws)));
         if (scope.pending > 0) {
             append(outcomes, element('span', '', '  ·  Oczekujące: ' + number(scope.pending)));
+        }
+        if (missing) {
+            append(nodes.summary, element('p', 'ss-data-notice',
+                'Niepełne statystyki: wyniki ' + number(stats.battles) + ' z ' + number(observedTotal(stats)) +
+                ' zarejestrowanych bitew. Procenty, średnie i sumy dotyczą odebranych danych.'));
+        } else if (stats.partial_results > 0) {
+            append(nodes.summary, element('p', 'ss-data-notice',
+                'Niepełne dane w ' + number(stats.partial_results) + ' wynikach. Braki są oznaczone przy poszczególnych statystykach.'));
         }
         details(nodes.summary, stats, true);
     }
@@ -292,7 +309,7 @@
                 outcome = {win: 'win', loss: 'loss', draw: 'draw'}[item.outcome] || 'unknown';
                 append(header, element('span', 'ss-battle-outcome ss-outcome-' + outcome, battleOutcome(item.outcome)));
             } else {
-                headlineStat(header, 'Bitwy', number(stats.battles), false, true);
+                headlineStat(header, 'Bitwy', battleCount(stats), false, true);
                 headlineStat(header, 'Win rate', rate(stats.win_rate), false, true);
                 headlineStat(header, 'WN8', integer(stats.wn8), true, true);
             }
@@ -391,6 +408,9 @@
         }
         renderGroups(scope);
         var text = number(scope.summary.battles) + ' rozliczonych bitew';
+        if (observedTotal(scope.summary) > (scope.summary.battles || 0)) {
+            text = 'Niepełne dane: wyniki ' + number(scope.summary.battles) + ' / ' + number(observedTotal(scope.summary));
+        }
         if (scope.pending > 0) { text += ' · ' + number(scope.pending) + ' oczekujących'; }
         if (payload.warnings && payload.warnings.length) { text += ' · Uwagi do danych: ' + payload.warnings.length; }
         setStatus(state.actionError || text);

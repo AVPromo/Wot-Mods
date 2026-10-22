@@ -310,13 +310,19 @@ class RuntimeTests(unittest.TestCase):
         current = self.mod.inflight[key]
         retries = dict(self.mod.retries)
         self.clock.value += 11  # Retry backoff has elapsed, timeout has not.
-        for args in ((-1, None), (1, []), (), (1, raw_result())):
+        for args in ((-1, None), (1, []), ()):
             original_callback(*args)
             self.assertIs(self.mod.inflight[key], current)
             self.mod._poll_one(self.mod.active_service, 'EU:7')
             self.assertEqual(self.api.pending_callbacks, [])
             self.assertEqual(self.mod.retries, retries)
             self.assertEqual(self.summary()['battles'], 0)
+        # A valid late stream may be the only copy before the native ACK.
+        # Accept its unknown values without consuming the newer request token.
+        original_callback(1, raw_result())
+        self.assertIs(self.mod.inflight[key], current)
+        self.assertEqual(self.mod.retries, retries)
+        self.assertEqual(self.summary()['battles'], 1)
         retry_callback(1, raw_result())
         self.assertEqual(self.mod.inflight, {})
         self.assertEqual(self.summary()['battles'], 1)

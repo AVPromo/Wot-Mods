@@ -205,6 +205,21 @@ class GameAPI(object):
         cache.get(int(arena_id), callback)
         return True
 
+    def result_cache(self):
+        return getattr(self.player(), 'battleResultsCache', None)
+
+    def result_status(self, code):
+        import AccountCommands
+        for name, status in (('RES_COOLDOWN', 'cooldown'),
+                             ('RES_RATE_LIMIT_COOLDOWN', 'rate_limited'),
+                             ('RES_NON_PLAYER', 'not_ready'),
+                             ('RES_CENTER_DISCONNECTED', 'disconnected'),
+                             ('RES_NOT_AVAILABLE', 'unavailable'),
+                             ('RES_WRONG_ARGS', 'rejected')):
+            if getattr(AccountCommands, name, None) == code:
+                return status
+        return 'not_returned'
+
     def posted_bundle(self, arena_id):
         service = self.results_service
         if service is None or not service.areResultsPosted(int(arena_id)):
@@ -282,6 +297,8 @@ class Runtime(object):
         self._processing = {}
         self._observed_arenas = set()
         self._started_at = None
+        self._cache_observer = None
+        self._recovery_states = {}
         self._footer_activity = None
         self._log_handle = None
         self.log_path = None
@@ -511,6 +528,8 @@ class Runtime(object):
         self._lifecycle = object()
         self._started_at = self.now()
         self._observed_arenas.clear()
+        self._recovery_states.clear()
+        self.retries.clear()
         self.compatibility_warnings.clear()
         self._diagnostics.clear()
         self._hotkey_held = False
@@ -614,6 +633,7 @@ class Runtime(object):
     def stop(self):
         self.running = False
         self._lifecycle = None
+        self._close_cache_observer()
         self._hotkey_held = False
         self._processing.clear()
         self._bonus_account_key = None
@@ -675,7 +695,56 @@ class Runtime(object):
             self.active_key = key
             self.active_service = self.services[key]
             self._publish_activity()
+        self._ensure_cache_observer()
         return self.active_service
+
+    def _close_cache_observer(self):
+        observer = self._cache_observer
+        self._cache_observer = None
+        if observer is not None:
+            try:
+                observer.close()
+            except Exception:
+                self._warn_once('results:observer_cleanup', 'Optional result observer cleanup failed.', visible=False)
+
+    def _ensure_cache_observer(self):
+        getter = getattr(self.api, 'result_cache', None)
+        if not callable(getter):
+            return
+        try:
+            cache = getter()
+            # Avatar/player transitions can temporarily hide the repository's
+            # cache while a legitimate earlier request is still returning.
+            if cache is None:
+                return
+            if self._cache_observer is not None and self._cache_observer.cache is cache:
+                return
+            self._close_cache_observer()
+            if cache is not None:
+                from .cache_observer import CacheObserver
+                self._cache_observer = CacheObserver(cache, self._capture_cache_request,
+                                                     self._consume_observed_cache)
+                self.compatibility_warnings.pop('results:observer', None)
+        except Exception:
+            self._warn_once('results:observer',
+                            'Dodatkowy odczyt wyników klienta jest niedostępny; zdarzenia i kolejka odzyskiwania pozostają aktywne.')
+
+    def _capture_cache_request(self):
+        if not self.running or self.active_service is None or self.api.is_replay():
+            return None
+        dbid = self.api.account_dbid()
+        if not dbid or self.active_key != '{0}:{1}'.format(self.api.region, int(dbid)):
+            return None
+        return self._lifecycle, self.active_key, self.active_service
+
+    def _consume_observed_cache(self, context, arena_id, args):
+        lifecycle, account_key, service = context
+        if not self.running or self._lifecycle is not lifecycle or len(args) < 2:
+            return
+        code, raw = args[:2]
+        if (_number(code, nonnegative=False) is not None and code > 0 and
+                isinstance(raw, dict) and str(raw.get('arenaUniqueID')) == str(arena_id)):
+            self._process(raw, account_key, service, source='native_cache')
 
     def _on_account(self, *args, **kwargs):
         try:
@@ -758,13 +827,17 @@ class Runtime(object):
                                   vehicle_resolver=self.api.vehicle_info, map_resolver=self.api.map_info)
         if record is None:
             return False
+        if source == 'late_cache':
+            # An expired request can still carry the only available result.
+            # Fill unknowns, but never revise facts from a newer delivery.
+            record['reconcile'] = False
         started_at = record.get('started_at')
         if (started_at is not None and self._started_at is not None and
                 self._started_at <= started_at <= self.now()):
             # A current result can arrive even when the avatar-ready event was
             # missed. Replayed historical events must not revive waiting.
             self._observed_arenas.add((account_key, record['arena_id']))
-        if reusable is None:
+        if reusable is None and source != 'late_cache':
             try:
                 # A cache callback can be older than the displayed result.
                 # Consult the native controller so it cannot undo an applied
@@ -875,7 +948,14 @@ class Runtime(object):
                 self.inflight.pop(key, None)
         if self.inflight:
             return
-        for arena_id in service.pending_arena_ids():
+        pending = service.pending_arena_ids()
+        # Native requests are serialized with the stock UI and other mods.
+        # Prefer live battles, then the earliest due result, so the first old
+        # failure cannot repeatedly jump ahead of untried results.
+        pending.sort(key=lambda arena_id: ((account_key, str(arena_id)) not in self._observed_arenas,
+                     self.retries.get((account_key, str(arena_id)), (0, 0))[1],
+                     -(arena_start(arena_id) or 0), str(arena_id)))
+        for arena_id in pending:
             arena_id = str(arena_id)
             key = (account_key, arena_id)
             count, due = self.retries.get(key, (0, 0))
@@ -896,6 +976,16 @@ class Runtime(object):
                 # An expired request may finish after its replacement started.
                 # Only the callback owning the current token can consume it.
                 if self.inflight.get(key) is not request:
+                    if (len(args) >= 2 and _number(args[0], nonnegative=False) is not None and
+                            args[0] > 0 and isinstance(args[1], dict) and
+                            str(args[1].get('arenaUniqueID')) == key[1]):
+                        try:
+                            self._process(args[1], key[0], service, source='late_cache')
+                        except Exception:
+                            self._warn_once('results:late_cache', 'Nie udało się uzupełnić spóźnionego wyniku; bitwa pozostaje do rozliczenia.')
+                            self.monitor.fault('cache_callback', 'battleResultsCache.callback',
+                                               'readable late result', 'exception', 'cache')
+                            self._service_diagnostics()
                     return
                 self.inflight.pop(key, None)
                 try:
@@ -907,11 +997,28 @@ class Runtime(object):
                     elif code > 0:
                         if isinstance(raw, dict) and str(raw.get('arenaUniqueID')) == key[1]:
                             self._process(raw, key[0], service, source='cache')
+                            if key[1] not in service.pending_arena_ids():
+                                self.retries.pop(key, None)
+                                self._recovery_states.pop(key, None)
                         else:
                             self.monitor.check(raw, {'account_dbid': int(key[0].rsplit(':', 1)[1])},
                                                self.api.random_bonus_type, 'cache')
                             self.monitor.fault('cache_identity', 'battleResultsCache.arenaUniqueID',
                                                'requested battle identity', 'missing or mismatched', 'cache')
+                    else:
+                        status_getter = getattr(self.api, 'result_status', None)
+                        status = status_getter(code) if callable(status_getter) else 'not_returned'
+                        if status not in ('cooldown', 'rate_limited', 'not_ready', 'disconnected', 'unavailable', 'rejected'):
+                            status = 'not_returned'
+                        if status in ('cooldown', 'not_ready', 'disconnected', 'rate_limited'):
+                            delay = 30 if status == 'rate_limited' else TICK_SECONDS
+                            self.retries[key] = (count, self.now() + delay)
+                        safe_code = code if code in (-14, -13, -10, -7, -6, -5, -4, -3, -2, -1, 0) else 'unknown'
+                        marker = (status, safe_code)
+                        if self._recovery_states.get(key) != marker:
+                            self._recovery_states[key] = marker
+                            LOG.info('Result recovery: status=%s code=%s attempt=%s pending=%s',
+                                     status, safe_code, count + 1, len(service.pending_arena_ids()))
                 except Exception:
                     self._warn_once('results:cache_callback', 'Nie udało się odczytać zaległego wyniku; bitwa pozostaje do rozliczenia.', exception=True)
                     self.monitor.fault('cache_callback', 'battleResultsCache.callback', 'status and result', 'exception', 'cache')
@@ -919,6 +1026,8 @@ class Runtime(object):
                     self._publish_activity()
                     self._service_diagnostics()
             try:
+                from .cache_observer import OWN_CALLBACK
+                setattr(received, OWN_CALLBACK, True)
                 requested = self.api.request_result(arena_id, received)
             except Exception:
                 requested = False
@@ -939,6 +1048,13 @@ class Runtime(object):
         result['appearance'] = dict(self._presentation)
         warnings = result.setdefault('warnings', [])
         pending, waiting = self._pending_activity()
+        result['recovery'] = {'pending': len(pending),
+                              'in_flight': sum(1 for key in self.inflight if key[0] == self.active_key),
+                              'states': {}}
+        for arena_id in pending:
+            status = self._recovery_states.get((self.active_key, str(arena_id)), ('queued', None))[0]
+            states = result['recovery']['states']
+            states[status] = states.get(status, 0) + 1
         backlog = len(pending - waiting)
         if backlog:
             warnings.append('Niepełne wyniki wcześniejszych bitew: {0}. '

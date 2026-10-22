@@ -187,6 +187,30 @@ async function nativeHost(browser, options) {
   check('Default view is tanks/base XP',(await page.evaluate(()=>GRZSessionStats.getState())).group==='vehicles' && (await page.evaluate(()=>GRZSessionStats.getState())).xp==='base');
   check('Full integer WN8 is shown',values[2]==='2236');
   check('Summary and tank details are present without expanding',await page.locator('#ss-summary .ss-details').isVisible() && await page.locator('#ss-groups .ss-details').count()===3);
+  const missingFixture=JSON.parse(JSON.stringify(fixtures.normal));
+  const missingScope=missingFixture.scopes.launch;
+  missingScope.summary.observed_battles=17;
+  missingScope.summary.missing_results=1;
+  missingScope.pending=1;
+  const missingStats=JSON.parse(JSON.stringify(fixtures.reset.scopes.manual.summary));
+  missingStats.observed_battles=1;
+  missingStats.missing_results=1;
+  missingScope.battles.push({id:'missing-result-fixture',name:'Nieznany pojazd',map:'Nieznana mapa',
+    started_at:missingScope.started_at+1,outcome:null,stats:missingStats});
+  await page.evaluate(p=>GRZSessionStats.update(p),missingFixture);
+  check('Missing battle exposes 16 of 17 results and marks averages incomplete',
+    (await kpis())[0]==='16 / 17' && (await page.locator('#ss-status').innerText()).includes('wyniki 16 / 17') &&
+    (await page.locator('#ss-summary').innerText()).includes('Niepełne statystyki') &&
+    (await page.locator('#ss-summary .ss-kpi-label').allTextContents()).includes('Win rate*'));
+  check('Financial coverage includes the registered battle with no result',
+    (await page.locator('#ss-summary .ss-money-row .ss-cell-coverage').allTextContents()).includes('16/17'));
+  await page.locator('#ss-group-battles').click();
+  const missingCard=(await battleCards(page)).find(row=>row.id==='missing-result-fixture');
+  check('Unrecovered battle stays listed with unknown outcome and dashes rather than fabricated zeros',
+    missingCard && missingCard.outcome==='Nieznany wynik' && missingCard.values.every(row=>row.value==='—') &&
+    missingCard.money.every(row=>row.values.every(value=>value==='—')));
+  await page.evaluate(p=>GRZSessionStats.update(p),fixtures.normal);
+  await page.locator('#ss-group-vehicles').click();
   const wrappedMetricLabels=await page.locator('.ss-metric-row .ss-metric-name .ss-cell-value').evaluateAll(labels=>labels.map(label=>{
       const range=document.createRange(); range.selectNodeContents(label);
       return {text:label.textContent,height:range.getBoundingClientRect().height,
@@ -468,7 +492,8 @@ async function nativeHost(browser, options) {
       GRZSessionStats.getState().nativeBound && document.querySelectorAll('#ss-groups .ss-group').length===3 &&
       __grzCommands.some(x=>x.action==='resize') && __grzHelperCalls.callback===1));
     await degraded.evaluate(()=>{
-      const changed=JSON.parse(model.payload);changed.scopes.launch.summary.battles=0;
+      const changed=JSON.parse(model.payload);
+      Object.assign(changed.scopes.launch.summary,{battles:0,observed_battles:0,missing_results:0,partial_results:0});
       model.payload=JSON.stringify(changed);__grzEvents['viewEnv.onDataChanged']();
       __grzEvents['viewEnv.onDataChanged']();
     });

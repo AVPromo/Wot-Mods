@@ -133,10 +133,13 @@ def _money(records, currency):
 
 
 def aggregate_stats(records, expected_table):
-    records = [record for record in records if record.get('mode') == 'random' and record.get('outcome') in _OUTCOMES]
+    observed = [record for record in records if record.get('mode') in (None, 'random')]
+    records = [record for record in observed if record.get('mode') == 'random' and record.get('outcome') in _OUTCOMES]
     table = expected_table if isinstance(expected_table, ExpectedTable) else ExpectedTable(expected_table)
     count = len(records)
-    stats = {'battles': count,
+    stats = {'battles': count, 'observed_battles': len(observed),
+             'missing_results': len(observed) - count,
+             'partial_results': sum(1 for record in records if not record.get('complete')),
              'wins': sum(1 for record in records if record['outcome'] == 'win'),
              'losses': sum(1 for record in records if record['outcome'] == 'loss'),
              'draws': sum(1 for record in records if record['outcome'] == 'draw')}
@@ -441,17 +444,17 @@ class StatsService(object):
     def _scope(self, key, identifier, label, started_at):
         records = [record for record in self._state['battles'].values()
                    if record.get(key) == identifier and record.get('mode') in (None, 'random')]
-        counted = [record for record in records if record.get('mode') == 'random' and record.get('outcome') in _OUTCOMES]
         scope = {'label': label, 'started_at': started_at,
                  'pending': sum(1 for record in records if self._pending(record)),
-                 'summary': aggregate_stats(counted, self.expected_table), 'vehicles': [], 'maps': [], 'battles': []}
+                 'summary': aggregate_stats(records, self.expected_table), 'vehicles': [], 'maps': [], 'battles': []}
         for group_type, field, name_field in (('vehicles', 'vehicle_id', 'vehicle_name'), ('maps', 'map_id', 'map_name')):
             groups = {}
-            for record in counted:
+            for record in records:
                 identifier = _text(record[field]) if record.get(field) is not None else '__unknown__'
                 groups.setdefault(identifier, []).append(record)
             for identifier, group_records in groups.items():
-                latest = max(group_records, key=lambda row: row.get('_updated_at', 0))
+                named = [row for row in group_records if row.get(name_field)]
+                latest = max(named or group_records, key=lambda row: row.get('_updated_at', 0))
                 fallback = 'Nieznany pojazd' if group_type == 'vehicles' else 'Nieznana mapa'
                 group = {'id': identifier, 'name': latest.get(name_field) or fallback,
                          'tier': latest.get('vehicle_tier') if group_type == 'vehicles' else None,
@@ -459,7 +462,7 @@ class StatsService(object):
                          'stats': aggregate_stats(group_records, self.expected_table)}
                 scope[group_type].append(group)
             scope[group_type].sort(key=lambda group: (-group['stats']['battles'], group['name'].lower(), group['id']))
-        for record in sorted(counted, key=lambda row: (row.get('started_at') or 0, row['arena_id']), reverse=True):
+        for record in sorted(records, key=lambda row: (row.get('started_at') or 0, row['arena_id']), reverse=True):
             scope['battles'].append({'id': record['arena_id'], 'name': record.get('vehicle_name') or 'Nieznany pojazd',
                                      'map': record.get('map_name') or 'Nieznana mapa', 'started_at': record.get('started_at'),
                                      'outcome': record.get('outcome'), 'tier': record.get('vehicle_tier'),

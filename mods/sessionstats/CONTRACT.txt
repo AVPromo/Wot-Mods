@@ -72,6 +72,7 @@ SNAPSHOT -> Window ViewModel string property `payload`
  version: '0.2.7', account_key: string, generated_at: unix seconds,
  expected: {version: string, ...}, warnings: [string],
  appearance: {panel_css:string, footer_css:string, scroll_speed:number},
+ recovery: {pending:int, in_flight:int, states:{status_label:int}},
  scopes: {
   launch: {label:'Od uruchomienia', started_at:seconds, pending:number,
            summary:STATS, vehicles:[GROUP], maps:[GROUP], battles:[BATTLE_ROW]},
@@ -80,7 +81,8 @@ SNAPSHOT -> Window ViewModel string property `payload`
  }
 }
 STATS = {
- battles:int, wins:int, losses:int, draws:int, win_rate:number or null,
+ battles:int, observed_battles:int, missing_results:int, partial_results:int,
+ wins:int, losses:int, draws:int, win_rate:number or null,
  wn8:number or null, wn8_count:int,
  xp_base:SERIES, xp_received:SERIES, free_xp:SERIES, battle_wn8:SERIES,
  currencies:{credits:MONEY, bonds:MONEY, gold:MONEY}
@@ -92,11 +94,31 @@ MONEY = {income:number or null, costs:number or null, net:number or null,
          breakdown:{repair:number or null, ammo:number or null,
                     consumables:number or null, directives:number or null}}
 Partial sums are sums of confirmed known values and must show coverage e.g. 15/16.
+observed_battles includes durable beginnings with no outcome; battles counts known
+outcomes. Missing results remain listed with unknown outcome and unknown numeric
+values. All group/financial coverage uses observed_battles as denominator. Display
+results/observed and an incomplete-data explanation whenever outcomes are missing;
+never silently present the known subset as the whole registered session.
 GROUP = {id:string, name:unicode, tier:integer or null, type:string or null, stats:STATS}
 BATTLE_ROW = {id:string, name:vehicle_name, map:map_name, started_at:seconds,
               outcome:string, tier:int or null, stats:STATS}
 Runtime adds appearance to the snapshot, including snapshots without an active service.
 It is presentation state only; do not persist it in battle/session records or alter history.
+
+OFFLINE RESULT RECOVERY
+Persist beginnings before receiving results. On a later login use the native
+battleResultsCache.get path, which can request the server if the local cache misses.
+Do not introduce HTTP credentials, background processes or a separate API client.
+Optionally observe native cache consumers before their callback/stream ACK, preserving
+arguments, return values and consumers. Validate battle/account identity and retain
+the request's original lifecycle. A failed observer must not interrupt stock/other-mod
+consumers; teardown restores only its own wrapper and clears runtime references.
+Prefer live results then earliest-due work. Native cooldown/login/disconnection must
+not inflate per-battle backoff. Log status labels and known codes only, never IDs or
+arbitrary unknown values. A valid same-lifecycle late stream may fill unknowns with
+reconcile=False, without revising newer facts or clearing a replacement request token.
+Unavailable results remain explicit gaps, not fabricated statistics. Server retention
+is not established by synthetic tests. See docs/OFFLINE_RESULT_RECOVERY.md.
 
 APPEARANCE CONFIGURATION
 The user-facing file is grz.sessionstats.json next to the actual current package

@@ -161,6 +161,20 @@ Gdy brakuje wyniku, mod próbuje odczytać go z dostępnej pamięci wyników kli
 Klient może nie udostępnić starego wyniku po restarcie; mod nie dopisze wtedy
 domniemanej porażki. Nie importuje historii z Tomonika ani bitew sprzed instalacji.
 
+Odczyt korzysta także z natywnego zapytania WoT do serwera, gdy brak lokalnego
+wyniku. Gra może być wyłączona w chwili zakończenia bitwy: zapisany początek
+pozostaje w kolejce i jest rozliczany po następnym zalogowaniu, jeśli serwer
+udostępni wynik. Mod dodatkowo przechwytuje poprawne wyniki odczytywane przez
+sam interfejs klienta, zanim klient potwierdzi ich odbiór. Błędy wspólnego cache
+i niegotowe konto mają osobne ponowienia, a stare braki nie blokują nowych bitew.
+
+Niepełny okres pokazuje np. „Bitwy z wynikiem: 20 / 21”. Brakująca bitwa jest
+widoczna na liście jako nieznany wynik, a pokrycie WN8, PD i finansów obejmuje
+wszystkie zarejestrowane bitwy. Procenty, średnie i sumy dotyczą odebranych danych.
+Wynik odzyskany później uzupełnia pierwotną bitwę i okres, bez duplikowania.
+Gdy serwer nie udostępnia już danych, nie obiecujemy ich odtworzenia; luka
+pozostaje jawna. Szczegóły: source/docs/OFFLINE_RESULT_RECOVERY.md.
+
 Reset rozpoczyna nowy widoczny okres i zachowuje stary dziennik na dysku. Wynik
 bitwy rozpoczętej przed resetem nie trafia do świeżego ręcznego okresu.
 
@@ -382,7 +396,7 @@ node tests/ui-footer-activity.cjs — spinner, stan kolejki, podpowiedź i clean
 node tests/ui-appearance.cjs — style z konfiguracji, fallback i mnożnik rolki.
 Testy Pythona obejmują także walidację JSON, zgodność wartości domyślnych ze
 stylem, ustalanie ścieżki paczki oraz przekazanie konfiguracji do panelu i stopki.
-Weryfikacja źródeł po poprawkach PR #3: 302 testy pod Pythonem 3; ten sam zestaw
+Weryfikacja źródeł po poprawkach PR #3: 327 testów pod Pythonem 3; ten sam zestaw
 pod CPythonem 2.7.18 z 4 pominięciami testów buildera wymagającego Pythona 3.
 Testy obejmują zachowanie spinnera po restarcie i odzyskiwanie starych wyników.
 Style i geometria domyślnego panelu i ikony są porównywane z bazowym wyglądem;

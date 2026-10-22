@@ -12,6 +12,11 @@ Panel pokazuje ich liczbę z wyjaśnieniem; przycisk Odśwież ponawia odczyt.
 Udane odzyskanie rozlicza wynik zwykłą ścieżką, z zachowaniem deduplikacji.
 Nie ma migracji schematu, usuwania historii ani uznawania braków za zera.
 
+Odzyskiwanie i jawne pokrycie statystyk opisuje
+[OFFLINE_RESULT_RECOVERY.md](OFFLINE_RESULT_RECOVERY.md). Wskaźnik aktywności
+nie jest miarą kompletności danych. Ta jest pokazywana osobno jako liczba
+odebranych wyników względem wszystkich zarejestrowanych bitew.
+
 Testy obejmują restart bez nowej bitwy, niegotowy cache, odzyskanie starego
 wyniku, nową bitwę obok zaległości, ręczne odświeżenie i reset zakresu,
 ponowny start tej samej instancji, reconnect do trwającej bitwy oraz stary
