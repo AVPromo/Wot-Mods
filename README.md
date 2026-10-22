@@ -3,7 +3,7 @@
 | Mod | Source and instructions | Releases |
 |---|---|---|
 | Session Stats — WN8, XP, finances, session history | [mods/sessionstats](mods/sessionstats) | `sessionstats-v…` tags, ZIP with dependency and configuration |
-| Stay Sharp — Medkit Reminder | [source](source), description below | `v1.6.…` tags, standalone `.wotmod` |
+| Stay Sharp — Medkit Reminder | [source](source), description below | `staysharp-v…` tags, standalone `.wotmod` |
 
 Both mods can be installed independently. [Latest shared release snapshot](../../releases/latest). Unchanged packages are carried forward byte-for-byte; each mod builds independently. See [release flow](docs/MULTIMOD_RELEASES.md).
 Sources, tests and licenses are separate; the Session Stats license does not cover the medkit mod.

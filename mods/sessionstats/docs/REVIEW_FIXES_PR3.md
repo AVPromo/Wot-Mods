@@ -203,3 +203,7 @@ bridge appearance, optional callback recovery, stable-connection no-ops,
 replacement sizing and destruction during registration or pending retries.
 All 207 panel checks pass locally. Two focused negative controls reproduce
 both findings with the previous JavaScript and pass with the corrected source.
+
+The review summary also identified an obsolete Stay Sharp release prefix.
+The repository README and Session Stats pipeline table now both advertise
+`staysharp-v…`, matching the accepted workflow and per-mod release settings.
