@@ -76,7 +76,7 @@ Account scopes and the optional durable installation scope:
 
 - All mod interface text now uses an English default and a configurable local
   JSON catalog with complete English, Russian, French, Polish, German, Spanish
-  and Ukrainian dictionaries (178 message keys per language).
+  and Ukrainian dictionaries (181 message keys per language, including previews).
 - Root `language` in `grz.sessionstats.json` selects the language. The neighboring
   `grz.sessionstats.languages.json` can override individual messages or add
   languages. The installation ZIP includes the editable file and verifies its

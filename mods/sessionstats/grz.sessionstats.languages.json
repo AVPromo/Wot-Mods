@@ -179,7 +179,10 @@
       "installation.save": "Installation history could not be saved; previous data was preserved.",
       "close.symbol": "×",
       "unknown.vehicle_id": "Vehicle {0}",
-      "unknown.map_id": "Map {0}"
+      "unknown.map_id": "Map {0}",
+      "preview.label": "Preview · synthetic data",
+      "preview.open": "Open panel",
+      "preview.restore": "Restore example"
     },
     "pl": {
       "title": "Statystyki sesji",
@@ -359,7 +362,10 @@
       "installation.save": "Nie udało się zapisać historii instalacji; poprzednie dane zachowano.",
       "close.symbol": "×",
       "unknown.vehicle_id": "Pojazd {0}",
-      "unknown.map_id": "Mapa {0}"
+      "unknown.map_id": "Mapa {0}",
+      "preview.label": "Podgląd · dane przykładowe",
+      "preview.open": "Otwórz panel",
+      "preview.restore": "Przywróć przykład"
     },
     "ru": {
       "title": "Статистика сессии",
@@ -539,7 +545,10 @@
       "installation.save": "История установки не сохранена; предыдущие данные оставлены.",
       "close.symbol": "×",
       "unknown.vehicle_id": "Техника {0}",
-      "unknown.map_id": "Карта {0}"
+      "unknown.map_id": "Карта {0}",
+      "preview.label": "Предпросмотр · пример данных",
+      "preview.open": "Открыть панель",
+      "preview.restore": "Восстановить пример"
     },
     "fr": {
       "title": "Statistiques de session",
@@ -719,7 +728,10 @@
       "installation.save": "Historique de l’installation non sauvegardé ; données précédentes conservées.",
       "close.symbol": "×",
       "unknown.vehicle_id": "Véhicule {0}",
-      "unknown.map_id": "Carte {0}"
+      "unknown.map_id": "Carte {0}",
+      "preview.label": "Aperçu · données fictives",
+      "preview.open": "Ouvrir le panneau",
+      "preview.restore": "Restaurer l’exemple"
     },
     "de": {
       "title": "Sitzungsstatistik",
@@ -899,7 +911,10 @@
       "installation.save": "Installationsverlauf konnte nicht gespeichert werden; vorherige Daten bleiben erhalten.",
       "close.symbol": "×",
       "unknown.vehicle_id": "Fahrzeug {0}",
-      "unknown.map_id": "Karte {0}"
+      "unknown.map_id": "Karte {0}",
+      "preview.label": "Vorschau · Beispieldaten",
+      "preview.open": "Fenster öffnen",
+      "preview.restore": "Beispiel wiederherstellen"
     },
     "es": {
       "title": "Estadísticas de sesión",
@@ -1079,7 +1094,10 @@
       "installation.save": "No se pudo guardar el historial de la instalación; se conservaron los datos anteriores.",
       "close.symbol": "×",
       "unknown.vehicle_id": "Vehículo {0}",
-      "unknown.map_id": "Mapa {0}"
+      "unknown.map_id": "Mapa {0}",
+      "preview.label": "Vista previa · datos ficticios",
+      "preview.open": "Abrir panel",
+      "preview.restore": "Restaurar ejemplo"
     },
     "uk": {
       "title": "Статистика сесії",
@@ -1259,7 +1277,10 @@
       "installation.save": "Історію інсталяції не збережено; попередні дані залишено.",
       "close.symbol": "×",
       "unknown.vehicle_id": "Техніка {0}",
-      "unknown.map_id": "Мапа {0}"
+      "unknown.map_id": "Мапа {0}",
+      "preview.label": "Попередній перегляд · приклад даних",
+      "preview.open": "Відкрити панель",
+      "preview.restore": "Відновити приклад"
     }
   }
 }

@@ -5,6 +5,7 @@ No fixture or demo data is included in the game .wotmod. This tool is optional.
 """
 import copy
 from datetime import datetime, timezone
+from html import escape
 import json
 from pathlib import Path
 import re
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
 from grz_session_stats.core import StatsService, aggregate_stats
 from grz_session_stats.appearance import CONFIG_FILENAME, load_config, build_presentation
+from grz_session_stats.localization import Localizer
 
 
 def snapshots():
@@ -75,9 +77,14 @@ def main():
     output = ROOT/'preview'
     output.mkdir(exist_ok=True)
     normal, reset = snapshots()
-    presentation = build_presentation(load_config(str(ROOT/CONFIG_FILENAME)))
+    config = load_config(str(ROOT/CONFIG_FILENAME))
+    presentation = build_presentation(config)
+    localizer = Localizer(config['language'])
     fixtures = {'normal':normal,'reset':reset}
     (output/'demo_snapshot.json').write_text(json.dumps(fixtures,ensure_ascii=False,indent=2)+'\n', encoding='utf-8')
+    # Keep regression fixtures canonical; localize the generated preview itself.
+    for snapshot in fixtures.values():
+        localizer.snapshot(snapshot)
     html = (ROOT/'ui'/'SessionStats.html').read_text(encoding='utf-8')
     # The standalone page has an outer demo toolbar/background. Compile the
     # configured panel first, then retain that page's own host styles last.
@@ -89,7 +96,7 @@ def main():
                   lambda m:'<script>\n'+js+'\n</script>', html)
     controller = (output/'controller.js').read_text(encoding='utf-8')
     demo = '<script>window.GRZ_DEMO_FIXTURES = '+json.dumps(fixtures,ensure_ascii=False,separators=(',',':')).replace('</','<\\/')+';</script>'
-    html = html.replace('<body>', '<body>\n<div class="demo-toolbar"><span>Podgląd · dane przykładowe</span><button id="demo-reopen" type="button">Otwórz panel</button><button id="demo-restart" type="button">Przywróć przykład</button></div>')
+    html = html.replace('<body>', '<body>\n<div class="demo-toolbar"><span data-i18n="preview.label">Preview · synthetic data</span><button id="demo-reopen" type="button" data-i18n="preview.open">Open panel</button><button id="demo-restart" type="button" data-i18n="preview.restore">Restore example</button></div>')
     html = html.replace('</body>',demo+'\n<script>\n'+controller+'\n</script>\n</body>')
     preview_css = '''
 body { height:auto; min-height:100%; padding:12px; background:#20221c; }
@@ -110,6 +117,16 @@ html { overflow:auto; }
     footer_path = output/'footer-icon.html'
     footer_css = (ROOT/'ui'/'footer.css').read_text(encoding='utf-8')
     footer_html = footer_path.read_text(encoding='utf-8')
+    footer_html = re.sub(r'<html lang="[^"]*">',
+                         lambda unused:'<html lang="'+localizer.language+'">', footer_html)
+    footer_html = re.sub(r'<title>.*?</title>',
+                         lambda unused:'<title>'+escape(localizer.text('title'))+'</title>', footer_html)
+    footer_html = re.sub(r'(<button id="grz-session-stats-footer-button"[^>]*)(>)',
+        lambda match:re.sub(r'(aria-label|title)="[^"]*"',
+            lambda attribute:attribute.group(1)+'="'+escape(localizer.text('footer.idle'), quote=True)+'"',
+            match.group(1))+match.group(2), footer_html)
+    footer_html = re.sub(r'(<span class="grz-session-footer-rating"[^>]*>).*?(</span>)',
+        lambda match:match.group(1)+escape(localizer.text('metric.wn8'))+match.group(2), footer_html)
     footer_html, count = re.subn(r'(<style id="grz-footer-styles">).*?(</style>)',
         lambda m:m.group(1)+'\n'+footer_css+'\n'+m.group(2), footer_html, flags=re.S)
     if count != 1:
