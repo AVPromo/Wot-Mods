@@ -19,7 +19,7 @@ concurrency:
 jobs:
   recover:
     if: github.ref == 'refs/heads/main'
-    name: Rebuild exact tagged source and recreate incomplete draft
+    name: Rebuild exact tagged source after manual draft cleanup
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -81,7 +81,7 @@ jobs:
             sha256sum -c SHA256SUMS.txt
           )
 
-      - name: Resume or verify release using current reviewed publisher
+      - name: Verify or publish release without deleting any existing draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

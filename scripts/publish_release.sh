@@ -55,13 +55,10 @@ existing_commit="$(remote_tag_commit)"
 if [[ -n "$existing_commit" && "$existing_commit" != "$RELEASE_COMMIT" ]]; then
     fail "Tag $RELEASE_TAG belongs to $existing_commit, not $RELEASE_COMMIT"
 fi
-if [[ "$RECOVERY" == 1 && -z "$existing_commit" ]]; then
-    fail 'Recovery requires an existing, correctly targeted Git tag'
-fi
 
-# GitHub CLI lists drafts as well as published releases. A draft cannot be
-# reliably opened via the by-tag REST endpoint, so never infer its absence
-# from `gh release view` returning HTTP 404.
+# GitHub CLI lists drafts as well as published releases. We deliberately do
+# not delete releases: gh release delete has no atomic "if still draft"
+# condition, so an automated cleanup could delete a newly published release.
 release_list="$(gh release list --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease --limit 5000)" || fail 'Cannot list GitHub releases'
 match="$(printf '%s' "$release_list" | jq -c --arg tag "$RELEASE_TAG" '[.[] | select(.tagName == $tag)]')" || fail 'Invalid release listing'
 match_count="$(printf '%s' "$match" | jq 'length')"
@@ -72,39 +69,43 @@ if [[ "$match_count" == 1 ]]; then
     [[ "$prerelease" == false ]] || fail 'Unexpected prerelease for this tag'
     case "$draft" in
         false)
-            printf 'Release %s already published; checking immutable assets.\n' "$RELEASE_TAG"
+            [[ -n "$existing_commit" ]] || fail 'Published release has no materialized Git tag'
+            printf 'Release %s is published; verifying assets without modification.\n' "$RELEASE_TAG"
             ;;
         true)
-            if [[ "$RECOVERY" != 1 ]]; then
-                fail "An interrupted draft $RELEASE_TAG exists. Use the Recovery workflow or remove the draft in GitHub Releases."
-            fi
-            printf 'Recovering interrupted draft %s using native gh release commands.\n' "$RELEASE_TAG"
-            # Only a verified draft is eligible. Keep its Git tag: it still
-            # points at exactly the source commit we rebuilt.
-            if ! gh release delete "$RELEASE_TAG" --yes --repo "$GITHUB_REPOSITORY"; then
-                fail "gh could not delete draft $RELEASE_TAG. Delete ONLY this draft in the GitHub Releases UI (keep the tag), then rerun Recovery."
-            fi
-            # Verify deletion before creating a new Release.
-            after_delete="$(gh release list --repo "$GITHUB_REPOSITORY" --json tagName,isDraft --limit 5000)" || fail 'Cannot recheck deleted draft'
-            [[ "$(printf '%s' "$after_delete" | jq --arg tag "$RELEASE_TAG" '[.[] | select(.tagName == $tag)] | length')" == 0 ]] || fail 'Draft still exists after deletion'
-            match_count=0
+            # Never delete or mutate a possibly-published release based on a
+            # stale list snapshot: a maintainer can publish it concurrently.
+            # The only safe native-CLI recovery is a human-verified draft
+            # removal in GitHub's UI, followed by a fresh workflow run.
+            fail "Release $RELEASE_TAG is an interrupted draft. Check that it is STILL a draft in GitHub Releases; if so, manually delete ONLY the draft (keep the Git tag), then rerun the Recovery workflow. The workflow will never delete a release automatically."
             ;;
         *) fail 'Unrecognized draft state' ;;
     esac
 fi
 
 if [[ "$match_count" == 0 ]]; then
-    if [[ -n "$existing_commit" ]]; then
-        # --verify-tag prevents gh from silently creating/retargeting the tag.
-        create_tag_args=(--verify-tag)
-    else
-        create_tag_args=()
+    if [[ "$RECOVERY" == 1 && -z "$existing_commit" ]]; then
+        fail 'No Git tag for recovery: verify the original workflow commit and manually restore the tag before retrying. Do not infer a draft target from its name.'
     fi
-    create_args=("$RELEASE_TAG" "$MOD_FILE" "$MANIFEST" --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" --title "Stay Sharp Medkit Reminder $RELEASE_TAG" --generate-notes "${create_tag_args[@]}")
-    [[ "$RECOVERY" != 1 ]] || create_args+=(--latest=false)
-    # gh release create natively stages, uploads, then publishes. If it fails
-    # midway, it may leave a draft; recovery handles it in a separate run.
-    gh release create "${create_args[@]}" || fail 'gh release create failed; check for an interrupted draft'
+
+    if [[ -z "$existing_commit" ]]; then
+        # gh release create uploads assets to an unpublished draft first;
+        # GitHub may not materialize its tag until final publication. Prevent
+        # an untagged interrupted draft by pushing a verified tag FIRST.
+        # Only the trusted main-branch publication job uses contents:write.
+        gh auth setup-git --hostname github.com || fail 'Could not configure native GitHub CLI Git authentication'
+        git tag "$RELEASE_TAG" "$RELEASE_COMMIT" || fail 'Could not create the expected local tag'
+        git push origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG" || fail 'Could not push release tag (possibly a concurrent publisher)'
+        [[ "$(remote_tag_commit)" == "$RELEASE_COMMIT" ]] || fail 'Remote tag did not resolve to the built commit'
+    fi
+
+    # --verify-tag is mandatory: creation must NEVER implicitly create a tag
+    # after staging an unfinished draft. GitHub chooses Latest automatically
+    # using its documented release policy; do not force --latest=false.
+    gh release create "$RELEASE_TAG" "$MOD_FILE" "$MANIFEST" \
+        --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" \
+        --title "Stay Sharp Medkit Reminder $RELEASE_TAG" \
+        --generate-notes --verify-tag || fail 'gh release create failed; inspect any interrupted draft before retrying'
 fi
 
 [[ "$(remote_tag_commit)" == "$RELEASE_COMMIT" ]] || fail 'Tag does not point to the expected commit after publication'

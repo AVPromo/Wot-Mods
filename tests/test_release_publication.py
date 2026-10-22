@@ -23,7 +23,7 @@ SHA = 'a' * 40
 OTHER_SHA = 'b' * 40
 REPO = 'example/WotMods'
 
-CLI_STUB = r'''#!/usr/bin/env python3
+CLI_STUB = r'''#!/usr/bin/python3
 import base64, json, os, pathlib, sys
 statefile=pathlib.Path(os.environ['FAKE_STATE'])
 state=json.loads(statefile.read_text())
@@ -42,24 +42,40 @@ def field(flag,default=None):
     except ValueError: return default
 
 if cmd=='git':
-    if args[:2]!=['ls-remote','--tags']:
-        fail('Unexpected git operation')
-    tag=args[-2].split('/')[-1]
-    tag=tag.split('^{')[0]
-    sha=state['tags'].get(tag)
-    if sha: print(sha+'\trefs/tags/'+tag)
+    if args[:2]==['ls-remote','--tags']:
+        tag=args[-2].split('/')[-1].split('^{')[0]
+        sha=state['tags'].get(tag)
+        if sha: print(sha+'\trefs/tags/'+tag)
+        save();sys.exit(0)
+    if args[:1]==['tag'] and len(args)==3:
+        tag,commit=args[1:]
+        if tag in state['local_tags']: fail('Local tag already exists')
+        state['local_tags'][tag]=commit
+        save();sys.exit(0)
+    if args[:2]==['push','origin'] and len(args)==3:
+        tag=args[2].split('/')[-1].split(':')[0]
+        if tag not in state['local_tags']: fail('Missing local tag before push')
+        if tag in state['tags']: fail('Remote tag already exists')
+        if os.environ.get('FAKE_FAIL_PUSH_TAG')=='1': fail('Simulated tag push failure')
+        state['tags'][tag]=state['local_tags'][tag]
+        save();sys.exit(0)
+    fail('Unexpected git operation')
+if cmd=='gh' and args[:2]==['auth','setup-git']:
     save();sys.exit(0)
 if cmd!='gh' or len(args)<2 or args[0]!='release': fail('No native gh release')
 operation=args[1]
 if operation=='list':
     if os.environ.get('FAKE_LIST_FAILURE')=='1': fail('Simulated listing failure')
-    print(json.dumps([{'tagName':k,'isDraft':v['draft'],'isPrerelease':v.get('prerelease',False)}
-                      for k,v in state['releases'].items()]))
+    snap=[{'tagName':k,'isDraft':v['draft'],'isPrerelease':v.get('prerelease',False)}
+          for k,v in state['releases'].items()]
+    if os.environ.get('FAKE_PUBLISH_AFTER_LIST')=='1':
+        for entry in state['releases'].values():
+            entry['draft']=False
+    print(json.dumps(snap))
 if operation=='create':
     tag=args[2]
     if tag in state['releases']: fail('Release already exists')
-    if '--verify-tag' in args and tag not in state['tags']: fail('Tag must exist')
-    if tag not in state['tags']: state['tags'][tag]=field('--target')
+    if '--verify-tag' not in args or tag not in state['tags']: fail('Tag must exist BEFORE creating a draft')
     release={'draft':True,'prerelease':False,'assets':{}}
     state['releases'][tag]=release
     if os.environ.get('FAKE_FAIL_CREATE_AFTER_DRAFT')=='1':
@@ -116,7 +132,7 @@ class NativeReleaseTests(unittest.TestCase):
         self.manifest.write_text(hashlib.sha256(self.mod.read_bytes()).hexdigest() +
                                  '  ' + self.mod.name + '\n',encoding='ascii')
         self.state_path = self.work / 'github.json'
-        self.state = {'tags':{},'releases':{},'actions':[]}
+        self.state = {'tags':{},'local_tags':{},'releases':{},'actions':[]}
         self.store()
 
     def store(self):
@@ -158,6 +174,16 @@ class NativeReleaseTests(unittest.TestCase):
         self.assertFalse(state['releases'][TAG]['draft'])
         self.assertEqual(set(state['releases'][TAG]['assets']),{self.mod.name,self.manifest.name})
         self.assertIn('Published and verified',r.stdout)
+        actions=state['actions']
+        auth=next(i for i,a in enumerate(actions) if a[:3]==['gh','auth','setup-git'])
+        tag=next(i for i,a in enumerate(actions) if a[:2]==['git','tag'])
+        push=next(i for i,a in enumerate(actions) if a[:2]==['git','push'])
+        create=next(i for i,a in enumerate(actions) if a[:3]==['gh','release','create'])
+        self.assertLess(auth,tag)
+        self.assertLess(tag,push)
+        self.assertLess(push,create)
+        self.assertIn('--verify-tag',actions[create])
+        self.assertNotIn('--latest=false',actions[create])
 
     def test_existing_correct_release_is_verified_without_mutation(self):
         self.already_published()
@@ -189,30 +215,66 @@ class NativeReleaseTests(unittest.TestCase):
         self.assertIn('Recovery workflow',r.stderr)
         self.assertTrue(self.load()['releases'][TAG]['draft'])
 
-    def test_recover_draft_recreates_without_moving_tag(self):
+    def test_recovery_never_automatically_deletes_a_draft(self):
         self.state['tags'][TAG]=SHA
         self.state['releases'][TAG]={'draft':True,'prerelease':False,'assets':{}}
         self.store()
-        r=self.run_native(recovery=True);self.assert_ok(r)
+        r=self.run_native(recovery=True)
+        self.assertNotEqual(r.returncode,0)
+        self.assertIn('manually delete ONLY the draft',r.stderr)
+        state=self.load()
+        self.assertTrue(state['releases'][TAG]['draft'])
+        self.assertFalse(any(a[:3]==['gh','release','delete'] for a in state['actions']))
+        self.assertFalse(any(a[:3]==['gh','release','create'] for a in state['actions']))
+
+    def test_recovery_after_manual_draft_deletion_keeps_existing_tag(self):
+        self.state['tags'][TAG]=SHA
+        self.state['releases'][TAG]={'draft':True,'prerelease':False,'assets':{}}
+        self.store()
+        blocked=self.run_native(recovery=True)
+        self.assertNotEqual(blocked.returncode,0)
+        # Manual maintenance in GitHub UI, outside this privileged workflow.
+        self.load()['releases'].pop(TAG)
+        self.store()
+        result=self.run_native(recovery=True)
+        self.assert_ok(result)
         state=self.load()
         self.assertEqual(state['tags'][TAG],SHA)
         self.assertFalse(state['releases'][TAG]['draft'])
-        self.assertTrue(any(a[:3]==['gh','release','delete'] for a in state['actions']))
-        self.assertTrue(any('--latest=false' in a for a in state['actions'] if a[:3]==['gh','release','create']))
+        self.assertFalse(any(a[:3]==['gh','release','delete'] for a in state['actions']))
+        self.assertFalse(any(a[:2]==['git','push'] for a in state['actions']))
+        creates=[a for a in state['actions'] if a[:3]==['gh','release','create']]
+        self.assertEqual(len(creates),1)
+        self.assertIn('--verify-tag', creates[0])
+        self.assertNotIn('--latest=false',creates[0])
 
-    def test_draft_delete_failure_has_manual_instructions(self):
+    def test_tagless_draft_is_detected_and_never_implicitly_tagged(self):
+        self.state['releases'][TAG]={'draft':True,'prerelease':False,'assets':{}}
+        self.store()
+        result=self.run_native(recovery=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('manually delete ONLY the draft',result.stderr)
+        state=self.load()
+        self.assertNotIn(TAG,state['tags'])
+        self.assertTrue(state['releases'][TAG]['draft'])
+        self.assertFalse(any(a[:2] in (['git','push'],['git','tag']) for a in state['actions']))
+
+    def test_draft_published_after_listing_is_never_deleted(self):
         self.state['tags'][TAG]=SHA
         self.state['releases'][TAG]={'draft':True,'prerelease':False,'assets':{}}
         self.store()
-        r=self.run_native(recovery=True,extra={'FAKE_DELETE_FAILURE':'1'})
-        self.assertNotEqual(r.returncode,0)
-        self.assertIn('GitHub Releases UI',r.stderr)
-        self.assertTrue(self.load()['releases'][TAG]['draft'])
+        result=self.run_native(recovery=True,extra={'FAKE_PUBLISH_AFTER_LIST':'1'})
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse(self.load()['releases'][TAG]['draft'])
+        self.assertFalse(any(a[:3]==['gh','release','delete'] for a in self.load()['actions']))
 
-    def test_recover_requires_existing_tag(self):
-        r=self.run_native(recovery=True)
-        self.assertNotEqual(r.returncode,0)
-        self.assertIn('existing',r.stderr)
+    def test_push_tag_failure_never_creates_a_draft(self):
+        result=self.run_native(extra={'FAKE_FAIL_PUSH_TAG':'1'})
+        self.assertNotEqual(result.returncode,0)
+        state=self.load()
+        self.assertNotIn(TAG,state['tags'])
+        self.assertNotIn(TAG,state['releases'])
+        self.assertFalse(any(a[:3]==['gh','release','create'] for a in state['actions']))
 
     def test_recover_wrong_tag_sha_never_deletes(self):
         self.state['tags'][TAG]=OTHER_SHA
@@ -226,6 +288,7 @@ class NativeReleaseTests(unittest.TestCase):
         r=self.run_native(extra={'FAKE_FAIL_CREATE_AFTER_DRAFT':'1'})
         self.assertNotEqual(r.returncode,0)
         self.assertTrue(self.load()['releases'][TAG]['draft'])
+        self.assertEqual(self.load()['tags'][TAG],SHA)
         r=self.run_native()
         self.assertNotEqual(r.returncode,0)
         self.assertIn('Recovery workflow',r.stderr)
@@ -257,9 +320,13 @@ class NativeReleaseTests(unittest.TestCase):
     def test_no_unexpected_release_cli_actions(self):
         self.run_native()
         for args in self.load()['actions']:
-            if args[0] == 'gh':
+            if args[0] == 'gh' and args[1] == 'auth':
+                self.assertEqual(args[2:],[ 'setup-git','--hostname','github.com'])
+            elif args[0] == 'gh':
                 self.assertEqual(args[1], 'release')
-                self.assertIn(args[2], {'create','list','view','download','delete'})
+                self.assertIn(args[2], {'create','list','view','download'})
+            elif args[0] == 'git':
+                self.assertIn(args[1], {'ls-remote','tag','push'})
 
 
 if __name__=='__main__':

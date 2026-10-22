@@ -40,34 +40,35 @@ Runs on every push to `main` and optional manual dispatch, serializing all relea
 1. Compute `v<base_patch + run_number - 1>`; a **rerun uses the same release version**, and failed attempts can leave gaps.
 2. Run full unit tests, privacy scan and deterministic `.wotmod` builder.
 3. Generate `SHA256SUMS.txt` and verify it before any GitHub write.
-4. `scripts/publish_release.sh` uses only **GitHub CLI `gh release`**, read-only Git tag checks (`git ls-remote`) and `sha256sum`. No hand-written REST calls, HTTP client, Java, additional credentials or third-party release service.
-5. If a release tag already exists, its resolved commit is checked against the exact `GITHUB_SHA`. Incorrect tags stop publication; tags are never moved.
-6. `gh release create` takes both built files in one command. GitHub CLI internally creates a temporary draft, uploads its assets and publishes it. It is **not** fully atomic; an interrupted command may leave a draft.
-7. The pipeline recognizes incomplete drafts via `gh release list --json tagName,isDraft` rather than incorrectly treating `gh release view` HTTP 404 as proof of absence. An ordinary release run refuses to overwrite an existing draft.
-8. For already published releases, the pipeline downloads and compares the actual asset bytes with the local build. Both the mod and checksum manifest must match; existing published assets are never modified.
-9. The publication is verified only after GitHub CLI reports it as published and both downloads match `sha256sum`.
+4. `scripts/publish_release.sh` uses only first-party GitHub CLI (`gh`), standard Git and `sha256sum`, without custom HTTP/REST requests, Java, PATs or external publishing services.
+5. Verify that an existing tag resolves to the exact `GITHUB_SHA`. If neither tag nor Release exists, configure Git authentication through `gh auth setup-git` with the scoped `GH_TOKEN`; create and push a lightweight Git tag to **exactly** that commit and verify the remote ref **before** creating any Release draft.
+6. Create the Release using `gh release create --verify-tag` with both assets, preventing the CLI from silently creating a tag only after the upload. This operation stages a draft, uploads, then publishes; it is not atomic, but a failed upload now leaves a verifiable existing tag.
+7. Inspect drafts with `gh release list --json tagName,isDraft,isPrerelease`. A draft is never deleted automatically: the CLI has no atomic delete-if-still-draft operation. Stop and require a maintainer to confirm and manually delete ONLY a still-unpublished draft, preserving the tag, then rerun Recovery.
+8. When the Release is already published, download both immutable assets, check filenames, exact bytes and SHA-256; never overwrite or delete an existing published Release.
+9. After creating a new Release, verify the remote tag SHA, published status, asset names, downloaded bytes and SHA-256. **Do not force `--latest=false`**: GitHub's automatic Latest selection handles the newest recovery appropriately.
 
-The sole GitHub credential is the job-scoped built-in `GITHUB_TOKEN`, passed to GitHub CLI as `GH_TOKEN`. `actions/checkout` is pinned to a commit SHA and configured with `persist-credentials: false`.
-
+The sole GitHub credential is the job-scoped built-in `GITHUB_TOKEN` (environment variable `GH_TOKEN`). The checkout uses a pinned `actions/checkout` commit with `persist-credentials: false`; `gh auth setup-git` is used only to authenticate the initial tag push and does not store a PAT.
 ## Operational limitations
 
 - A public repository does not guarantee an active Actions runner. Check workflow logs/billing/policy on any failure before merging. Offline command-level mocks cannot guarantee success of the real GitHub CLI upload path until a release completes.
-- Release publication is multi-step, not an atomic GitHub operation. A failed run may leave a correctly tagged draft. A manually dispatched Recovery workflow deletes **only that draft** (leaving its existing Git tag intact) and recreates it using one `gh release create` invocation. A corrupt **published** release intentionally requires manual intervention instead of overwriting public binaries.
+- Release publication is multi-step, not an atomic GitHub operation. A failed run may leave a correctly tagged draft. Recovery **never automatically deletes a Release**, because its draft state could change between inspection and deletion. A maintainer must verify/delete only the still-unpublished draft in GitHub's UI, retain the tag, and rerun the Recovery workflow. A corrupt **published** release intentionally requires manual intervention instead of overwriting public binaries.
 - `github.run_number` is workflow-specific. Changing the workflow name or lowering the base `VERSION` requires a review of version collisions. Tags are never moved by the pipeline.
 - The WoT bytecode uses the game's historical CPython 2.7 interpreter and non-public HUD structures. A future game update may require changing the mod.
 - Do not merge until the PR CI actually runs and passes, and perform one live in-game regression test of v1.6.1 after release.
 
 ## Recovery of interrupted draft releases
 
-The original `v1.6.1` publication workflow built correctly but left a draft without files. The manual Recovery workflow uses only native `git` and `gh release` commands:
+The original `v1.6.1` workflow built the mod successfully but left an empty draft. The Recovery workflow rebuilds from the historical tag commit; all GitHub release operations use native `gh release` commands.
 
-1. Validate `vX.Y.Z`, and resolve the existing tag to the exact commit with `git ls-remote` (including annotated tags).
-2. Check out that exact commit, rebuild the original `.wotmod`, run its own unit tests, privacy scan and SHA-256 manifest validation.
-3. Detect the existing release with `gh release list` (drafts included). If it is a **draft**, delete that draft only using `gh release delete --yes` (never `--cleanup-tag`). Then recreate and publish the complete Release using `gh release create TAG .wotmod SHA256SUMS.txt --verify-tag`.
-4. If GitHub CLI cannot delete the draft, fail with instructions to delete just the draft in the Releases UI while retaining the tag, then rerun Recovery.
-5. Verify the published release using `gh release view`, `gh release download`, byte-for-byte comparison and SHA-256.
-6. If already published, verify assets read-only. A wrong commit or a corrupt published release always fails without overwriting it.
+1. Verify the requested tag and resolve it to the correct commit with `git ls-remote`, including annotated tags.
+2. Check out the exact historical source; run its regression tests, privacy audit, deterministic build and SHA-256 manifest checks.
+3. If the Release is published, verify both assets by downloading them. **Never overwrite or delete them.**
+4. If a draft exists, stop safely. In the GitHub Releases UI, confirm that it is **still a draft** and manually delete ONLY that draft, without deleting its Git tag. Then rerun Recovery.
+5. With the preserved tag and no Release, run `gh release create --verify-tag` with both rebuilt assets, and verify the resulting published files and tag.
+6. If a historical draft is missing its tag entirely, refuse automatic recovery: inspect the original Actions run and target commit manually. New publications avoid this case by pushing and verifying the tag **before** creating a draft.
 
-To recover `v1.6.1`, after merging the reviewed fix: **Actions → Recover an interrupted WotMod Release → Run workflow**, choose branch `main`, tag `v1.6.1`. This does not increment the normal Release workflow's version numbering or make the older release the latest one.
+For existing `v1.6.1`, verify that the draft is still unpublished, manually delete just that draft (keep tag `v1.6.1`), then run **Actions → Recover an interrupted WotMod Release**, branch `main`, tag `v1.6.1`. A recovered newest version can become Latest under GitHub's automatic selection; an older release will not be forcibly marked Latest.
 
-The GitHub CLI may use GitHub's own APIs internally; the repository does not implement or contact any external release API or service.
+**Reason for manual cleanup:** the `gh release delete` command has no atomic draft-only precondition. A pre-deletion visibility check cannot rule out a concurrent publication; therefore automated deletion would put an already-published Release at risk.
+
+The GitHub CLI may use GitHub's internal APIs. The repository contains no hand-written HTTP client or integration with an external publishing service.
