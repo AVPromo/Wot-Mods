@@ -94,7 +94,7 @@ async function nativeHost(browser, options) {
     window.__grzEngineOn=[];
     window.__grzEngineOff=[];
     window.__grzRemovedCallbacks=[];
-    window.isDomBuilt=true;
+    window.isDomBuilt=!options.pendingDom;
     window.model={payload:JSON.stringify(snapshot),onAction:function(args){
       window.__grzCommands.push(args);
       if(args.action==='viewport' && options.changedScale) {
@@ -104,7 +104,8 @@ async function nativeHost(browser, options) {
         window.__grzEvents['viewEnv.onDataChanged']();
       }
     }};
-    window.engine={whenReady:Promise.resolve(),on:function(name,fn){window.__grzEngineOn.push(name);window.__grzEvents[name]=fn;},off:function(name){
+    const engineReady=options.pendingEngine ? new Promise(resolve=>{window.__grzResolveEngine=resolve;}) : Promise.resolve();
+    window.engine={whenReady:engineReady,on:function(name,fn){window.__grzEngineOn.push(name);window.__grzEvents[name]=fn;},off:function(name){
       window.__grzEngineOff.push(name);
       if(options.teardown===name || options.teardown==='all') throw new Error('Native unsubscribe rejected');
     }};
@@ -139,7 +140,9 @@ async function nativeHost(browser, options) {
   },{snapshot,options});
   await serveUI(native);
   await native.goto('http://grz-session.test/SessionStats.html');
-  await native.waitForFunction(()=>window.__grzCommands.some(args=>args.action==='resize'));
+  if(options.pendingEngine) { await native.waitForFunction(()=>window.GRZSessionStats); }
+  else if(options.pendingDom) { await native.waitForFunction(()=>window.__grzEngineOn.includes('self.onDomBuilt')); }
+  else { await native.waitForFunction(()=>window.__grzCommands.some(args=>args.action==='resize')); }
   return native;
 }
 
@@ -517,6 +520,42 @@ async function nativeHost(browser, options) {
       __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
     await degraded.close();
   }
+  const loading=await nativeHost(browser,{pendingDom:true});
+  check('Loading panel owns a DOM-ready listener before model binding',await loading.evaluate(()=>
+    !GRZSessionStats.getState().nativeBound && __grzEngineOn.join(',')==='self.onDomBuilt'));
+  check('Destroying a loading panel removes its exact pending DOM-ready callback',await loading.evaluate(()=>{
+    const pending=__grzEvents['self.onDomBuilt'], originalOff=engine.off;
+    let removed=false;
+    engine.off=function(name,callback){
+      if(name==='self.onDomBuilt')removed=callback===pending;
+      originalOff.call(this,name,callback);
+    };
+    GRZSessionStats.destroy();
+    return removed && __grzEngineOff.join(',')==='self.onDomBuilt' && __grzRemovedCallbacks.length===0;
+  }));
+  check('Late DOM-ready events and repeated cleanup cannot bind a destroyed loading panel',await loading.evaluate(()=>{
+    __grzEvents['self.onDomBuilt']();
+    GRZSessionStats.destroy();window.dispatchEvent(new Event('beforeunload'));
+    return !GRZSessionStats.getState().nativeBound && __grzCommands.length===0 &&
+      __grzHelperCalls.callback===0 && __grzEngineOn.length===1 && __grzEngineOff.length===1;
+  }));
+  await loading.close();
+  const engineLoading=await nativeHost(browser,{pendingDom:true,pendingEngine:true});
+  check('Resolving native readiness after destruction cannot register a DOM listener',await engineLoading.evaluate(async()=>{
+    GRZSessionStats.destroy();
+    __grzResolveEngine();
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    window.dispatchEvent(new Event('load'));document.dispatchEvent(new Event('DOMContentLoaded'));
+    return !GRZSessionStats.getState().nativeBound && __grzEngineOn.length===0 &&
+      __grzCommands.length===0 && __grzHelperCalls.callback===0;
+  }));
+  await engineLoading.close();
+  const domReady=await nativeHost(browser,{pendingDom:true});
+  await domReady.evaluate(()=>{window.isDomBuilt=true;__grzEvents['self.onDomBuilt']();});
+  await domReady.waitForFunction(()=>__grzCommands.some(args=>args.action==='resize'));
+  check('A live panel still binds and renders after deferred DOM readiness',await domReady.evaluate(()=>
+    GRZSessionStats.getState().nativeBound && document.querySelector('#ss-summary .ss-kpi-value').textContent==='16'));
+  await domReady.close();
   for(const teardown of ['viewEnv.onDataChanged','self.onScaleUpdated','self.onDomBuilt','callback','all']) {
     const degraded=await nativeHost(browser,{teardown,drag:'supported'});
     await degraded.locator('#ss-titlebar').dispatchEvent('mousedown',{button:0});

@@ -58,6 +58,8 @@ be nonempty plain strings of at most 4,096 characters without control
 characters. JSON files are bounded to 2 MiB; duplicate keys, invalid UTF-8,
 non-finite numbers and unsupported schemas reject the external file. Invalid
 individual translations use their fallback while valid entries still apply.
+Decoder recursion failures also reject only the catalog: the selected bundled
+language, appearance settings and session-tab configuration remain active.
 
 Translations are rendered as text. Native notifications escape rich-text
 markup. No catalog content is evaluated as HTML, JavaScript, Python or CSS;

@@ -109,7 +109,7 @@ def bundled_catalog():
     path = os.path.join(os.path.dirname(__file__), '..', '..', FILENAME)
     try:
         return _read(path)
-    except (IOError, OSError, ValueError, TypeError, UnicodeError):
+    except (IOError, OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         return {'en': dict(ENGLISH)}
 
 
@@ -121,7 +121,9 @@ class Localizer(object):
                 overrides = _read(path)
                 for code, entries in overrides.items():
                     catalogs.setdefault(code, {}).update(entries)
-            except (IOError, OSError, ValueError, TypeError, UnicodeError):
+            except (IOError, OSError, ValueError, TypeError, UnicodeError, RuntimeError):
+                # Decoder recursion uses RuntimeError on Python 2.7 and its
+                # RecursionError subclass on Python 3. Keep config independent.
                 # Neither private file paths, JSON fragments nor values enter logs.
                 LOG.warning('I18N external catalog unavailable; using bundled translations.')
         self.language = language if isinstance(language, text_type) and language in catalogs else 'en'

@@ -684,6 +684,7 @@
         queueResize();
     }
     function afterEngineReady() {
+        if (state.destroyed) { return; }
         if (window.isDomBuilt) { bindModel(); }
         else { window.engine.on('self.onDomBuilt', bindModel); }
     }
@@ -713,12 +714,13 @@
                     window.engine.off('self.onScaleUpdated', onScaleUpdated);
                 }
             } catch (error) { /* Continue removing the other native listeners. */ }
-            try {
-                if (window.engine && typeof window.engine.off === 'function') {
-                    window.engine.off('self.onDomBuilt', bindModel);
-                }
-            } catch (error) { /* Model callback removal remains independent. */ }
         }
+        // DOM readiness can be pending before the model has ever been bound.
+        try {
+            if (window.engine && typeof window.engine.off === 'function') {
+                window.engine.off('self.onDomBuilt', bindModel);
+            }
+        } catch (error) { /* Model callback removal remains independent. */ }
         try {
             if (callbackId !== null && window.viewEnv && typeof window.viewEnv.removeDataChangedCallback === 'function') {
                 window.viewEnv.removeDataChangedCallback(callbackId, 0);
@@ -733,7 +735,7 @@
     };
     window.addEventListener('beforeunload', cleanup);
     function connectNative() {
-        if (state.connecting) { return; }
+        if (state.destroyed || state.connecting) { return; }
         if (window.engine && window.engine.whenReady && typeof window.engine.whenReady.then === 'function') {
             state.connecting = true;
             window.engine.whenReady.then(afterEngineReady);

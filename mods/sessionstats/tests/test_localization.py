@@ -93,6 +93,76 @@ class LocalizationTests(unittest.TestCase):
         os.unlink(self.path)
         self.assertEqual(loc.Localizer('fr', self.path).text('refresh'), 'Actualiser')
 
+    def nested_catalog(self):
+        depth = max(16384, sys.getrecursionlimit() * 16)
+        raw = (b'{"schema_version":1,"languages":{"uk":{"title":' +
+               b'[' * depth + b'"CATALOG_NESTED_SENTINEL"' + b']' * depth + b'}}}')
+        self.assertLess(len(raw), loc.MAX_BYTES)
+        # Exercise the real decoder on both runtime interpreters. RecursionError
+        # is a RuntimeError subclass on Python 3; Python 2.7 uses RuntimeError.
+        with self.assertRaises(RuntimeError):
+            loc.decode(raw)
+        return raw
+
+    def test_external_decoder_recursion_retains_the_selected_bundled_language(self):
+        with io.open(self.path, 'wb') as stream:
+            stream.write(self.nested_catalog())
+        translator = loc.Localizer('uk', self.path)
+        self.assertEqual(translator.language, 'uk')
+        self.assertEqual(translator.messages, self.catalog['uk'])
+
+    def test_source_catalog_recursion_uses_the_embedded_english_fallback(self):
+        import types
+        raw = self.nested_catalog()
+        resource_manager = types.ModuleType(str('ResMgr'))
+        resource_manager.openSection = lambda unused: None
+        previous_module = sys.modules.get('ResMgr')
+        previous_read = loc._read
+        sys.modules['ResMgr'] = resource_manager
+        loc._read = lambda unused: loc.decode(raw)
+        try:
+            self.assertEqual(loc.bundled_catalog(), {'en': loc.ENGLISH})
+        finally:
+            loc._read = previous_read
+            if previous_module is None:
+                del sys.modules['ResMgr']
+            else:
+                sys.modules['ResMgr'] = previous_module
+
+    def test_nested_catalog_does_not_discard_valid_runtime_appearance_or_sessions(self):
+        config_path = os.path.join(self.directory, 'grz.sessionstats.json')
+        config = {'language': 'uk', 'colors': {'window_border': '#123456'},
+                  'scroll': {'speed_multiplier': 2}, 'sessions': {'instance_tab': True}}
+        with io.open(config_path, 'w', encoding='utf-8') as stream:
+            stream.write(loc.text_type(json.dumps(config)))
+        self.write({})
+        mod = Runtime(api=FakeAPI(), data_dir=self.directory, expected_table=EXPECTED,
+                      now=Clock(), window=FakeWindow(), footer_installer=lambda unused: None,
+                      appearance_path=config_path, installation_dir=self.directory)
+        try:
+            mod.start()
+            service = mod.active_service
+            service.begin_battle('fixture-pending', vehicle_name='Leopard 1', map_name='Malinovka')
+            saved = copy.deepcopy(service._state)
+            presentation = copy.deepcopy(mod.snapshot()['appearance'])
+            installation = mod._instance_session
+            self.assertIn('#123456', presentation['panel_css'])
+            self.assertEqual(presentation['scroll_speed'], 2)
+            with io.open(self.path, 'wb') as stream:
+                stream.write(self.nested_catalog())
+            mod.on_action({'action': 'refresh'})
+            payload = mod.snapshot()
+            self.assertEqual(payload['appearance'], presentation)
+            self.assertEqual(payload['localization']['language'], 'uk')
+            self.assertEqual(payload['localization']['messages'], self.catalog['uk'])
+            self.assertIn('instance', payload['scopes'])
+            self.assertTrue(mod._instance_tab_enabled)
+            self.assertIs(mod._instance_session, installation)
+            self.assertIs(mod.active_service, service)
+            self.assertEqual(service._state, saved)
+        finally:
+            mod.stop()
+
     def test_legacy_polish_and_canonical_warnings_translate_without_rewriting_history(self):
         old = loc.LEGACY_POLISH['runtime.backlog'].format(13)
         snapshot = {'warnings': [old, loc.ENGLISH['normalize.finance']], 'scopes': {

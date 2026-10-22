@@ -96,3 +96,19 @@ Account scopes and the optional durable installation scope:
   repaint artifacts while retaining the original exact style/layout comparison
   and pixel thresholds. All six assets reproduce; recursive privacy and
   cross-mod integration checks pass. Native Gameface still needs in-game review.
+
+## Catalog recursion and pending panel readiness
+
+- Review 5612698603: external and source-catalog loading now handle decoder
+  `RuntimeError`, which also covers Python 3 `RecursionError`. A deeply nested
+  catalog below the byte limit falls back locally. Valid language, appearance,
+  scroll speed and installation-tab settings are preserved; account/session
+  records are unchanged. Source-only fallback can still use embedded English.
+- Three regressions use real decoder recursion on Python 2.7 and Python 3:
+  external-catalog fallback, source-catalog fallback, and runtime Refresh with
+  customized appearance, an enabled installation tab and existing history.
+- The older pending-DOM review thread is also fixed: cleanup removes the exact
+  `self.onDomBuilt` callback even when model binding has not started. Late engine
+  readiness and load events cannot create new subscriptions after destruction.
+  Five browser checks cover pending subscription ownership/removal, retained
+  callbacks, delayed engine readiness and normal deferred rendering.
