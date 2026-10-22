@@ -3,16 +3,20 @@ name: Release WotMod
 on:
   push:
     branches: [main]
+    # Only Stay Sharp sources and its build/release machinery cause a release.
+    paths:
+      - 'source/**'
+      - 'assets/**'
+      - 'VERSION'
+      - 'scripts/release_version.py'
+      - 'scripts/release_snapshot.sh'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Keep release runs from interfering with one another; never cancel an upload.
-concurrency:
-  group: wotmod-release-${{ github.repository }}
-  cancel-in-progress: false
-
+# Independent builds can run in parallel. Only publication is serialized.
 jobs:
   build:
     name: Test and build (read-only)
@@ -59,6 +63,12 @@ jobs:
     name: Publish GitHub Release (write after successful build)
     needs: build
     if: github.ref == 'refs/heads/main'
+    # ALL mod publishers must share this lock from latest snapshot through upload.
+    # queue:max preserves rapid merge events instead of canceling pending runs.
+    concurrency:
+      group: wotmod-release-${{ github.repository }}
+      queue: max
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     permissions:
@@ -91,7 +101,31 @@ jobs:
           test -f "dist/com.staysharp.medkitreminder_${RELEASE_VERSION}.wotmod"
           (cd dist && sha256sum --check SHA256SUMS.txt)
 
+      - name: Carry unchanged mods from latest immutable Release
+        id: snapshot
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Acquire the shared publish lock BEFORE reading Latest. A reverse-
+          # ordered older build exits 75 rather than rolling back a newer mod.
+          if bash scripts/release_snapshot.sh dist \
+              "com.staysharp.medkitreminder_${RELEASE_VERSION}.wotmod" \
+              'com.staysharp.medkitreminder_*.wotmod'; then
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [[ "$status" == 75 ]]; then
+              echo '::notice::An equal/newer Stay Sharp build is already Latest; no obsolete Release created.'
+              echo 'publish=false' >> "$GITHUB_OUTPUT"
+            else
+              exit "$status"
+            fi
+          fi
+
       - name: Create and verify GitHub Release
+        if: steps.snapshot.outputs.publish == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -186,9 +220,9 @@ jobs:
           check_remote_tag
 
           if [[ "$state" == absent ]]; then
-            gh release create "$tag" "dist/$mod" dist/SHA256SUMS.txt \
-              --repo "$GITHUB_REPOSITORY" --verify-tag \
-              --title "Stay Sharp Medkit Reminder $tag" --generate-notes
+            gh release create "$tag" dist/* \
+              --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+              --title "WotMods $tag (Stay Sharp updated)" --generate-notes
           else
             echo 'Existing published release: verify only, never overwrite.'
           fi
@@ -199,14 +233,20 @@ jobs:
 
           # Verify actual published assets, not merely file names or remote metadata.
           metadata="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets)"
-          printf '%s' "$metadata" | jq -e --arg tag "$tag" --arg mod "$mod" \
-            '.tagName == $tag and .isDraft == false and .isPrerelease == false and ([.assets[].name] | sort) == ([$mod, "SHA256SUMS.txt"] | sort)' >/dev/null
+          printf '%s' "$metadata" | jq -e --arg tag "$tag" \
+            '.tagName == $tag and .isDraft == false and .isPrerelease == false' >/dev/null
+          # Check the COMPLETE published snapshot, not just the changed mod.
+          expected="$(find dist -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+          listed="$(printf '%s' "$metadata" | jq -r '.assets[].name' | LC_ALL=C sort)"
+          test "$listed" = "$expected" || { echo 'Release asset list mismatch' >&2; exit 1; }
           remote="$(mktemp -d)"
           trap 'rm -rf -- "$remote"' EXIT
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$remote" \
-            --pattern "$mod" --pattern SHA256SUMS.txt
-          cmp -- "dist/$mod" "$remote/$mod"
-          cmp -- dist/SHA256SUMS.txt "$remote/SHA256SUMS.txt"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$remote"
+          received="$(find "$remote" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+          test "$received" = "$expected" || { echo 'Downloaded asset list mismatch' >&2; exit 1; }
+          while IFS= read -r name; do
+            cmp -- "dist/$name" "$remote/$name" || exit 1
+          done <<< "$expected"
           (cd "$remote" && sha256sum --check SHA256SUMS.txt)
           # Final check re-resolves the Git ref; a local rev-parse is NOT enough.
           check_remote_tag

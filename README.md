@@ -7,7 +7,7 @@ The mod uses the regular consumables HUD and works independently of arcade, snip
 
 ## Downloads
 
-**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. Only fully published Releases are downloadable; a failed draft is not a usable release.
+**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest published release. The latest immutable Release is a **snapshot**: it may also include unchanged files of other mods, carried byte-for-byte from the preceding verified Release. An update to Session Stats does **not** rebuild Stay Sharp. Only fully published Releases are downloadable; a failed draft is not a usable release.
 
 ## Installation
 
@@ -33,17 +33,22 @@ sha256sum dist/*.wotmod
 
 The `assets/medkit_pulse_master.dds.b85` file is a compressed, ASCII-encoded source DDS. The builder recreates **all 21 original DDS animation frames byte-for-byte** using an exact, tested alpha-scaling formula; the full assets do not need to be separately committed. The **historical v1.6.0** artifact has SHA-256 `9f3d98948ed398c3a4dc14b6785b68f10f1319381f896c6cd49b8709359c4927`. This legacy check applies only when building v1.6.0. Current code starts at **v1.6.1**, which includes a Windows log-rotation fix.
 
-See [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](docs/REVIEW_1.6.0.md), and [installation guide](docs/INSTALACJA.md).
+See [independent builds and shared Release snapshots](docs/MULTIMOD_RELEASES.md), [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](docs/REVIEW_1.6.0.md), and [installation guide](docs/INSTALACJA.md).
 
 ## Changes, reviews and releases
 
 1. Submit a PR to `main`. GitHub Actions runs unit tests, privacy checks and a deterministic build with **read-only** repository permissions.
 2. After review and merge, GitHub Actions builds and validates the `.wotmod`, transfers the verified files to a separate **write-scoped publishing job** using official `actions/upload-artifact` / `download-artifact`, and creates a GitHub Release with official `gh release create`.
-3. Every new push to `main` produces a unique patch version derived from the Release workflow run number. Retrying a successful run verifies the existing release without overwriting it; a failed run can leave a gap in release numbers.
+3. Only a push to `main` that changes Stay Sharp files (or its release/build machinery) triggers a Stay Sharp build and an incremented patch version. Session Stats language/configuration changes do not trigger this workflow. The new Release contains the rebuilt Stay Sharp and unchanged verified mod assets from the previous immutable Latest Release. Retrying a successful run verifies immutable assets without overwriting them; a failed run can leave a gap in release numbers.
 
 No custom HTTP client, third-party publication service or Java is involved; GitHub's own CLI and built-in `GITHUB_TOKEN` handle the release. Neither the workflow nor a separate recovery script deletes an existing Release. If publication is interrupted, check the draft manually; the pipeline fails safely instead of guessing what to remove.
 
-The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. See [build and release documentation](docs/BUILD_RELEASE.md).
+The historical first run created an empty **draft `v1.6.1`**. It is not public as a downloadable release and does not prevent the next distinct build (expected `v1.6.2`). Before merging the simplified release workflow, enable **Settings → Releases → Enable release immutability** for future published assets and tags. Multiple mods are built separately. Shared GitHub Releases keep unchanged mod
+packages byte-for-byte: publish jobs use GitHub Actions `queue: max` to avoid
+simultaneous-merge races and skip obsolete same-mod builds. See
+[mod independence and concurrent merges](docs/MULTIMOD_RELEASES.md).
+
+See [build and release documentation](docs/BUILD_RELEASE.md).
 
 **Mandatory protection before merge:** configure the active GitHub tag
 ruleset `wotmod-release-tags` for `v*`, with **Restrict updates**, **Restrict

@@ -21,12 +21,13 @@ Local tests do not prove rendering correctness inside the game; test each new bu
 ## GitHub Actions: deliberately simple and GitHub-native
 
 - **PR CI:** `.github/workflows/ci.yml` checks source, privacy and builds. It has `contents: read` and **cannot publish** a release.
-- **Automatic Release:** `.github/workflows/release.yml` runs after each push to `main` (including a merged PR) or a manual dispatch. No third-party release platform, custom REST/HTTP client or Java.
+- **Automatic Release:** `.github/workflows/release.yml` runs only when **Stay Sharp-owned** source/assets/version/build files change on `main` (or manual dispatch). Changes confined to `mods/sessionstats/**` do **not** build or release Stay Sharp. No third-party release platform, custom REST/HTTP client or Java.
 - **Build job:** read-only checkout, unit tests, source/privacy scan, deterministic `.wotmod` + `SHA256SUMS.txt` validation. GitHub's first-party `actions/upload-artifact` preserves the verified output between jobs.
 - **Publish job:** only after a green build, and only on `main`, grants `contents: write`, downloads **that same** build with `actions/download-artifact`, verifies SHA-256 again, creates the Git tag pointing to the exact merge commit (if absent), and checks it.
-- **Release:** a single official `gh release create --verify-tag` uploads both files and publishes. The workflow then downloads the published assets and checks their bytes, filename set and SHA-256. Existing published assets are verified but never overwritten.
+- **Carry-forward:** before publication, `scripts/release_snapshot.sh` downloads the repository's previous **Latest immutable Release** with GitHub CLI, verifies its complete SHA-256 manifest, and copies unchanged assets from other mods byte-for-byte. It replaces only Stay Sharp's previous package and regenerates `SHA256SUMS.txt` for the entire set. It **never runs Session Stats' builder**.
+- **Release:** a single official `gh release create --verify-tag --latest` uploads the entire verified snapshot. The workflow then downloads all published assets and checks their bytes, filename set and SHA-256. Existing published assets are verified but never overwritten.
 - First-party GitHub Actions are pinned to their exact full commit hashes. The only credential is the ephemeral, repository-scoped `GITHUB_TOKEN`; the build job never receives a write-capable token. The publish job's checkout uses this token only to push the Git tag.
-- `concurrency` serializes releases without cancellation. No automation deletes, moves, modifies or retargets existing Releases.
+- A **publish-job-only** shared `concurrency` group with `queue: max` serializes all mod publications (up to 100 pending) without blocking independent builds or replacing pending merge events. Older same-mod builds are skipped if Latest already contains a newer primary package; no automation deletes, moves, modifies or retargets existing Releases.
 
 GitHub's `gh release create` internally creates a draft, uploads assets and publishes the Release as separate requests. **No implementation can guarantee these three steps are atomic.** If a draft is interrupted, the workflow fails visibly; it does not delete the draft or falsely report success. There is intentionally **no custom recovery script or workflow**.
 
@@ -124,3 +125,21 @@ The first merged workflow on `main` had run number 1, producing `v1.6.1`, but pu
 For now, this pipeline builds **Stay Sharp only**. The repo can contain other mods, but `/releases/latest` is a repository-wide pointer. A future multi-mod release workflow must be explicitly designed and reviewed before combining artifacts.
 
 WoT upgrades may change the Python interpreter, HUD, or private methods used by the mod; this pipeline cannot guarantee runtime compatibility with untested game updates.
+
+See [independent builds and shared immutable Release snapshots](MULTIMOD_RELEASES.md) for cross-mod concurrency and migration requirements. PR-only path-filter-skipped checks should not be configured as mandatory branch protection checks without an always-running gate.
+
+### Fast successive merges across multiple mods
+
+The publish step acquires the same `wotmod-release-${{ github.repository }}`
+**job-level** mutex for every mod; `queue: max` keeps up to 100 waiting
+publications rather than discarding an earlier pending workflow. The shared
+mutex covers **reading current Latest**, copying unchanged files, creating
+and verifying the new Release. Build jobs remain independent and parallel.
+
+If A and B merge back-to-back, either publication order yields a complete
+Latest containing A-new and B-new, because the second publisher reads the
+first publisher's finished snapshot. If two versions of A publish in reverse
+order, the older run exits as a successful no-op, never reverting A to an old
+binary. Every mod's release workflow must use the same lock and the same
+`release_snapshot.sh DIST PRIMARY_FILE PRIMARY_GLOB ...` contract; otherwise
+this guarantee does not hold. See [MULTIMOD_RELEASES.md](MULTIMOD_RELEASES.md).
