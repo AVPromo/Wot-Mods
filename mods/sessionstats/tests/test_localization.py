@@ -168,7 +168,7 @@ class LocalizationTests(unittest.TestCase):
         with io.open(config_path, 'w', encoding='utf-8') as stream:
             stream.write(loc.text_type(json.dumps(config)))
         self.write({})
-        mod = Runtime(api=FakeAPI(), data_dir=self.directory, expected_table=EXPECTED,
+        mod = Runtime(deferred_loading=False, api=FakeAPI(), data_dir=self.directory, expected_table=EXPECTED,
                       now=Clock(), window=FakeWindow(), footer_installer=lambda unused: None,
                       appearance_path=config_path, installation_dir=self.directory)
         try:
@@ -254,7 +254,7 @@ class LocalizationTests(unittest.TestCase):
                 stream.write(loc.text_type(json.dumps({'language': code})))
         configure('fr')
         api = FakeAPI()
-        mod = Runtime(api=api, data_dir=self.directory, expected_table=EXPECTED,
+        mod = Runtime(deferred_loading=False, api=api, data_dir=self.directory, expected_table=EXPECTED,
                       now=Clock(), window=FakeWindow(), footer_installer=lambda unused: None,
                       appearance_path=config_path, installation_dir=self.directory)
         try:

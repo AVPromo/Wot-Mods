@@ -324,11 +324,18 @@ from its identifier, not its nickname. Data is outside mods/2.4.1.0, so moving
 the mod to a new client version does not erase the manual period. Saves append
 checksummed changes to mirrored journals and retain three atomic commit descriptors.
 Back up the entire account/installation directory while the game is closed,
-including journal/ and its .bak files; state-*.json alone is not a complete backup.
+including journal/, its .bak files and startup-intake/; state-*.json alone is not
+a complete backup.
 Unknown newer formats block writes instead of damaging files. Older releases
 cannot write the new journal format. History lists use pages of 40 rows; totals
-still cover the whole period. Initial history loading remains synchronous; see
-docs/HISTORY_PERFORMANCE.md for measurements and remaining limits.
+still cover the whole period. History loads in scheduled steps in the garage;
+history work pauses during battles. New results are saved to a temporary durable
+queue until the history and indexes are ready. The panel shows a loading notice
+and disables reset/pagination during this time; it does not show partial totals.
+Allow loading to finish before downgrading: an older mod ignores the pending
+startup queue. Keep the entire data directory if loading reports an error.
+See docs/HISTORY_PERFORMANCE.md for measurements and remaining limits. Scheduled
+steps improve responsiveness but do not guarantee frame times or faster completion.
 
 Existing shortcut and garage-button settings remain separate from appearance.
 Optionally create %APPDATA%/grz_wot_session_stats/config.json:

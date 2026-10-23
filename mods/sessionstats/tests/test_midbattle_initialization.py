@@ -40,7 +40,7 @@ class MidbattleInitializationTests(unittest.TestCase):
     def test_mod_starts_during_an_ongoing_battle(self):
         self.mod.stop()
         self.enter_ongoing_battle()
-        self.mod = runtime.Runtime(api=self.api, data_dir=os.path.join(self.directory, 'fresh'),
+        self.mod = runtime.Runtime(deferred_loading=False, api=self.api, data_dir=os.path.join(self.directory, 'fresh'),
                                    expected_table=fixtures.EXPECTED, now=self.clock,
                                    window=self.window, footer_installer=self.no_footer,
                                    installation_dir=self.directory)

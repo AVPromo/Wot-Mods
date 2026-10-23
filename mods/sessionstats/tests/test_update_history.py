@@ -48,7 +48,7 @@ class UpdateHistoryTests(unittest.TestCase):
 
     def restart(self, api):
         self.clock.value = START + 900
-        self.mod = runtime.Runtime(api=api, data_dir=self.directory,
+        self.mod = runtime.Runtime(deferred_loading=False, api=api, data_dir=self.directory,
                                    expected_table=EXPECTED, now=self.clock,
                                    window=FakeWindow(), footer_installer=lambda callback: None)
         self.mod.start()

@@ -2,8 +2,9 @@
 
 This follow-up to the independent PR #3 audit removes full-history rewriting
 from battle updates and full-history projection from normal panel refreshes.
-It does **not** make initial history loading asynchronous or certify live-game
-frame times. All measurements below use synthetic records on a Linux host.
+The startup follow-up also splits initial loading into scheduled garage steps
+and durably captures events arriving before completion. It does **not** certify
+live-game frame times. All measurements below use synthetic records on a Linux host.
 
 ## Changes
 
@@ -67,20 +68,86 @@ These measurements exclude localization, thumbnails, native transfer, DOM layout
 and the optional installation write. Actual disk/antivirus latency remains a
 factor because successful receipt still requires synchronous flushing.
 
+## Staged startup and results arriving during loading
+
+Before this follow-up, the same 10,000-record Python 2.7 benchmark blocked in
+initialization for 25.025 s on one legacy import (4.658 s in an earlier run) and
+3.687 s on a journal-backed restart. Those are historical measurements, not the
+new startup path. Host variability is substantial.
+
+The game runtime now constructs a loading service and schedules one small portion
+of work at a time. The target is 2 ms per callback, with another callback requested
+after 10 ms in the garage. Account and installation loaders share that scheduler;
+the budget is not multiplied by the number of loaders. While in battle the
+scheduler checks once per second without advancing history work. Direct result
+and battle-beginning capture remains active; backlog polling waits until ready.
+No worker thread calls game APIs, and no interpreter/garbage-collector settings
+are changed globally.
+
+The steps cover file reading, incremental UTF-8 decoding, outer JSON containers,
+legacy canonical checksums, journal verification/replay, record validation,
+immutable base copying and index construction. Individual records still use the
+standard JSON decoder. Existing v1 snapshots and v2 journals keep their formats,
+checksum, mirror, size, recovery and stale-writer checks. Locks are not held across
+callbacks: staged preparation creates exclusively owned uncommitted files, and
+each commit rechecks the generation under the existing write lock.
+
+Each account/installation has a bounded `startup-intake/` generation store. An
+opening boundary, observed beginning or normalized result is accepted only after
+its queue snapshot is committed. The receipt includes its original launch, time
+and ownership; it never stores the full native server payload. Once the history
+loads, the battle change and receipt watermark are committed together. Only then
+is the queue entry removed. If cleanup fails or the process exits between these
+steps, replay recognizes the watermark and does not apply the result twice.
+Results arriving during index construction are drained before readiness. Missing
+names/start times and ambiguous vehicle selection can use the loaded historical
+context before reconciliation; XP bonus authority is preserved.
+
+Until ready, the UI displays loading or failure rather than partial/zero totals,
+and reset/pagination are disabled. Account switching keeps receipts with their
+original account. Stop/restart cancels loading and makes retained callbacks inert;
+pending receipts survive. Corrupt or unsupported histories are not replaced by an
+empty ledger. Queue failures are visible, and a full queue rejects the new event
+without truncating accepted entries. The queue is capped at 1 MiB and retains
+three generations; recovery from a damaged latest generation can still require
+retrieving recent results again, as with the existing history recovery policy.
+
+Run `tools/benchmark_loading.py --records 1000 10000` under Python 2.7 or Python 3
+to reproduce constructor, active-work and callback-slice measurements. The fixture
+contains all battles in both active scopes and checks the final total. It excludes
+real callback delays, native APIs and a second installation loader. This trades
+long uninterrupted work for scheduled work; total CPU and time until all totals
+are available can increase. Scheduler/frame delays can add tens of seconds for a
+large history, and loading intentionally remains paused throughout a battle.
+
+One final synthetic CPython 2.7.18 run with 10,000 records:
+
+| History | Constructor | Median slice | 99th percentile slice | Longest observed slice | Active work, excluding scheduling |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Legacy import | 5.667 ms | 2.088 ms | 8.858 ms | 60.820 ms | 6.399 s |
+| Journal restart | 3.374 ms | 2.060 ms | 4.935 ms | 62.567 ms | 4.613 s |
+
+The journal restart used 2,024 callbacks. This is a reduction in uninterrupted
+work, not a reduction of total startup work to 2 ms. Earlier runs on the same host
+observed slices up to about 99 ms. Percentiles describe this fixture/run only;
+they are not performance guarantees for the embedded client or arbitrary histories.
+
+The existing live-path benchmark was rerun after these changes: a 10,000-record
+Python 2.7 history took 7.486 ms for a beginning, 5.178 ms for a correction and
+14.830 ms for snapshot plus JSON (113,410 bytes). These remain bounded live-path
+measurements; they exclude native UI and the optional installation write.
+
 ## Remaining performance limits
 
-**Initial loading is still synchronous and proportional to retained history.**
-In the same 10,000-record run, Python 2.7 took 25.025 s for the legacy load and
-preparation, and 3.687 s for a subsequent journal-backed restart. An earlier
-legacy-load run was 4.658 s, illustrating substantial host variability; no
-percentile claim is made. Python 3 took 1.362 s and 1.072 s respectively.
-Account activation or initialization during reconnect can therefore still stall.
-This is a remaining P1 startup-performance issue, separate from the corrected
-per-battle write and panel projection paths. Solving it safely requires staged
-or asynchronous loading with explicit handling of events arriving before the
-ledger is ready, including durability and account-switch ownership tests.
+**The 2 ms target is cooperative, not a hard latency bound.** One large individual
+JSON value, a bounded journal transaction, key/group sorting, period-list copies,
+filesystem calls, `fsync`, Python memory reclamation or host scheduling can exceed
+it. The small intake is loaded and rewritten synchronously for durable capture;
+a near-full queue and slow disks can still cause a delay. A diagnostic run associated
+the longest index slices with Python 2 generation-2 garbage collection; this change
+does not disable the shared collector. Live WoT/Windows measurements remain required.
 
-Journal replay and index memory grow with history. Journals, mirrors and orphaned
+Journal replay, receipt watermarks and index memory grow with history/restarts. Journals, mirrors and orphaned
 pre-commit segments are deliberately not deleted or automatically compacted by
 this change. Reset preserves historical membership. Very long histories with
 many result revisions/restarts require an explicit maintenance/compaction design.
@@ -89,8 +156,11 @@ pending-result recovery scales with the number of incomplete results. This is
 not a constant-time or bounded-memory guarantee for every possible input.
 
 Back up the **entire account/installation data directory while the game is
-closed**, including `journal/` and its `.bak` files. Copying only `state-*.json`
-no longer creates a complete backup. Do not manually delete journal segments.
+closed**, including `journal/`, its `.bak` files and `startup-intake/`. Copying only
+`state-*.json` no longer creates a complete backup. Do not manually delete journal
+segments or pending intake. Allow loading to finish before downgrading: earlier
+journal-capable releases ignore the new pending queue. Receipt watermarks are
+additional ledger metadata; no SQLite extension or external database is needed.
 
 ## Regression evidence
 
@@ -110,9 +180,18 @@ first/last-page limits, old small payloads and retained handlers after teardown.
 It uses explicit button-label elements required by the existing Gameface
 compatibility contract. Browser doubles do not replace a real client test.
 
-Local validation: all 523 tests pass on CPython 3.12.14; the same suite passes on
+`test_staged_loading.py` covers staged read/validation/index parity, events before
+and during loading, cancellation, restart, commit-before-cleanup interruption,
+queue write/size failures, corruption, concurrent writers, deferred metadata and
+vehicle selection, historical period ownership, installation provenance, timer
+failure/retry, account switching, battle pause and retained callbacks. Streaming
+JSON tests compare decoding and canonical hashes across small UTF-8/number/escape
+boundaries and reject malformed/truncated input. `ui-loading.cjs` covers loading,
+failure, visible queue warnings, blocked reset and restoration of totals/rows.
+
+Local validation: all 546 tests pass on CPython 3.12.14; the same suite passes on
 CPython 2.7.18 with nine expected Python-3-only packaging skips. All 211 repository
-tests pass. Browser suites pass 220 panel, 22 wheel, 29 footer activity, 40 footer
+tests pass. Browser suites pass 230 panel, 22 wheel, 29 footer activity, 40 footer
 compatibility and 31 appearance checks, plus the base footer suite. The package
 build, all-six-asset reproducibility, integration isolation and recursive
 source/archive/bytecode privacy audit pass. Hosted CI is reported separately in

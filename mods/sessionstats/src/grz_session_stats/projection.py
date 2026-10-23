@@ -9,6 +9,7 @@ from collections import Counter
 from .core import (_number, _text, _OUTCOMES, _CURRENCIES, _BREAKDOWN,
                    aggregate_stats, wn8_from_totals)
 from .localization import message
+from .loading import complete
 
 PAGE_SIZE = 40
 _COUNTS = ('battles', 'observed_battles', 'missing_results', 'partial_results',
@@ -26,11 +27,20 @@ class Series(object):
         self.total = 0
 
     def build(self, values):
-        known = [value for value in values if value is not None]
-        self.values = Counter(known)
+        complete(self.build_steps(values))
+
+    def build_steps(self, values):
+        self.values, self.count, self.total = Counter(), 0, 0
+        for position, value in enumerate(values):
+            if value is not None:
+                self.values[value] += 1
+                self.count += 1
+                self.total += value
+            if position % 128 == 0:
+                yield None
         self.ordered = sorted(self.values)
-        self.count = len(known)
-        self.total = _number(sum(known))
+        self.total = _number(self.total)
+        yield None
 
     def change(self, value, direction):
         if value is None:
@@ -85,23 +95,42 @@ class Totals(object):
         self.expected = dict((key, Series()) for key in _RATING)
 
     def build(self, items):
-        records = [item[0] for item in items if item[0].get('mode') == 'random' and item[0].get('outcome') in _OUTCOMES]
-        rated = [item for item in items if item[1] is not None]
+        complete(self.build_steps(items))
+
+    def build_steps(self, items):
+        records, rated = [], []
+        for position, item in enumerate(items):
+            if item[0].get('mode') == 'random' and item[0].get('outcome') in _OUTCOMES:
+                records.append(item[0])
+            if item[1] is not None:
+                rated.append(item)
+            if position % 128 == 0:
+                yield None
         self.counts.update(battles=len(records), observed_battles=len(items),
                            missing_results=len(items) - len(records), wn8_count=len(rated),
                            partial_results=sum(1 for row in records if not row.get('complete')))
         for outcome, key in (('win', 'wins'), ('loss', 'losses'), ('draw', 'draws')):
             self.counts[key] = sum(1 for row in records if row['outcome'] == outcome)
+            yield None
         for key in _XP:
-            self.series[key].build([item[1] for item in rated] if key == 'battle_wn8' else
-                                   [row.get(key) for row in records])
+            source = (item[1] for item in rated) if key == 'battle_wn8' else (row.get(key) for row in records)
+            for step in self.series[key].build_steps(source):
+                yield step
         for currency, fields in self.money.items():
-            money = [row.get('currencies', {}).get(currency, {}) for row in records]
+            money = []
+            for position, row in enumerate(records):
+                money.append(row.get('currencies', {}).get(currency, {}))
+                if position % 128 == 0:
+                    yield None
             for key, series in fields.items():
-                series.build([row.get('breakdown', {}).get(key) if key in _BREAKDOWN else row.get(key) for row in money])
+                source = (row.get('breakdown', {}).get(key) if key in _BREAKDOWN else row.get(key) for row in money)
+                for step in series.build_steps(source):
+                    yield step
         for key in _RATING:
-            self.actual[key].build([item[2][key] for item in rated])
-            self.expected[key].build([item[3][key] for item in rated])
+            for step in self.actual[key].build_steps(item[2][key] for item in rated):
+                yield step
+            for step in self.expected[key].build_steps(item[3][key] for item in rated):
+                yield step
 
     def change(self, item, direction):
         record, rating, actual, expected = item
@@ -159,10 +188,20 @@ class Group(object):
         self.totals = Totals()
 
     def build(self, items):
-        self.records = dict((item[0]['arena_id'], item[0]) for item in items)
-        self.order = sorted((bool(row.get(self.name_field)), row.get('_updated_at', 0), row['arena_id'])
-                            for row in self.records.values())
-        self.totals.build(items)
+        complete(self.build_steps(items))
+
+    def build_steps(self, items):
+        self.records, self.order = {}, []
+        for position, item in enumerate(items):
+            row = item[0]
+            self.records[row['arena_id']] = row
+            self.order.append((bool(row.get(self.name_field)), row.get('_updated_at', 0), row['arena_id']))
+            if position % 128 == 0:
+                yield None
+        self.order.sort()
+        yield None
+        for step in self.totals.build_steps(items):
+            yield step
 
     def change(self, record, item, direction):
         identifier = record['arena_id']
@@ -201,21 +240,34 @@ class ScopeIndex(object):
         self.warnings = Counter()
 
     def build(self, items):
-        self.records = dict((item[0]['arena_id'], (item[0], item)) for item in items)
-        rows = [item[0] for item in items]
-        self.order = sorted((row.get('started_at') or 0, row['arena_id']) for row in rows)
-        self.pending = sum(1 for row in rows if not row.get('complete') or row.get('outcome') not in _OUTCOMES)
-        self.warnings = Counter(warning for row in rows for warning in row.get('warnings', []))
-        self.totals.build(items)
+        complete(self.build_steps(items))
+
+    def build_steps(self, items):
+        self.records, self.order, self.pending, self.warnings = {}, [], 0, Counter()
+        for position, item in enumerate(items):
+            row = item[0]
+            self.records[row['arena_id']] = (row, item)
+            self.order.append((row.get('started_at') or 0, row['arena_id']))
+            self.pending += int(not row.get('complete') or row.get('outcome') not in _OUTCOMES)
+            self.warnings.update(row.get('warnings', []))
+            if position % 128 == 0:
+                yield None
+        self.order.sort()
+        yield None
+        for step in self.totals.build_steps(items):
+            yield step
         for kind, field in (('vehicles', 'vehicle_id'), ('maps', 'map_id')):
             grouped = {}
-            for item in items:
+            for position, item in enumerate(items):
                 row = item[0]
                 identifier = _text(row[field]) if row.get(field) is not None else '__unknown__'
                 grouped.setdefault(identifier, []).append(item)
-            for identifier, members in grouped.items():
+                if position % 128 == 0:
+                    yield None
+            for identifier in grouped:
                 group = Group(kind, identifier)
-                group.build(members)
+                for step in group.build_steps(grouped[identifier]):
+                    yield step
                 self.groups[kind][identifier] = group
 
     def replace(self, record, item):

@@ -1,5 +1,21 @@
 SESSION STATS — CHANGELOG
 
+Unreleased follow-up • 2026-10-23
+
+• History loading now runs in scheduled garage steps, including JSON reading,
+  checksum verification, journal replay, validation and index construction.
+  Background history work pauses during battles. No SQLite or new mod dependency.
+• Battle beginnings and results received during loading are durably queued.
+  Committed receipt watermarks prevent double application after interruption
+  between the history commit and queue cleanup. Account and launch ownership,
+  corrections and installation provenance are retained.
+• The panel shows loading/failure instead of partial totals and disables reset
+  until ready. Full history, period totals, WN8, XP and financial calculations remain.
+• Backups must include startup-intake/ as well as all journal files. Finish loading
+  before downgrading to a release that does not understand the startup queue.
+• See docs/HISTORY_PERFORMANCE.md for synthetic measurements and remaining limits;
+  the scheduling budget is not a hard frame-time guarantee. No live WoT test.
+
 0.2.7 • 2026-10-21
 
 Appearance and scrolling configuration beside the mod package:

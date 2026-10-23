@@ -61,7 +61,7 @@ class RuntimeAppearanceTests(unittest.TestCase):
             handle.write(content)
 
     def start(self, located=False):
-        self.mod = runtime.Runtime(api=self.api, data_dir=self.directory,
+        self.mod = runtime.Runtime(deferred_loading=False, api=self.api, data_dir=self.directory,
                                    expected_table=EXPECTED, now=self.clock,
                                    window=self.window,
                                    footer_installer=lambda callback: self.footer,

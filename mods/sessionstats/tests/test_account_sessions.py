@@ -165,7 +165,7 @@ class AccountSessionTests(unittest.TestCase):
         previous = runtime.LAUNCH_ID
         try:
             runtime.LAUNCH_ID = previous + '-new-game-process'
-            self.mod = runtime.Runtime(api=self.api, data_dir=self.directory,
+            self.mod = runtime.Runtime(deferred_loading=False, api=self.api, data_dir=self.directory,
                                        expected_table=fixtures.EXPECTED, now=self.clock,
                                        window=self.window, footer_installer=self.no_footer,
                                        appearance_path=os.path.join(self.directory, 'grz.sessionstats.json'),

@@ -21,13 +21,10 @@ def installation_key(root):
 
 
 class InstallationSession(object):
-    def __init__(self, data_dir, root, launch_id, expected_table, now, started_at=None):
-        initializing = [True]
-        def ledger_clock():
-            return started_at if initializing[0] and started_at is not None else now()
+    def __init__(self, data_dir, root, launch_id, expected_table, now, started_at=None, deferred=False):
         self.service = StatsService(os.path.join(data_dir, 'installations'),
-                                    installation_key(root), launch_id, expected_table, now=ledger_clock)
-        initializing[0] = False
+                                    installation_key(root), launch_id, expected_table,
+                                    now=now, deferred=deferred, started_at=started_at)
 
     @staticmethod
     def battle_key(account_key, arena_id):
@@ -46,15 +43,21 @@ class InstallationSession(object):
         identifier = self.battle_key(account_key, record['arena_id'])
         # An old result first delivered here may belong to another installation.
         # Accept known beginnings or a battle observed by this runtime only.
-        if not allow_new and identifier not in self.service._state['battles']:
+        if not allow_new and not self.service.loading and identifier not in self.service._state['battles']:
             return False
         record = dict(record, arena_id=identifier)
+        if record.get('_deferred_candidates'):
+            record['_deferred_candidates'] = [dict(candidate, arena_id=identifier) for candidate in record['_deferred_candidates']]
+        if self.service.loading and not allow_new:
+            record['_require_known'] = True
         return self.service.record_result(record)
 
     def snapshot(self):
         snapshot = self.service.snapshot()
         scope = snapshot['scopes']['manual']
         scope['label'] = message('scope.instance')
+        scope['loading'] = snapshot.get('loading', False)
+        scope['load_error'] = snapshot.get('load_error')
         records = dict((row['id'], self.service.result_context(row['id'])) for row in scope['battles'])
         return scope, records, snapshot['warnings']
 

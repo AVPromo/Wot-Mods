@@ -75,7 +75,7 @@ class RuntimeCompatibilityTests(unittest.TestCase):
         shutil.rmtree(self.directory)
 
     def start(self, native_window=False):
-        self.mod = runtime.Runtime(api=self.api, data_dir=self.directory,
+        self.mod = runtime.Runtime(deferred_loading=False, api=self.api, data_dir=self.directory,
                                    expected_table=EXPECTED, now=self.clock,
                                    window=None if native_window else self.window,
                                    footer_installer=lambda unused_callback: None)
@@ -330,7 +330,7 @@ class RuntimeCompatibilityTests(unittest.TestCase):
                 state['installed'] += 1
                 return handle
 
-            self.mod = runtime.Runtime(api=self.api, data_dir=self.directory, now=self.clock,
+            self.mod = runtime.Runtime(deferred_loading=False, api=self.api, data_dir=self.directory, now=self.clock,
                                        expected_table=EXPECTED, window=self.window,
                                        footer_installer=installer)
             self.mod.start()
@@ -359,7 +359,7 @@ class RuntimeCompatibilityTests(unittest.TestCase):
             return original_close()
 
         self.window.close = close
-        mod = runtime.Runtime(api=self.api, data_dir=self.directory, now=self.clock,
+        mod = runtime.Runtime(deferred_loading=False, api=self.api, data_dir=self.directory, now=self.clock,
                               expected_table=EXPECTED, window=self.window,
                               footer_installer=lambda callback: None)
         original_start = mod.start

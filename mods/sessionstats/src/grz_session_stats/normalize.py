@@ -203,6 +203,26 @@ def normalize_result(results, context=None, random_bonus_type=1,
         return None
     vehicle_id, data = _personal_vehicle(personal, context)
     if data is None:
+        if context.get('_loading') and not context.get('_candidate'):
+            candidates = []
+            for key, value in personal.items():
+                if key == 'avatar' or not isinstance(value, dict):
+                    continue
+                compact = _integer(value.get('typeCompDescr')) or _integer(key)
+                if compact is None:
+                    continue
+                candidate_context = dict(context, vehicle_id=compact, _candidate=True)
+                candidate = normalize_result(results, candidate_context, random_bonus_type,
+                                             vehicle_resolver, map_resolver)
+                if candidate is not None:
+                    candidates.append(candidate)
+            if candidates:
+                # Preserve only normalized player data, never the raw server
+                # payload. Select the correct vehicle after stored context loads.
+                return {'arena_id': text_type(arena_id), 'mode': 'random', 'complete': False,
+                        'started_at': arena_start(arena_id) or _number(context.get('started_at')),
+                        'vehicle_id': None, 'xp_received': None,
+                        '_deferred_candidates': candidates}
         return None
     warnings = []
     team = _integer(avatar.get('team')) or _integer(data.get('team'))
@@ -254,6 +274,17 @@ def normalize_result(results, context=None, random_bonus_type=1,
         'warnings': warnings, 'complete': False, 'reconcile': True,
         'xp_bonus_applied': False,
     }
+    if context.get('_loading'):
+        fields = []
+        for field, source in (('vehicle_name', 'name'), ('vehicle_tier', 'tier'), ('vehicle_type', 'type')):
+            if not info.get(source):
+                fields.append(field)
+        for field, source in (('map_id', 'id'), ('map_name', 'name')):
+            if not map_info.get(source):
+                fields.append(field)
+        if arena_start(arena_id) is None:
+            fields.append('started_at')
+        result['_deferred_context'] = {'fields': fields, 'duration': duration}
     required = ('damage', 'frags', 'spots', 'defense', 'xp_base', 'xp_received', 'free_xp')
     result['complete'] = bool(outcome and all(result[key] is not None for key in required)
                               and all(value['net'] is not None for value in result['currencies'].values()))

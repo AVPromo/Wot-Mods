@@ -17,6 +17,8 @@ import re
 import threading
 import uuid
 
+from .loading import complete, read_json_steps, digest_steps, depth_steps
+
 
 SCHEMA_VERSION = 1
 STORAGE_VERSION = 1
@@ -159,12 +161,16 @@ class GenerationStore(object):
         return sorted(found, reverse=True)
 
     def _decode(self, path, generation, allow_journal=True, file_checksum=None):
-        with open(path, 'rb') as handle:
-            raw = handle.read(MAX_SNAPSHOT_BYTES + 1)
-        if len(raw) > MAX_SNAPSHOT_BYTES:
-            # Fail closed, rather than rolling back a large but possibly valid ledger.
-            raise UnsupportedSchemaError('History exceeds the supported snapshot size; data is preserved.')
-        envelope = json.loads(raw.decode('utf-8'))
+        output = [None]
+        complete(self._decode_steps(path, generation, output, allow_journal, file_checksum))
+        return output[0]
+
+    def _decode_steps(self, path, generation, output, allow_journal=True, file_checksum=None):
+        box = [None]
+        error = UnsupportedSchemaError('History exceeds the supported snapshot size; data is preserved.')
+        for step in read_json_steps(path, getattr(self, 'snapshot_limit', MAX_SNAPSHOT_BYTES), error, box):
+            yield step
+        envelope, raw_checksum, raw_size = box[0]
         if not isinstance(envelope, dict):
             raise ValueError('invalid envelope')
         if envelope.get('storage_version') not in (STORAGE_VERSION, 2):
@@ -176,31 +182,36 @@ class GenerationStore(object):
             raise ValueError('invalid payload')
         if payload.get('schema_version') != self.schema_version:
             raise UnsupportedSchemaError(message('storage.schema'))
-        check_json_depth(payload)
+        for step in depth_steps(payload, MAX_JSON_DEPTH):
+            yield step
         if file_checksum is not None:
-            # Journal parents authenticate the complete immutable base bytes.
-            # Avoid re-encoding every historical record on subsequent launches.
-            if hashlib.sha256(raw).hexdigest() != file_checksum:
+            if raw_checksum != file_checksum:
                 raise ValueError('base file checksum mismatch')
         else:
-            actual = hashlib.sha256(canonical_bytes(payload)).hexdigest()
-            if actual != envelope.get('payload_checksum'):
+            if raw_size <= 16384:
+                box[0] = hashlib.sha256(canonical_bytes(payload)).hexdigest()
+            else:
+                for step in digest_steps(payload, box):
+                    yield step
+            if box[0] != envelope.get('payload_checksum'):
                 raise ValueError('checksum mismatch')
         self._candidate_ref = None
         if envelope['storage_version'] == 2:
             if not allow_journal:
                 raise UnsupportedSchemaError(message('storage.format'))
-            state = self._replay(payload)
+            for step in self._replay_steps(payload, output):
+                yield step
             self._candidate_ref = payload
-            return state
-        return payload
+        else:
+            self._base_checksum = raw_checksum
+            output[0] = payload
 
     def _journal_path(self, name):
         if not isinstance(name, type(u'')) or not _JOURNAL_RE.match(name):
             raise ValueError('invalid journal name')
         return os.path.join(self.directory, 'journal', name)
 
-    def _segment(self, reference):
+    def _segment_steps(self, reference, output):
         path = self._journal_path(reference['journal'])
         offset = reference.get('offset')
         if isinstance(offset, bool) or not isinstance(offset, (int, type(2 ** 64))) or offset < 1:
@@ -217,16 +228,19 @@ class GenerationStore(object):
                         if not raw.endswith(b'\n') or len(raw) > MAX_TRANSACTION_BYTES:
                             raise ValueError('incomplete journal transaction')
                         digest = hashlib.sha256(digest.encode('ascii') + raw).hexdigest()
+                        yield None
                     if handle.tell() != offset or digest != reference.get('checksum'):
                         raise ValueError('journal checksum mismatch')
                 if candidate != path:
                     self.warning = message('storage.recovered')
-                return candidate, header
+                output[0] = (candidate, header)
+                yield None
+                return
             except (ValueError, IOError, OSError):
                 continue
         raise StorageError(message('storage.corrupt'))
 
-    def _replay(self, reference):
+    def _replay_steps(self, reference, output):
         """Stream bounded transactions; no recursive JSON or dependency traversal."""
         segments, seen = [], set()
         while 'journal' in reference:
@@ -234,7 +248,10 @@ class GenerationStore(object):
             if name in seen:
                 raise ValueError('journal cycle')
             seen.add(name)
-            path, raw = self._segment(reference)
+            box = [None]
+            for step in self._segment_steps(reference, box):
+                yield step
+            path, raw = box[0]
             header = json.loads(raw.decode('utf-8'))
             check_json_depth(header)
             if header.get('journal_version') != 1:
@@ -246,8 +263,11 @@ class GenerationStore(object):
         for candidate in (path, path + '.bak'):
             try:
                 # Bases must be v1, not recursive replay entry points.
-                state = self._decode(candidate, reference['generation'], allow_journal=False,
-                                     file_checksum=reference.get('file_checksum'))
+                box = [None]
+                for step in self._decode_steps(candidate, reference['generation'], box,
+                                                allow_journal=False, file_checksum=reference.get('file_checksum')):
+                    yield step
+                state = box[0]
                 if candidate != path:
                     self.warning = message('storage.recovered')
                 break
@@ -293,9 +313,10 @@ class GenerationStore(object):
                             raise ValueError('missing period')
                     state['battles'].update(battles)
                     digest = hashlib.sha256(digest.encode('ascii') + raw).hexdigest()
+                    yield None
                 if handle.tell() != pointer['offset'] or digest != pointer['checksum']:
                     raise ValueError('journal checksum mismatch')
-        return state
+        output[0] = state
 
     def prepare(self):
         """Prepare immutable base/segment files during load, before live events."""
@@ -308,6 +329,20 @@ class GenerationStore(object):
             self._prepare_journal()
 
     def _prepare_journal(self):
+        complete(self._prepare_journal_steps())
+
+    def prepare_steps(self):
+        if self.read_only or self._writer_path is not None:
+            return
+        files = self._files()
+        if not files or files[0][0] != self._observed_generation:
+            raise StorageError(message('storage.changed'))
+        # Only create exclusively owned, uncommitted files here. No OS lock is
+        # held across callbacks. save() rechecks the generation under its lock.
+        for step in self._prepare_journal_steps():
+            yield step
+
+    def _prepare_journal_steps(self):
         directory = os.path.join(self.directory, 'journal')
         _ensure_directory(directory)
         if self._writer_path is None:
@@ -329,9 +364,11 @@ class GenerationStore(object):
                                 break
                             digest.update(block)
                             target.write(block)
+                            yield None
                         target.flush()
                         os.fsync(target.fileno())
-                    if checksum is not None and checksum != digest.hexdigest():
+                    if (getattr(self, '_base_checksum', digest.hexdigest()) != digest.hexdigest() or
+                            (checksum is not None and checksum != digest.hexdigest())):
                         raise StorageError(message('storage.changed'))
                     checksum = digest.hexdigest()
                 parent = {'base': name, 'generation': self.sequence, 'file_checksum': checksum}
@@ -365,6 +402,15 @@ class GenerationStore(object):
                 'checksum': hashlib.sha256(self._writer_checksum.encode('ascii') + encoded).hexdigest()}
 
     def load(self, validate=None):
+        def validation(payload):
+            if validate is not None:
+                validate(payload)
+            return iter(())
+        output = [None]
+        complete(self.load_steps(output, validation))
+        return output[0]
+
+    def load_steps(self, output, validate=None):
         """Select the newest generation accepted by storage and the caller.
 
         An optional application validator raises StorageError/ValueError for
@@ -378,9 +424,13 @@ class GenerationStore(object):
         damaged = 0
         for generation, path in files:
             try:
-                payload = self._decode(path, generation)
+                box = [None]
+                for step in self._decode_steps(path, generation, box):
+                    yield step
+                payload = box[0]
                 if validate is not None:
-                    validate(payload)
+                    for step in validate(payload):
+                        yield step
             except UnsupportedSchemaError:
                 self.read_only = True
                 raise
@@ -394,12 +444,13 @@ class GenerationStore(object):
             self._base_path = path if self._journal_ref is None else None
             if damaged:
                 self.warning = (message('storage.recovered'))
-            return payload
+            output[0] = payload
+            return
         if files:
             self.read_only = True
             raise StorageError(message('storage.corrupt'))
         self.sequence = 0
-        return None
+        output[0] = None
 
     def save(self, payload):
         if self.read_only:

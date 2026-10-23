@@ -12,6 +12,8 @@ import os
 import time
 import uuid
 
+from .loading import complete, items, values
+
 from . import VERSION
 from .storage import GenerationStore, StateDelta, SCHEMA_VERSION, StorageError
 
@@ -240,9 +242,10 @@ def _merge_known(existing, incoming, revise=False):
 
 
 class StatsService(object):
-    def __init__(self, data_dir, account_key, launch_id, expected_table, now=None):
+    def __init__(self, data_dir, account_key, launch_id, expected_table, now=None,
+                 deferred=False, started_at=None):
         self.account_key = _text(account_key)
-        self.launch_id = _text(launch_id)
+        self.launch_id = self._requested_launch = _text(launch_id)
         self._now = now or time.time
         self.expected_table = ExpectedTable(expected_table)
         account_dir = hashlib.sha256(self.account_key.encode('utf-8')).hexdigest()
@@ -251,49 +254,219 @@ class StatsService(object):
         self._warnings = []
         self._indexes = None
         self._pages = {}
-        current_time = self._time()
+        self._receipt = None
+        self._intake = None
+        self._received_context = {}
+        self._received_records = {}
+        self._pending_ids = set()
+        self._unassigned = 0
+        self.loading, self.ready, self._closed = True, False, False
+        self.loading_phase = 'history'
+        current_time = self._time() if started_at is None else _number(started_at, True)
+        if current_time is None:
+            raise ValueError(message('core.time'))
+        self._initial_time = current_time
         self._state = self._empty_state(current_time)
         try:
-            existing = self.store.load(validate=self._validate_state)
-            if existing is not None:
-                self._state = existing
-            if self.store.warning:
-                self._warnings.append(self.store.warning)
-            candidate = self._candidate()
-            # Older ledgers tracked activity only on launches and battle updates.
-            # Preserve that durable high-water mark before allowing manual reset.
-            manual = candidate['manual_sessions'][-1]
-            activity = ([self._last_seen(manual)] +
-                        [self._last_seen(epoch) for epoch in candidate['launch_sessions']] +
-                        [battle.get('_updated_at', 0) for battle in candidate['battles'].values()])
-            manual['last_seen_at'] = max(activity)
-            found = self._launch(candidate, self.launch_id)
-            if found is None:
-                launch_start = current_time
-                for previous in candidate['launch_sessions']:
-                    if previous.get('ended_at') is None:
-                        # A crash has no known exit timestamp. Do not invent activity
-                        # during the unobserved gap up to this process's start.
-                        previous['ended_at'] = self._last_seen(previous)
-                    # A rolled-back wall clock cannot reopen a historical range.
-                    launch_start = max(launch_start, previous['ended_at'])
-                candidate['launch_sessions'].append({'id': self.launch_id, 'started_at': launch_start,
-                                                     'last_seen_at': launch_start, 'ended_at': None})
-            elif found.get('ended_at') is not None:
-                raise StorageError(message('core.closed'))
-            if existing is None or candidate != self._state:
-                if not self._commit(candidate, {} if existing is not None else None):
-                    raise StorageError(self.last_error or message('core.create'))
-            self.store.prepare()
-        except (StorageError, IOError, OSError, ValueError, TypeError, KeyError) as error:
-            self.store.read_only = True
-            self.last_error = message('core.load')
-            if isinstance(error, StorageError):
-                self.last_error = _text(error)
+            if deferred or os.path.isdir(os.path.join(self.store.directory, 'startup-intake')):
+                from .intake import Intake
+                self._intake = Intake(self.store.directory, self.account_key)
+                self._intake.append('open', self._requested_launch, current_time)
+                if self._intake.store.warning:
+                    self._warnings.append(self._intake.store.warning)
+        except (StorageError, IOError, OSError, ValueError, TypeError) as error:
+            self._fail_loading(error)
+        self._loader = self._initialize_steps() if self.loading else None
+        if not deferred:
+            while self.loading:
+                self.advance_loading(budget=1.0)
 
-        self._rebuild_indexes()
+    def _fail_loading(self, error):
+        self.store.read_only = True
+        self.loading, self.ready = False, False
+        self.last_error = _text(error) if isinstance(error, StorageError) else message('core.load')
+
+    def advance_loading(self, budget=0.002, max_steps=512):
+        if not self.loading or self._closed:
+            return False
+        timer = getattr(time, 'perf_counter', time.time)
+        deadline = timer() + max(0, budget)
+        try:
+            for unused in range(max(1, max_steps)):
+                try:
+                    next(self._loader)
+                except StopIteration:
+                    self._loader = None
+                    self.loading = False
+                    self.ready = not self.store.read_only
+                    break
+                if timer() >= deadline:
+                    break
+        except Exception as error:
+            self._fail_loading(error)
+            self.cancel_loading()
+        return self.loading
+
+    def cancel_loading(self):
+        self._closed = True
+        if self._loader is not None:
+            self._loader.close()
+            self._loader = None
+        self.loading = False
+
+    def _initialize_steps(self):
+        output = [None]
+        for step in self.store.load_steps(output, self._validate_state_steps):
+            yield step
+        existing = output[0]
+        if existing is not None:
+            self._state = existing
+        elif self._intake is not None and self._intake.events:
+            first = _number(self._intake.events[0].get('at'), True)
+            if first is None:
+                raise StorageError(message('core.time'))
+            self._state = self._empty_state(first)
+        if self.store.warning:
+            self._warnings.append(self.store.warning)
+        if existing is not None:
+            self.loading_phase = 'storage'
+            for step in self.store.prepare_steps():
+                yield step
+        self.loading_phase = 'receipts'
+        if self._intake is not None:
+            for step in self._drain_intake_steps():
+                yield step
+        else:
+            for step in self._open_launch_steps(self._requested_launch, self._initial_time):
+                yield step
+        for step in self.store.prepare_steps():
+            yield step
+        self.launch_id = self._requested_launch
+        self.loading_phase = 'indexes'
+        for step in self._rebuild_indexes_steps():
+            yield step
+        self.loading_phase = 'receipts'
+        for step in self._drain_intake_steps():
+            yield step
+        self.launch_id = self._requested_launch
+        self._received_context.clear()
+        self._received_records.clear()
+        self.last_error = None
+        self.loading_phase = 'ready'
+
+    def _open_launch_steps(self, launch_id, current_time):
+        self.launch_id = launch_id
+        candidate = self._candidate()
+        manual = candidate['manual_sessions'][-1]
+        latest = self._last_seen(manual)
+        for position, battle in enumerate(values(candidate['battles'])):
+            latest = max(latest, battle.get('_updated_at', 0))
+            if position % 128 == 0:
+                yield None
+        for epoch in candidate['launch_sessions']:
+            latest = max(latest, self._last_seen(epoch))
+            yield None
+        manual['last_seen_at'] = latest
+        found = self._launch(candidate, launch_id)
+        if found is None:
+            launch_start = current_time
+            for previous in candidate['launch_sessions']:
+                if previous.get('ended_at') is None:
+                    previous['ended_at'] = self._last_seen(previous)
+                launch_start = max(launch_start, previous['ended_at'])
+                yield None
+            candidate['launch_sessions'].append({'id': launch_id, 'started_at': launch_start,
+                                                 'last_seen_at': launch_start, 'ended_at': None})
+        elif found.get('ended_at') is not None:
+            raise StorageError(message('core.closed'))
+        if not self.store.sequence or candidate != self._state or self._receipt is not None:
+            if not self._commit(candidate, {} if self.store.sequence else None):
+                raise StorageError(self.last_error or message('core.create'))
+
+    def _drain_intake_steps(self):
+        if self._intake is None:
+            return
+        while self._intake.events:
+            event = self._intake.events[0]
+            producer, sequence = event['producer'], event['sequence']
+            acknowledged = self._state.get('_startup_receipts', {}).get(producer, 0)
+            if sequence > acknowledged:
+                timestamp = _number(event.get('at'), True)
+                if timestamp is None:
+                    raise StorageError(message('core.time'))
+                self._receipt = (producer, sequence)
+                self.last_error = None
+                try:
+                    self.launch_id = event['launch_id']
+                    if event['kind'] == 'open':
+                        for step in self._open_launch_steps(event['launch_id'], timestamp):
+                            yield step
+                    else:
+                        if self._launch(self._state, event['launch_id']) is None:
+                            raise StorageError('Startup receipt has no launch boundary.')
+                        record = dict(event['record'])
+                        context = event.get('context', {})
+                        stored = self.result_context(record['arena_id'], include_received=False)
+                        candidates = context.get('candidates', [])
+                        if candidates:
+                            matching = [item for item in candidates if stored.get('vehicle_id') is not None and
+                                        item['record'].get('vehicle_id') == stored['vehicle_id']]
+                            if len(matching) == 1:
+                                record = dict(matching[0]['record'])
+                                context = dict(matching[0].get('context', {}), require_known=context.get('require_known', False))
+                            else:
+                                record['warnings'] = [message('runtime.results')]
+                        for field in context.get('fields', []):
+                            if field in stored:
+                                record[field] = stored[field]
+                        if 'started_at' in context.get('fields', []) and record.get('started_at') is not None:
+                            duration = _number(context.get('duration'), True)
+                            if duration is not None:
+                                record['ended_at'] = record['started_at'] + duration
+                        if not context.get('require_known') or record['arena_id'] in self._state['battles']:
+                            self._apply(record, timestamp, event['kind'] == 'result')
+                    if self.last_error:
+                        raise StorageError(self.last_error)
+                    if self._state.get('_startup_receipts', {}).get(producer, 0) < sequence:
+                        if not self._commit(self._candidate(), {}):
+                            raise StorageError(self.last_error)
+                finally:
+                    self._receipt = None
+            # The watermark and battle were committed together. If this cleanup
+            # fails or the process dies here, replay skips the acknowledged event.
+            self._intake.remove(event)
+            yield None
+
+    def _queue_record(self, record, timestamp, is_result):
+        try:
+            if self._intake is None or self._closed or self.store.read_only:
+                raise StorageError(message('storage.readonly'))
+            context = copy.deepcopy(record.get('_deferred_context') or {})
+            if record.get('_deferred_candidates'):
+                context['candidates'] = [{'record': _clean_record(candidate),
+                                          'context': copy.deepcopy(candidate.get('_deferred_context', {}))}
+                                         for candidate in record['_deferred_candidates']]
+            if record.get('_require_known'):
+                context['require_known'] = True
+            cleaned = _clean_record(record)
+            key = (is_result, cleaned['arena_id'])
+            if self._received_records.get(key) == (cleaned, context):
+                return False
+            self._intake.append('result' if is_result else 'begin', self._requested_launch,
+                                timestamp, cleaned, context)
+            self._received_records[key] = (cleaned, context)
+            self._received_context.setdefault(cleaned['arena_id'], {}).update(
+                (field, value) for field, value in cleaned.items() if value is not None)
+            self.last_error = None
+            return True
+        except (StorageError, ValueError, TypeError, OverflowError) as error:
+            self.last_error = _text(error)
+            return False
 
     def _rebuild_indexes(self):
+        complete(self._rebuild_indexes_steps())
+
+    def _rebuild_indexes_steps(self):
         from .projection import ScopeIndex, contribution
         self._indexes = {
             'launch': ScopeIndex(self.launch_id, self.expected_table),
@@ -301,7 +474,7 @@ class StatsService(object):
         self._pending_ids = set()
         self._unassigned = 0
         members = {'launch': [], 'manual': []}
-        for record in self._state['battles'].values():
+        for record in values(self._state['battles']):
             if record.get('mode') not in (None, 'random'):
                 continue
             if self._pending(record):
@@ -314,8 +487,10 @@ class StatsService(object):
                     if item is None:
                         item = contribution(record, self.expected_table)
                     members[name].append(item)
+            yield None
         for name, index in self._indexes.items():
-            index.build(members[name])
+            for step in index.build_steps(members[name]):
+                yield step
 
     def _index_record(self, record, item):
         if record.get('mode') not in (None, 'random'):
@@ -332,6 +507,8 @@ class StatsService(object):
             self._unassigned += 1
 
     def set_page(self, scope, group, page, period_id=None):
+        if not self.ready or self._closed:
+            return False
         if scope not in ('launch', 'manual') or group not in ('battles', 'vehicles', 'maps'):
             return False
         if period_id is not None and period_id != self._indexes[scope].identifier:
@@ -354,6 +531,9 @@ class StatsService(object):
                 'current_manual_id': manual_id, 'battles': {}}
 
     def _validate_state(self, state):
+        complete(self._validate_state_steps(state))
+
+    def _validate_state_steps(self, state):
         if state.get('account_key') != self.account_key:
             raise StorageError(message('core.account'))
         if not isinstance(state.get('battles'), dict) or not isinstance(state.get('launch_sessions'), list):
@@ -386,12 +566,22 @@ class StatsService(object):
                         epoch['started_at'] < previous['ended_at']):
                     raise StorageError(message('core.boundaries'))
                 previous = epoch
+                yield None
         manual_periods = state['manual_sessions']
         if (state.get('current_manual_id') != manual_periods[-1]['id']
                 or manual_periods[-1].get('ended_at') is not None
                 or any(epoch.get('ended_at') is None for epoch in manual_periods[:-1])):
             raise StorageError(message('core.current'))
-        for arena_id, battle in state['battles'].items():
+        receipts = state.get('_startup_receipts', {})
+        if not isinstance(receipts, dict):
+            raise StorageError(message('core.ledger'))
+        for producer, sequence in items(receipts):
+            if (not isinstance(producer, text_type) or len(producer) != 32 or
+                    any(char not in '0123456789abcdef' for char in producer) or
+                    isinstance(sequence, bool) or not isinstance(sequence, number_types[:2] if len(number_types) == 3 else (int,)) or sequence < 1):
+                raise StorageError(message('core.ledger'))
+            yield None
+        for arena_id, battle in items(state['battles']):
             if not isinstance(battle, dict) or battle.get('arena_id') != arena_id:
                 raise StorageError(message('core.battle'))
             # Validate the same optional fields that later merges, summaries and
@@ -413,6 +603,8 @@ class StatsService(object):
                         or battle[key] not in period_ids[kind]):
                     raise StorageError(message('core.battle'))
 
+            yield None
+
     @staticmethod
     def _last_seen(epoch):
         value = epoch.get('last_seen_at')
@@ -433,6 +625,10 @@ class StatsService(object):
 
     def _commit(self, candidate, changes=None):
         try:
+            if self._receipt is not None:
+                producer, sequence = self._receipt
+                candidate['_startup_receipts'] = dict(candidate.get('_startup_receipts', {}))
+                candidate['_startup_receipts'][producer] = sequence
             payload = candidate
             if changes is not None:
                 kinds = ('launch_sessions', 'manual_sessions')
@@ -485,6 +681,9 @@ class StatsService(object):
 
     def begin_battle(self, arena_id, started_at=None, vehicle_id=None, map_id=None, mode=None,
                      vehicle_name=None, vehicle_tier=None, vehicle_type=None, map_name=None):
+        if self._closed or (not self.ready and not self.loading):
+            self.last_error = self.last_error or message('storage.readonly')
+            return False
         if mode not in (None, 'random'):
             return False
         timestamp = self._time()
@@ -492,24 +691,33 @@ class StatsService(object):
                   'vehicle_id': vehicle_id, 'map_id': map_id, 'mode': mode, 'complete': False,
                   'vehicle_name': vehicle_name, 'vehicle_tier': vehicle_tier,
                   'vehicle_type': vehicle_type, 'map_name': map_name}
+        if self.loading:
+            return self._queue_record(record, timestamp, False)
         return self._apply(record, timestamp, is_result=False)
 
     def record_result(self, record):
+        if self._closed or (not self.ready and not self.loading):
+            self.last_error = self.last_error or message('storage.readonly')
+            return False
         if not isinstance(record, dict):
             self.last_error = message('core.result')
             return False
         if record.get('mode') not in (None, 'random') or record.get('is_replay') or record.get('isReplay'):
             return False
+        if self.loading:
+            return self._queue_record(record, self._time(), True)
         return self._apply(record, self._time(), is_result=True)
 
-    def result_context(self, arena_id):
+    def result_context(self, arena_id, include_received=True):
         """Known metadata for one result, including after a client restart.
 
         Presentation fallbacks must not replace previously resolved names or
         map identities when a later client no longer supplies that metadata.
         Return only contextual fields, never a mutable reference to the ledger.
         """
-        record = self._state['battles'].get(_text(arena_id), {})
+        record = dict(self._state['battles'].get(_text(arena_id), {}))
+        if include_received and self.loading:
+            record.update(self._received_context.get(_text(arena_id), {}))
         fields = ('started_at', 'vehicle_id', 'vehicle_name', 'vehicle_tier',
                   'vehicle_type', 'map_id', 'map_name')
         return dict((key, record[key]) for key in fields if record.get(key) is not None)
@@ -582,6 +790,9 @@ class StatsService(object):
         return True
 
     def reset_manual(self, now=None):
+        if self.loading or self._closed:
+            self.last_error = self.last_error or message('core.loading')
+            return None
         timestamp = self._time() if now is None else _number(now, True)
         active = self._state['manual_sessions'][-1]
         if timestamp is None or timestamp < self._last_seen(active):
@@ -601,7 +812,7 @@ class StatsService(object):
         return new_id
 
     def pending_arena_ids(self):
-        return sorted(self._pending_ids)
+        return [] if self.loading else sorted(self._pending_ids)
 
     @staticmethod
     def _pending(record):
@@ -644,6 +855,14 @@ class StatsService(object):
         return scope
 
     def snapshot(self):
+        if self.loading or not self.ready:
+            from .projection import ScopeIndex
+            scopes = dict((name, ScopeIndex('', self.expected_table).snapshot(message('scope.' + name), self._initial_time))
+                          for name in ('launch', 'manual'))
+            return {'version': VERSION, 'account_key': self.account_key, 'generated_at': self._time(),
+                    'loading': self.loading, 'load_error': None if self.loading else self.last_error,
+                    'expected': copy.deepcopy(self.expected_table.metadata), 'scopes': scopes,
+                    'warnings': [self.last_error or message('core.loading')]}
         timestamp = self._time()
         launch = self._launch(self._state, self.launch_id)
         manual = next(epoch for epoch in self._state['manual_sessions']

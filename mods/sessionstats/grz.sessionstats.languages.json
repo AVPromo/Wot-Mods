@@ -186,7 +186,9 @@
       "page.previous": "Previous",
       "page.next": "Next",
       "page.status": "Page {0} of {1}",
-      "core.more_notices": "Additional data notices are retained in local history."
+      "core.more_notices": "Additional data notices are retained in local history.",
+      "core.loading": "Loading history. New battle results are being saved.",
+      "core.loading_timer": "History loading could not be scheduled. Restart the client; pending results remain saved."
     },
     "pl": {
       "title": "Statystyki sesji",
@@ -373,7 +375,9 @@
       "page.previous": "Poprzednia",
       "page.next": "Następna",
       "page.status": "Strona {0} z {1}",
-      "core.more_notices": "Pozostałe komunikaty o danych są zachowane w lokalnej historii."
+      "core.more_notices": "Pozostałe komunikaty o danych są zachowane w lokalnej historii.",
+      "core.loading": "Wczytywanie historii. Nowe wyniki bitew są zapisywane.",
+      "core.loading_timer": "Nie udało się zaplanować wczytywania historii. Uruchom klienta ponownie; oczekujące wyniki pozostają zapisane."
     },
     "ru": {
       "title": "Статистика сессии",
@@ -560,7 +564,9 @@
       "page.previous": "Назад",
       "page.next": "Далее",
       "page.status": "Страница {0} из {1}",
-      "core.more_notices": "Дополнительные сообщения о данных сохранены в локальной истории."
+      "core.more_notices": "Дополнительные сообщения о данных сохранены в локальной истории.",
+      "core.loading": "Загрузка истории. Новые результаты боёв сохраняются.",
+      "core.loading_timer": "Не удалось запланировать загрузку истории. Перезапустите клиент; ожидающие результаты сохранены."
     },
     "fr": {
       "title": "Statistiques de session",
@@ -747,7 +753,9 @@
       "page.previous": "Précédente",
       "page.next": "Suivante",
       "page.status": "Page {0} sur {1}",
-      "core.more_notices": "Les autres remarques sur les données sont conservées dans l’historique local."
+      "core.more_notices": "Les autres remarques sur les données sont conservées dans l’historique local.",
+      "core.loading": "Chargement de l’historique. Les nouveaux résultats sont enregistrés.",
+      "core.loading_timer": "Impossible de planifier le chargement. Redémarrez le client ; les résultats en attente restent enregistrés."
     },
     "de": {
       "title": "Sitzungsstatistik",
@@ -934,7 +942,9 @@
       "page.previous": "Zurück",
       "page.next": "Weiter",
       "page.status": "Seite {0} von {1}",
-      "core.more_notices": "Weitere Datenhinweise bleiben im lokalen Verlauf gespeichert."
+      "core.more_notices": "Weitere Datenhinweise bleiben im lokalen Verlauf gespeichert.",
+      "core.loading": "Der Verlauf wird geladen. Neue Gefechtsergebnisse werden gespeichert.",
+      "core.loading_timer": "Das Laden des Verlaufs konnte nicht geplant werden. Starte den Client neu; ausstehende Ergebnisse bleiben gespeichert."
     },
     "es": {
       "title": "Estadísticas de sesión",
@@ -1121,7 +1131,9 @@
       "page.previous": "Anterior",
       "page.next": "Siguiente",
       "page.status": "Página {0} de {1}",
-      "core.more_notices": "Los avisos adicionales sobre los datos se conservan en el historial local."
+      "core.more_notices": "Los avisos adicionales sobre los datos se conservan en el historial local.",
+      "core.loading": "Cargando el historial. Se guardan los nuevos resultados de batalla.",
+      "core.loading_timer": "No se pudo programar la carga. Reinicia el cliente; los resultados pendientes siguen guardados."
     },
     "uk": {
       "title": "Статистика сесії",
@@ -1308,7 +1320,9 @@
       "page.previous": "Попередня",
       "page.next": "Наступна",
       "page.status": "Сторінка {0} з {1}",
-      "core.more_notices": "Додаткові повідомлення про дані збережено в локальній історії."
+      "core.more_notices": "Додаткові повідомлення про дані збережено в локальній історії.",
+      "core.loading": "Завантаження історії. Нові результати боїв зберігаються.",
+      "core.loading_timer": "Не вдалося запланувати завантаження історії. Перезапустіть клієнт; результати в очікуванні збережено."
     }
   }
 }

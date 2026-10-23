@@ -293,9 +293,12 @@ class GameAPI(object):
 class Runtime(object):
     def __init__(self, api=None, service_factory=None, data_dir=None,
                  expected_table=None, now=None, window=None, footer_installer=None,
-                 appearance_path=None, installation_dir=None):
+                 appearance_path=None, installation_dir=None, deferred_loading=True):
         self.api = api
         self.service_factory = service_factory
+        self._deferred_loading = deferred_loading
+        self._load_id = None
+        self._load_cursor = 0
         self.data_dir = data_dir
         self.expected_table = expected_table
         self.now = now or time.time
@@ -408,7 +411,8 @@ class Runtime(object):
             context = self.api.battle_context()
             if isinstance(context, dict):
                 waiting.discard(str(context.get('arena_id', '')))
-        processing = (self._processing.get(self.active_key, 0) > 0 or
+        processing = (getattr(self.active_service, 'loading', False) or
+                      self._processing.get(self.active_key, 0) > 0 or
                       (self._bonus_callback_id is not None and self._bonus_account_key == self.active_key))
         return (len(waiting), bool(processing))
 
@@ -568,9 +572,15 @@ class Runtime(object):
                 pass
         self._start_log()
         self.api = self.api or GameAPI()
+        self.services = dict((key, value) for key, value in self.services.items() if not getattr(value, '_closed', False))
+        if self.active_key not in self.services:
+            self.active_key, self.active_service = None, None
+        if self._instance_session and getattr(self._instance_session.service, '_closed', False):
+            self._instance_session = None
         if self.service_factory is None:
             from .core import StatsService
-            self.service_factory = StatsService
+            self.service_factory = lambda *args, **kwargs: StatsService(
+                *args, deferred=self._deferred_loading, **kwargs)
         if self.data_dir is None:
             self.data_dir = resolve_data_dir(self.api.bw)
             self._start_log()
@@ -718,13 +728,16 @@ class Runtime(object):
         self._processing.clear()
         self._bonus_account_key = None
         self._publish_activity()
-        for callback_id in (self._tick_id, self._bonus_callback_id):
+        for service in list(self.services.values()) + ([self._instance_session.service] if self._instance_session else []):
+            if getattr(service, "loading", False):
+                service.cancel_loading()
+        for callback_id in (self._tick_id, self._bonus_callback_id, self._load_id):
             if callback_id is not None:
                 try:
                     self.api.cancel(callback_id)
                 except Exception:
                     pass
-        self._tick_id = self._bonus_callback_id = None
+        self._tick_id = self._bonus_callback_id = self._load_id = None
         while self.subscriptions:
             event, callback = self.subscriptions.pop()
             try:
@@ -779,7 +792,43 @@ class Runtime(object):
             self._publish_activity()
         self._ensure_cache_observer()
         self._ensure_installation_session()
+        self._schedule_loading()
         return self.active_service
+
+    def _loading_services(self):
+        services = list(self.services.values())
+        if self._instance_session is not None:
+            services.append(self._instance_session.service)
+        return [service for service in services if getattr(service, 'loading', False)]
+
+    def _schedule_loading(self):
+        if not self.running or self._load_id is not None or not self._loading_services():
+            return
+        callback = self._guard(self._advance_loading, 'history_loading')
+        try:
+            delay = 1.0 if self.api.in_battle() else 0.01
+            self._load_id = self.api.schedule(delay, callback)
+            self.compatibility_warnings.pop('timer:loading', None)
+        except Exception:
+            callback._grz_enabled = False
+            self._warn_once('timer:loading', message('core.loading_timer'))
+
+    def _advance_loading(self):
+        self._load_id = None
+        if not self.running:
+            return
+        try:
+            services = self._loading_services()
+            if services and not self.api.in_battle():
+                service = services[self._load_cursor % len(services)]
+                self._load_cursor += 1
+                service.advance_loading()
+                if not service.loading:
+                    self._window_call('refresh')
+                    self._publish_activity()
+                    self._service_diagnostics()
+        finally:
+            self._schedule_loading()
 
     def _ensure_installation_session(self):
         if self._instance_session is not None:
@@ -793,7 +842,8 @@ class Runtime(object):
             if root is None:
                 raise ValueError('Installation root unavailable.')
             self._instance_session = InstallationSession(self.data_dir, root, LAUNCH_ID,
-                                                        self.expected_table, self.now, self._started_at)
+                                                        self.expected_table, self.now, self._started_at,
+                                                        deferred=self._deferred_loading)
             # Only this process's records have known installation provenance.
             # Account archives from previous processes must not be guessed in.
             for account_key, service in self.services.items():
@@ -953,6 +1003,8 @@ class Runtime(object):
             if value is not None:
                 context[field] = value
         context['account_dbid'] = int(account_key.rsplit(':', 1)[1])
+        context['_loading'] = (getattr(service, 'loading', False) or
+                               (self._instance_session is not None and self._instance_session.service.loading))
         self.monitor.check(results, context, self.api.random_bonus_type, source)
         record = normalize_result(results, context=context,
                                   random_bonus_type=self.api.random_bonus_type,
@@ -963,6 +1015,8 @@ class Runtime(object):
             # An expired request can still carry the only available result.
             # Fill unknowns, but never revise facts from a newer delivery.
             record['reconcile'] = False
+            for candidate in record.get('_deferred_candidates', []):
+                candidate['reconcile'] = False
         started_at = record.get('started_at')
         if (started_at is not None and self._started_at is not None and
                 self._started_at <= started_at <= self.now()):
@@ -982,20 +1036,21 @@ class Runtime(object):
                                 message('runtime.bonus'),
                                 exception=True)
         if reusable is not None:
-            # Native service updates this value when the player applies the
-            # post-battle multiplier; never add the bonus to raw XP a second time.
-            try:
-                personal = reusable.personal
-                value = _number(personal.xpProgress.get(record['vehicle_id'], {}).get('xp'))
-                applied = bool(personal.isAddXPBonusApplied)
-                if value is not None and (applied or record['xp_received'] is None):
-                    record['xp_received'] = value
-                    record['xp_bonus_applied'] = applied
-            except Exception:
-                self.monitor.fault('bonus_fields', 'reusable.personal.xpProgress', 'supported bonus fields', 'exception', source)
-                self._warn_once('results:bonus',
-                                message('runtime.bonus'),
-                                exception=True)
+            for target in record.get('_deferred_candidates', [record]):
+                # Native service updates this value when the player applies the
+                # post-battle multiplier; never add the bonus to raw XP a second time.
+                try:
+                    personal = reusable.personal
+                    value = _number(personal.xpProgress.get(target['vehicle_id'], {}).get('xp'))
+                    applied = bool(personal.isAddXPBonusApplied)
+                    if value is not None and (applied or target['xp_received'] is None):
+                        target['xp_received'] = value
+                        target['xp_bonus_applied'] = applied
+                except Exception:
+                    self.monitor.fault('bonus_fields', 'reusable.personal.xpProgress', 'supported bonus fields', 'exception', source)
+                    self._warn_once('results:bonus',
+                                    message('runtime.bonus'),
+                                    exception=True)
         changed = service.record_result(record)
         installation_changed = self._record_installation(account_key, record, is_result=True)
         LOG.info('Result normalized: source=%s complete=%s changed=%s', source, record.get('complete'), changed)
@@ -1084,6 +1139,8 @@ class Runtime(object):
             self._schedule_tick()
 
     def _poll_one(self, service, account_key):
+        if getattr(service, 'loading', False) or not getattr(service, 'ready', True):
+            return
         now = self.now()
         for key, request in list(self.inflight.items()):
             if request['expires'] <= now:

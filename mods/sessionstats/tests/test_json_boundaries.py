@@ -54,7 +54,7 @@ class ExternalJSONTests(unittest.TestCase):
         api = FakeAPI()
         if load_expected:
             api.load_expected = runtime.GameAPI.__new__(runtime.GameAPI).load_expected
-        mod = runtime.Runtime(api=api, data_dir=self.directory, now=self.clock,
+        mod = runtime.Runtime(deferred_loading=False, api=api, data_dir=self.directory, now=self.clock,
                               expected_table=None if load_expected else EXPECTED,
                               window=FakeWindow(), footer_installer=footer_installer or (lambda callback: None),
                               installation_dir=self.directory)

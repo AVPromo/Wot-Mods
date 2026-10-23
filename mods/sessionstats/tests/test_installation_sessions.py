@@ -137,7 +137,7 @@ class InstallationRuntimeTests(unittest.TestCase):
         previous = runtime.LAUNCH_ID
         try:
             runtime.LAUNCH_ID = previous + '-installation-restart'
-            self.mod = runtime.Runtime(api=self.api, data_dir=self.directory,
+            self.mod = runtime.Runtime(deferred_loading=False, api=self.api, data_dir=self.directory,
                                        expected_table=runtime_fixtures.EXPECTED, now=self.clock,
                                        window=self.window, footer_installer=self.no_footer,
                                        installation_dir=self.directory,

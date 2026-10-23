@@ -39,7 +39,7 @@ class RuntimeHealthTests(unittest.TestCase):
         self.mod = self.new_runtime()
 
     def new_runtime(self):
-        mod = runtime.Runtime(api=self.api, data_dir=self.directory,
+        mod = runtime.Runtime(deferred_loading=False, api=self.api, data_dir=self.directory,
                               expected_table=EXPECTED, now=self.clock,
                               window=FakeWindow(), footer_installer=lambda callback: self.footer)
         mod.start()
