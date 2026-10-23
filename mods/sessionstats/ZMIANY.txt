@@ -1,7 +1,16 @@
 SESSION STATS — CHANGELOG
 
-Unreleased follow-up • 2026-10-23
+0.2.8 • 2026-10-23
 
+• Assign a new package version to the accumulated review, reliability and
+  performance corrections. Package metadata, runtime version and active guides
+  now identify 0.2.8; the client target and OpenWG dependency are unchanged.
+• Saves append checksummed journal changes instead of rewriting the full history.
+  Incremental summaries and 40-row pages preserve full-period statistics while
+  reducing ready-state save and panel preparation work.
+• Result recovery, account/installation isolation, native callback teardown and
+  coexistence safeguards include the corrections documented in
+  docs/REVIEW_FIXES_PR3.md and docs/INDEPENDENT_SAFETY_REVIEW_PR3.md.
 • History loading now runs in scheduled garage steps, including JSON reading,
   checksum verification, journal replay, validation and index construction.
   Background history work pauses during battles. No SQLite or new mod dependency.
@@ -15,6 +24,10 @@ Unreleased follow-up • 2026-10-23
   before downgrading to a release that does not understand the startup queue.
 • See docs/HISTORY_PERFORMANCE.md for synthetic measurements and remaining limits;
   the scheduling budget is not a hard frame-time guarantee. No live WoT test.
+
+Upgrade with the game closed: remove the previous Session Stats .wotmod and
+install grz.sessionstats_0.2.8.wotmod. Preserve custom JSON, language overrides
+and the complete account/installation history directories. No reset is required.
 
 0.2.7 • 2026-10-21
 

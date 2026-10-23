@@ -1,11 +1,11 @@
-# Appearance and scrolling configuration — 0.2.7
+# Appearance and scrolling configuration — 0.2.8
 
 ## File placement and applying changes
 
 Place **`grz.sessionstats.json`** beside the active package:
 
 ```text
-mods/2.4.1.0/grz.sessionstats_0.2.7.wotmod
+mods/2.4.1.0/grz.sessionstats_0.2.8.wotmod
 mods/2.4.1.0/grz.sessionstats.json
 ```
 

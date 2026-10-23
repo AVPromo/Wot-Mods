@@ -25,15 +25,19 @@ class BuildContracts(unittest.TestCase):
         shutil.rmtree(str(self.directory))
 
     def test_active_guides_use_requested_package_and_client_versions(self):
+        major, minor, patch = map(int, self.build.VERSION.split('.'))
+        version = '%d.%d.%d' % (major, minor, patch + 1)
+        source_package = ('grz.sessionstats_' + self.build.VERSION + '.wotmod').encode('ascii')
+        target_package = ('grz.sessionstats_' + version + '.wotmod').encode('ascii')
         for name in self.build.RELEASE_GUIDES:
             original = (self.build.ROOT/name).read_bytes()
-            rendered = self.build.render_guide(name, original, '0.2.8', '2.5.0.0')
-            self.assertNotIn(b'grz.sessionstats_0.2.7.wotmod', rendered)
-            if b'grz.sessionstats_0.2.7.wotmod' in original:
-                self.assertIn(b'grz.sessionstats_0.2.8.wotmod', rendered)
+            rendered = self.build.render_guide(name, original, version, '2.5.0.0')
+            self.assertNotIn(source_package, rendered)
+            if source_package in original:
+                self.assertIn(target_package, rendered)
             self.assertNotIn(b'mods/2.4.1.0/', rendered)
-        readme = self.build.render_guide('README_PL.txt', (self.build.ROOT/'README_PL.txt').read_bytes(), '0.2.8','2.5.0.0')
-        self.assertIn(b'Version 0.2.8', readme)
+        readme = self.build.render_guide('README_PL.txt', (self.build.ROOT/'README_PL.txt').read_bytes(), version, '2.5.0.0')
+        self.assertIn(('Version ' + version).encode('ascii'), readme)
 
     def test_historical_changelog_is_not_rewritten(self):
         content = (self.build.ROOT/'ZMIANY.txt').read_bytes()

@@ -1,5 +1,5 @@
 SESSION STATS — WORLD OF TANKS PC MOD
-Version 0.2.7 • 2026-10-21 • target: Wargaming EU 2.4.1.0
+Version 0.2.8 • 2026-10-23 • target: Wargaming EU 2.4.1.0
 
 RELEASE STATUS
 This installable .wotmod contains CPython 2.7.18 bytecode, a dedicated Gameface
@@ -13,12 +13,12 @@ API failures. This release has not been run in a live WoT client here; mocked
 interfaces cannot guarantee compatibility with future clients.
 This is not an official Wargaming product.
 
-UPDATING FROM 0.2.6 OR EARLIER
-Close the game, remove grz.sessionstats_0.2.6.wotmod (or an older version of this
-mod) from the active mods directory and replace it with grz.sessionstats_0.2.7.wotmod
+UPDATING AN EXISTING INSTALLATION
+Close the game, remove the previous grz.sessionstats_*.wotmod from the active
+mods directory and replace it with grz.sessionstats_0.2.8.wotmod
 from this package. Place grz.sessionstats.json beside it. Keep only one active
 version of grz.sessionstats. Bundled OpenWG 1.2.2 is unchanged; keep one copy.
-The history format is unchanged. Updating does not require a data reset.
+Existing history remains readable. Updating does not require a data reset.
 
 The configuration filename has no release number. Preserve your own
 grz.sessionstats.json instead of overwriting it with the new package's defaults.
@@ -30,7 +30,7 @@ QUICK INSTALLATION
 2. Extract the ZIP anywhere.
 3. Copy the included mods directory into the World of Tanks root containing
    WorldOfTanks.exe. For client 2.4.1.0, the installed files should include:
-   mods/2.4.1.0/grz.sessionstats_0.2.7.wotmod
+   mods/2.4.1.0/grz.sessionstats_0.2.8.wotmod
    mods/2.4.1.0/grz.sessionstats.json
    mods/2.4.1.0/grz.sessionstats.languages.json
    mods/2.4.1.0/net.openwg/net.openwg.gameface_1.2.2.wotmod
@@ -49,7 +49,7 @@ on the player's computer.
 
 If the active mods directory is not 2.4.1.0, use your client's version directory
 for the .wotmod files and place grz.sessionstats.json directly beside
-grz.sessionstats_0.2.7.wotmod. Moving files alone does not establish compatibility
+grz.sessionstats_0.2.8.wotmod. Moving files alone does not establish compatibility
 with a new client. This adapter uses interfaces from the 2.4.1 branch.
 
 LANGUAGES AND OPTIONAL FILES
@@ -420,7 +420,7 @@ A separate Windows user provides separate AppData; changing only the game instal
 directory does not. This does not affect main-account progress on Wargaming's server.
 
 UNINSTALLING
-Close the game and remove grz.sessionstats_0.2.7.wotmod from the active mods directory.
+Close the game and remove grz.sessionstats_0.2.8.wotmod from the active mods directory.
 Other mods may require OpenWG. The AppData journal remains; deleting the data
 directory deletes saved statistics. Keep grz.sessionstats.json and optional
 language overrides for a later installation if desired.

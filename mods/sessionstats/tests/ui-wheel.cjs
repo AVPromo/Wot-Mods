@@ -144,7 +144,7 @@ async function synthetic(page, values) {
         result=await wheel(native,-120,400);
         check('Cleanup removes the adapter; the original native-sign/browser-default mismatch is reproduced as a negative control',result.after===280 && result.audit.trusted && !result.audit.prevented);
         check('No JavaScript errors',errors.length===0);
-        console.log(JSON.stringify({version:'0.2.7',checked_at_utc:new Date().toISOString(),passed:checks.length,checks,errors,live_client_tested:false,
+        console.log(JSON.stringify({version:fs.readFileSync(path.join(root,'VERSION'),'utf8').trim(),checked_at_utc:new Date().toISOString(),passed:checks.length,checks,errors,live_client_tested:false,
             fixture:'Trusted Chrome wheel input with the sign and proportional quarter-view step used by WoT InfoView.js #977. Synthetic events are limited to line/page modes. This does not execute Gameface C++.'},null,2));
     } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

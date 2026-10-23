@@ -302,7 +302,7 @@ async function footer(browser) {
             await foot.locator('#grz-session-footer-appearance').count()===0 && await foot.locator('#grz-session-stats-footer-button').count()===0);
         await foot.close();
         check('No JavaScript errors escape the appearance integration',errors.length===0);
-        console.log(JSON.stringify({version:'0.2.7',checked_at_utc:new Date().toISOString(),passed:checks.length,checks,errors,live_client_tested:false,
+        console.log(JSON.stringify({version:fs.readFileSync(path.join(root,'VERSION'),'utf8').trim(),checked_at_utc:new Date().toISOString(),passed:checks.length,checks,errors,live_client_tested:false,
             fixture:'Actual appearance.py compilation and shipped UI in Chromium; native model doubles and synthetic wheel events. Exact default computed styles are compared with the static fallback.'},null,2));
     } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
