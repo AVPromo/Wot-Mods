@@ -109,6 +109,22 @@ class ConfigPathTests(unittest.TestCase):
         second = self.game('game-b')
         self.assertIsNone(cp.find_installation_root(Resources(app=first), cwd=second))
 
+    def test_ambiguous_authoritative_bytes_do_not_select_a_third_installation(self):
+        first = self.game('\u00e9')
+        self.game('\u00c3\u00a9')
+        fallback = self.game('fallback')
+        resources = Resources(xml=os.path.join(first, 'paths.xml').encode('utf-8'), app=fallback)
+        with changed(sys, 'getfilesystemencoding', lambda: 'cp1252'):
+            with self.assertRaises(cp._LocationError):
+                cp._physical_xml(resources.xml)
+            self.assertIsNone(cp.find_installation_root(resources, cwd=fallback))
+
+    def test_installation_root_falls_back_when_resolver_has_no_physical_path(self):
+        fallback = self.game('fallback')
+        for resources in (Resources(app=fallback), Resources(app=fallback, fail=True)):
+            self.assertEqual(cp.find_installation_root(resources, cwd=fallback),
+                             os.path.realpath(fallback))
+
     def test_invalid_authoritative_installation_xml_does_not_select_another_game(self):
         first = self.game('game-a')
         second = self.game('game-b')

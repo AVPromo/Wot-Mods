@@ -249,9 +249,12 @@ def find_installation_root(resmgr=None, cwd=None):
         if resmgr is not None:
             try:
                 resolver = getattr(resmgr, 'resolveToAbsolutePath', None)
-                path = _physical_xml(resolver('../paths.xml')) if callable(resolver) else None
+                resolved = resolver('../paths.xml') if callable(resolver) else None
             except Exception:
-                path = None
+                resolved = None
+            # An ambiguous authoritative path must not select another game via
+            # appDirectory/CWD fallback. Only resolver absence permits fallback.
+            path = _physical_xml(resolved)
             if path is not None:
                 _package_roots(path)
                 return os.path.realpath(os.path.dirname(path))

@@ -747,8 +747,13 @@ class StatsService(object):
             if old.get('_manual_id') is not None:
                 merged['_manual_id'] = old['_manual_id']
         started_at = merged.get('started_at')
-        launch_id, manual_id = self._memberships(started_at, timestamp)
-        if not is_result and started_at is not None and started_at <= timestamp:
+        # A live observation proves that a valid server timestamp is not a
+        # future battle, even when the local clock lags. Keep known reset
+        # boundaries authoritative when choosing its manual period.
+        membership_time = (max(started_at, timestamp)
+                           if not is_result and started_at is not None else timestamp)
+        launch_id, manual_id = self._memberships(started_at, membership_time)
+        if not is_result and started_at is not None:
             # begin_battle is a live observation, unlike a delayed cache result.
             # It can precede service creation (late initialization/reconnect).
             # Existing durable memberships below still take precedence.
@@ -824,8 +829,18 @@ class StatsService(object):
 
     def launch_records(self):
         """Independent records from this account and game process only."""
+        if self.loading:
+            # Only beginnings durably captured by this process prove where a
+            # battle was played. Restored intake and unobserved cache results
+            # can belong to a different installation. During replay launch_id
+            # temporarily names an earlier process, so do not use partial state.
+            return [copy.deepcopy(record) for (is_result, unused), (record, context)
+                    in self._received_records.items()
+                    if not is_result and record.get('started_at') is not None]
+        if not self.ready:
+            return []
         return [copy.deepcopy(record) for record in self._state['battles'].values()
-                if record.get('_launch_id') == self.launch_id and record.get('mode') in (None, 'random')]
+                if record.get('_launch_id') == self._requested_launch and record.get('mode') in (None, 'random')]
 
     def project_scope(self, records, label, started_at):
         """Project known records without changing their account/session ledger."""

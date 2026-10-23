@@ -824,6 +824,11 @@ class Runtime(object):
                 self._load_cursor += 1
                 service.advance_loading()
                 if not service.loading:
+                    if service.ready and self._instance_session is not None:
+                        for account_key, account_service in self.services.items():
+                            if account_service is service:
+                                self._backfill_installation(account_key, service)
+                                break
                     self._window_call('refresh')
                     self._publish_activity()
                     self._service_diagnostics()
@@ -847,16 +852,21 @@ class Runtime(object):
             # Only this process's records have known installation provenance.
             # Account archives from previous processes must not be guessed in.
             for account_key, service in self.services.items():
-                for record in service.launch_records():
-                    self._instance_session.begin(account_key, record)
-                    if record.get('_result_seen'):
-                        self._instance_session.result(account_key, record)
+                self._backfill_installation(account_key, service)
             self.compatibility_warnings.pop('installation:identity', None)
         except Exception:
             self._warn_once('installation:identity',
                             message('installation.unavailable'),
                             visible=self._instance_tab_enabled)
         return self._instance_session
+
+    def _backfill_installation(self, account_key, service):
+        # Loading services expose durable live beginnings immediately. Retry
+        # once they become ready to include results received before discovery.
+        for record in service.launch_records():
+            self._record_installation(account_key, record)
+            if record.get('_result_seen'):
+                self._record_installation(account_key, record, is_result=True)
 
     def _record_installation(self, account_key, record, is_result=False):
         session = self._ensure_installation_session()

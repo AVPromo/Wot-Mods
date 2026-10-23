@@ -170,12 +170,51 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.summary()['battles'], 0)
         self.assertEqual(self.summary(scope='manual')['battles'], 0)
 
-    def test_future_or_invalid_observed_start_does_not_gain_membership(self):
-        for index, invalid in enumerate((121, 'invalid', -1, True)):
+    def test_invalid_observed_start_does_not_gain_membership(self):
+        for index, invalid in enumerate(('invalid', -1, True)):
             self.assertTrue(self.service.begin_battle(str(index), started_at=invalid, mode='random'))
             row = self.service._state['battles'][str(index)]
             self.assertIsNone(row['_launch_id'])
             self.assertIsNone(row['_manual_id'])
+
+    def test_clock_skewed_live_beginning_keeps_memberships_after_complete_result(self):
+        manual_id = self.service._state['current_manual_id']
+        self.assertTrue(self.service.begin_battle('1', started_at=121, mode='random'))
+        self.assertTrue(self.service.record_result(result(started_at=121, ended_at=122)))
+        self.assertEqual(self.service.pending_arena_ids(), [])
+        for scope in ('launch', 'manual'):
+            self.assertEqual(self.summary(scope=scope)['battles'], 1)
+        self.clock.value = 200
+        restored = StatsService(self.directory, 'EU:1', 'launch-two', EXPECTED, self.clock)
+        restored.reset_manual()
+        self.clock.value = 119
+        restored.begin_battle('1', started_at=121, mode='random')
+        row = restored._state['battles']['1']
+        self.assertEqual(row['_launch_id'], 'launch-one')
+        self.assertEqual(row['_manual_id'], manual_id)
+        self.assertEqual(self.summary(restored)['battles'], 0)
+        self.assertEqual(self.summary(restored, 'manual')['battles'], 0)
+
+    def test_future_result_without_live_observation_has_no_memberships(self):
+        self.service.record_result(result(started_at=121, ended_at=122))
+        row = self.service._state['battles']['1']
+        self.assertIsNone(row['_launch_id'])
+        self.assertIsNone(row['_manual_id'])
+
+    def test_clock_skewed_new_observations_respect_manual_reset_boundary(self):
+        old_manual = self.service._state['current_manual_id']
+        self.clock.value = 130
+        new_manual = self.service.reset_manual()
+        self.assertIsNotNone(new_manual)
+        self.clock.value = 119
+        for arena, started, expected in (('before', 121, old_manual), ('after', 131, new_manual)):
+            self.service.begin_battle(arena, started_at=started, mode='random')
+            self.service.record_result(result(arena, started_at=started, ended_at=started + 1))
+            row = self.service._state['battles'][arena]
+            self.assertEqual(row['_launch_id'], 'launch-one')
+            self.assertEqual(row['_manual_id'], expected)
+        self.assertEqual(self.summary()['battles'], 2)
+        self.assertEqual(self.summary(scope='manual')['battles'], 1)
 
     def test_begin_is_durable_and_duplicate_result_is_idempotent(self):
         self.assertTrue(self.service.begin_battle('1', started_at=110, vehicle_id=1, mode='random'))

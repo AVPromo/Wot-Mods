@@ -1,5 +1,34 @@
 # PR #3 review fixes
 
+## Review 5631576981: deferred provenance, clock skew and installation paths
+
+When the installation root becomes available during account startup, backfill
+copies durable beginnings captured by the current process immediately. It does
+not inspect partially replayed history or adopt previous-process intake/cache
+results as proof of installation identity. Each account also retries backfill
+once loading succeeds, using its own account key even after an account switch,
+so results received before discovery are included. Copies cannot mutate the
+account ledger. Normal installation write failures remain contained and visible.
+
+A live beginning with a valid server timestamp ahead of the local clock now
+captures the current launch and manual period. Existing durable memberships
+still win; historical/manual-reset ownership, invalid timestamps and unobserved
+future results keep their existing rules. Deferred replay uses the original
+observation time and launch, including after restart.
+
+Ambiguous byte encodings in the authoritative paths.xml location now stop
+installation discovery instead of falling back to a different game root. A
+resolver that genuinely supplies no physical path still permits the existing
+bounded fallback discovery.
+
+Ten new regression/control tests cover all three findings, shutdown before and
+after loading, duplicate recovered results, account switching, detached intake,
+clock skew with restart/reset, and missing versus ambiguous resolver paths.
+Before the fixes, seven regressions failed and both control cases passed. An
+additional rollback/reset test protects historical ownership for newly observed
+battles whose server timestamp is still ahead of the local clock.
+
+
 ## Review 5625868921: launch overlap after clock rollback
 
 New launch boundaries are clamped to the greatest prior launch end after crash

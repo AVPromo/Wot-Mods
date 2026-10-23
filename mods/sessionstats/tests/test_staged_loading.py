@@ -63,6 +63,38 @@ class StagedLoadingTests(unittest.TestCase):
         self.finish(service)
         self.assertEqual(service.snapshot()['scopes']['manual']['summary']['battles'], 250)
 
+    def test_loading_exposes_detached_current_process_beginnings_only(self):
+        old = self.service('old-process')
+        old.begin_battle('old', started_at=100, mode='random')
+        old.cancel_loading()
+        self.clock.value = 120
+        service = self.service('current-process')
+        service.begin_battle('live', started_at=121, mode='random')
+        service.record_result(result('unobserved', started_at=110))
+        for unused in range(50000):
+            if not service.loading:
+                break
+            rows = service.launch_records()
+            self.assertEqual([row['arena_id'] for row in rows], ['live'])
+            rows[0]['vehicle_name'] = 'mutated copy'
+            self.assertNotEqual(service.launch_records()[0].get('vehicle_name'), 'mutated copy')
+            service.advance_loading(max_steps=1)
+        self.assertTrue(service.ready, service.last_error)
+
+    def test_clock_skewed_intake_preserves_original_ownership_after_restart(self):
+        old = self.service('old-process')
+        old.begin_battle('1', started_at=101, mode='random')
+        old.record_result(result(started_at=101, ended_at=102))
+        old.cancel_loading()
+        self.clock.value = 200
+        service = self.service('new-process')
+        self.finish(service)
+        row = service._state['battles']['1']
+        self.assertEqual(row['_launch_id'], 'old-process')
+        self.assertIsNotNone(row['_manual_id'])
+        self.assertEqual(service.snapshot()['scopes']['manual']['summary']['battles'], 1)
+        self.assertEqual(service.snapshot()['scopes']['launch']['summary']['battles'], 0)
+
     def test_all_load_phases_yield_and_match_full_recomputation(self):
         self.seed()
         service = self.service()

@@ -18,6 +18,10 @@ SESSION STATS — CHANGELOG
   Committed receipt watermarks prevent double application after interruption
   between the history commit and queue cleanup. Account and launch ownership,
   corrections and installation provenance are retained.
+• Late installation discovery also retains queued live beginnings before loading
+  finishes and backfills completed account results after readiness. Live battle
+  timestamps ahead of the local clock retain session ownership. Ambiguous game
+  path encodings cannot silently select another installation.
 • The panel shows loading/failure instead of partial totals and disables reset
   until ready. Full history, period totals, WN8, XP and financial calculations remain.
 • Backups must include startup-intake/ as well as all journal files. Finish loading
