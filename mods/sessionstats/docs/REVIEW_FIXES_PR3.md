@@ -1,5 +1,28 @@
 # PR #3 review fixes
 
+## Review 5621032549: chronological period boundaries
+
+Application validation now checks the ordering within each launch/manual period,
+not just the type of its timestamps: `started_at <= last_seen_at`,
+`started_at <= ended_at`, and `last_seen_at <= ended_at` when the optional fields
+are present. Missing/null last-seen values retain the start-time fallback.
+Equal boundaries, including timestamp zero, remain valid. A reversed known-schema
+candidate is rejected during generation selection, allowing the valid backup to
+restore history, reset identity and delayed-result memberships before any crash
+closure or subsequent write.
+
+The write-path audit covers launch closure, activity updates and manual resets.
+Crash closure uses the validated last-seen boundary; activity updates retain its
+maximum value during clock rollback. Manual reset refuses a time before the
+active period's accepted last-seen boundary, preserving the committed state and
+files rather than creating an interval the next startup would reject.
+
+Regressions cover both period types, all three ordering relationships, same/new
+launch recovery, delayed results, installation history, equality/zero boundaries,
+clock rollback, reset rejection/retry, all-invalid read-only behavior, unsupported
+schema protection and subsequent writes/restarts.
+
+
 ## Review 5620722118: period timestamps and mid-battle initialization
 
 Generation selection now validates non-null optional `ended_at` and `last_seen_at`

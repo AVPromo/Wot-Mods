@@ -304,6 +304,13 @@ class StatsService(object):
                 for key in ('ended_at', 'last_seen_at'):
                     if epoch.get(key) is not None and _number(epoch[key], True) is None:
                         raise StorageError(message('core.boundaries'))
+                # A numeric boundary can still reverse/truncate the interval.
+                # Reject it before selection and before crash closure writes it.
+                last_seen = self._last_seen(epoch)
+                ended = epoch.get('ended_at')
+                if (last_seen < epoch['started_at'] or
+                        (ended is not None and (ended < epoch['started_at'] or last_seen > ended))):
+                    raise StorageError(message('core.boundaries'))
         manual_periods = state['manual_sessions']
         if (state.get('current_manual_id') != manual_periods[-1]['id']
                 or manual_periods[-1].get('ended_at') is not None
@@ -471,7 +478,7 @@ class StatsService(object):
     def reset_manual(self, now=None):
         timestamp = self._time() if now is None else _number(now, True)
         active = self._state['manual_sessions'][-1]
-        if timestamp is None or timestamp < active['started_at']:
+        if timestamp is None or timestamp < self._last_seen(active):
             self.last_error = message('core.reset_time')
             return None
         new_id = uuid.uuid4().hex
