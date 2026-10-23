@@ -12,9 +12,39 @@ mod. A removed/misnamed entrypoint or shallow history fails validation.
 | Session Stats | `mods/sessionstats/` | `mods/sessionstats/VERSION` | `sessionstats-v0.2.…` | `sessionstats-release.yml` |
 
 Session Stats builds never invoke Stay Sharp's builder. Read-only builds test
-and reproduce all six Session Stats assets before uploading an Actions artifact.
-The installer includes the mod, default configuration, one OpenWG dependency
-and sources; editable language catalogs are included by the source builder.
+and reproduce all six Session Stats release assets before uploading the existing
+installer ZIP directly as the PR artifact. The installer includes the mod,
+default configuration, one OpenWG dependency and sources; editable language
+catalogs are included by the source builder.
+
+## Downloading a PR test build
+
+Open the successful **Validate Session Stats PR** run in Actions and download
+`wot-statystyki-sesji-v<version>.zip` from **Artifacts**. This is the installer ZIP
+itself, without a second ZIP wrapped around it or extra standalone release assets.
+Extract once and follow the included installation instructions. The `mods/`
+layout, configuration, documentation, checksums, licenses and sources are intact.
+Artifacts remain available for 14 days; PR builds do not publish Releases.
+
+After the existing full validation/audit/reproducibility pass, the workflow
+selects only `mods/sessionstats/dist/wot-statystyki-sesji-v*.zip` and uploads it
+with `archive: false`. The already-pinned
+[`actions/upload-artifact` version supports this input](https://github.com/actions/upload-artifact/blob/cf430e030ddbb5b0abf93d22962f4752f3646cd9/action.yml):
+it uploads one file as-is and uses that file's name as the artifact name. No
+extraction, recompression or second build is needed. The action rejects multiple
+matches, and `if-no-files-found: error` rejects a missing installer. The preceding
+validation still requires the exact six-asset release set and its checksums.
+
+The **Release Session Stats** build/publish handoff keeps all six assets under
+`mods/sessionstats/dist` in its existing multi-file artifact. Release asset names,
+versioning, checksums, reproducibility checks, shared snapshot carry-forward and
+publisher inputs stay compatible. The PR downloads the same installer bytes
+produced by the builder; neither the installer format nor the Release workflow
+needs a change.
+
+Merge this dedicated infrastructure PR into accepted `main`, update the source
+PR branch onto that main, then run its full validation to produce the new direct
+download. Local checks against source-PR output do not replace that hosted run.
 
 Patch = baseline patch + workflow run number − 1. Failed/skipped runs may leave
 gaps. Ordinary fixes do not require a baseline bump. Reruns retain their version.
