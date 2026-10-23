@@ -1,5 +1,29 @@
 # PR #3 review fixes
 
+## Review 5624888833: record manual activity through normal writes
+
+Every committed beginning, result/enrichment and reset now updates the active
+manual period alongside the active launch. Each period retains the maximum of
+its previous activity and the observation/commit timestamp, so a clock rollback
+cannot lower the reset boundary. The initial manual period records its start as
+last-seen activity. A delayed result still belongs to its original historical
+period; only the currently active manual period's activity is touched.
+
+Before permitting reset after startup, older ledgers restore their active manual
+activity from validated persisted launch and battle-update timestamps. This
+upgrade is committed through the same transactional generation path and does not
+rewrite existing files. A second open does not repeat the upgrade. Normal
+account and installation services share this behavior, while retaining their
+independent reset identities and storage.
+
+Regressions use real beginning/result calls rather than injecting a manual
+boundary: they cover rollback/reset rejection, correct delayed membership,
+restart, legacy upgrade without a new battle, partial activity during rollback,
+failed writes/retry, account/region isolation and shared installation activity.
+Duplicate results continue to avoid redundant writes. Failed commits do not
+publish candidate activity or change existing periods/files.
+
+
 ## Review 5621032549: chronological period boundaries
 
 Application validation now checks the ordering within each launch/manual period,

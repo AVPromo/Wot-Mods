@@ -250,6 +250,13 @@ class StatsService(object):
             if self.store.warning:
                 self._warnings.append(self.store.warning)
             candidate = copy.deepcopy(self._state)
+            # Older ledgers tracked activity only on launches and battle updates.
+            # Preserve that durable high-water mark before allowing manual reset.
+            manual = candidate['manual_sessions'][-1]
+            activity = ([self._last_seen(manual)] +
+                        [self._last_seen(epoch) for epoch in candidate['launch_sessions']] +
+                        [battle.get('_updated_at', 0) for battle in candidate['battles'].values()])
+            manual['last_seen_at'] = max(activity)
             found = self._launch(candidate, self.launch_id)
             if found is None:
                 for previous in candidate['launch_sessions']:
@@ -280,7 +287,8 @@ class StatsService(object):
         manual_id = uuid.uuid4().hex
         return {'schema_version': SCHEMA_VERSION, 'account_key': self.account_key,
                 'launch_sessions': [],
-                'manual_sessions': [{'id': manual_id, 'started_at': timestamp, 'ended_at': None}],
+                'manual_sessions': [{'id': manual_id, 'started_at': timestamp,
+                                     'last_seen_at': timestamp, 'ended_at': None}],
                 'current_manual_id': manual_id, 'battles': {}}
 
     def _validate_state(self, state):
@@ -361,9 +369,11 @@ class StatsService(object):
         return True
 
     def _touch(self, candidate, timestamp):
-        epoch = self._launch(candidate, self.launch_id)
-        if epoch is not None:
-            epoch['last_seen_at'] = max(self._last_seen(epoch), timestamp)
+        # Activity is observed at commit time, independently of the battle's
+        # historical memberships. Both active periods protect reset boundaries.
+        for epoch in (self._launch(candidate, self.launch_id), candidate['manual_sessions'][-1]):
+            if epoch is not None:
+                epoch['last_seen_at'] = max(self._last_seen(epoch), timestamp)
 
     def _memberships(self, timestamp, current_time):
         if timestamp is None or timestamp > current_time:
