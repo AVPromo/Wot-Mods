@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import sys
 import shutil
 import subprocess
@@ -46,6 +47,32 @@ class SessionStatsPipelineTests(unittest.TestCase):
 
     def test_all_six_assets_validate(self):
         self.assertEqual(len(release.inputs(self.folder, self.version)), 6)
+
+    def test_pr_download_selects_only_the_release_installer_without_wrapping_it(self):
+        workflow = (ROOT/'.github/workflows/sessionstats-ci.yml').read_text()
+        upload = workflow.split('uses: actions/upload-artifact@', 1)[1]
+        path = re.search(r'^          path: (.+)$', upload, re.MULTILINE).group(1)
+        prefix = 'mods/sessionstats/dist/'
+        self.assertTrue(path.startswith(prefix))
+        selected = sorted(self.folder.glob(path[len(prefix):]))
+        assets = release.inputs(self.folder, self.version)
+        self.assertEqual(selected, [assets['wot-statystyki-sesji-v0.2.9.zip']])
+        self.assertRegex(upload, r'(?m)^          archive: false$')
+        self.assertRegex(upload, r'(?m)^          if-no-files-found: error$')
+        self.assertLess(workflow.index('run: bash scripts/sessionstats/validate.sh'),
+                        workflow.index('uses: actions/upload-artifact@'))
+        # The publisher still receives the complete verified set, not only the ZIP.
+        publisher = (ROOT/'.github/workflows/sessionstats-release.yml').read_text()
+        handoff = publisher.split('uses: actions/upload-artifact@', 1)[1].split('\n  publish:', 1)[0]
+        release_path = re.search(r'^          path: (.+)$', handoff, re.MULTILINE).group(1)
+        self.assertEqual(set(self.folder.glob(release_path[len(prefix):])), set(assets.values()))
+        self.assertNotIn('archive: false', handoff)
+
+    def test_second_installer_blocks_validation_even_with_valid_checksums(self):
+        (self.folder/'wot-statystyki-sesji-v0.2.8.zip').write_bytes(b'stale')
+        self.checksums()
+        with self.assertRaises(release.ValidationError):
+            release.inputs(self.folder, self.version)
 
     def test_changed_asset_hash_blocks_before_remote_operations(self):
         (self.folder/'grz.sessionstats.json').write_text('changed')

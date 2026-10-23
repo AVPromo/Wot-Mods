@@ -28,11 +28,12 @@ jobs:
       - name: Test, build, audit and reproduce Session Stats
         if: steps.source.outputs.enabled == 'true'
         run: bash scripts/sessionstats/validate.sh
-      - name: Upload reviewed Session Stats build
+      - name: Upload installable Session Stats ZIP without repackaging
         if: steps.source.outputs.enabled == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sessionstats-pr-${{ github.run_id }}
-          path: mods/sessionstats/dist/*
+          path: mods/sessionstats/dist/wot-statystyki-sesji-v*.zip
+          # Upload the existing release installer as-is; its filename is the artifact name.
+          archive: false
           if-no-files-found: error
           retention-days: 14
