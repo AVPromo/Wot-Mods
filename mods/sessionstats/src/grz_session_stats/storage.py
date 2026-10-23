@@ -114,9 +114,11 @@ class _WriteLock(object):
                 elif self.platform is not None:
                     self.platform.flock(self.handle.fileno(), self.platform.LOCK_UN)
         finally:
-            if self.handle is not None:
-                self.handle.close()
-            _PROCESS_LOCK.release()
+            try:
+                if self.handle is not None:
+                    self.handle.close()
+            finally:
+                _PROCESS_LOCK.release()
 
 
 class GenerationStore(object):
@@ -198,6 +200,7 @@ class GenerationStore(object):
             raise StorageError(message('storage.readonly'))
         if payload.get('schema_version') != self.schema_version:
             raise UnsupportedSchemaError(message('storage.unsupported_write'))
+        committed = None
         try:
             check_json_depth(payload)
             _ensure_directory(self.directory)
@@ -227,6 +230,13 @@ class GenerationStore(object):
                     if os.path.exists(final_path):
                         raise StorageError(message('storage.collision'))
                     os.rename(temporary, final_path)
+                    # Rename is the commit marker. A subsequent directory
+                    # sync, backup cleanup or lock-release error must not make
+                    # StatsService keep its old in-memory ledger and later
+                    # overwrite this already accepted battle/reset.
+                    committed = generation
+                    self.sequence = generation
+                    self._observed_generation = generation
                     self._sync_directory()
                 finally:
                     if os.path.exists(temporary):
@@ -234,9 +244,7 @@ class GenerationStore(object):
                             os.unlink(temporary)
                         except OSError:
                             pass
-                self.sequence = generation
-                self._observed_generation = generation
-                for unused_generation, path in self._files()[self.keep_generations:]:
+                for unused_generation, path in files[self.keep_generations - 1:]:
                     try:
                         os.unlink(path)
                     except OSError:
@@ -244,8 +252,12 @@ class GenerationStore(object):
                         pass
                 return generation
         except StorageError:
+            if committed is not None:
+                return committed
             raise
         except (IOError, OSError, ValueError, TypeError, UnicodeError, RuntimeError):
+            if committed is not None:
+                return committed
             raise StorageError(message('storage.failed'))
 
     def _sync_directory(self):

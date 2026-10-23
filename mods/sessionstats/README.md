@@ -10,6 +10,8 @@ Both default scopes and manual resets are isolated per account and region.
 Its shared history and independent manual reset persist across game restarts;
 the tab is hidden by default. See [ACCOUNT_SESSIONS.md](docs/ACCOUNT_SESSIONS.md).
 Import review fixes: [REVIEW_FIXES_PR3.md](docs/REVIEW_FIXES_PR3.md).
+Independent stability/coexistence review, corrections and the remaining large-history
+performance finding: [INDEPENDENT_SAFETY_REVIEW_PR3.md](docs/INDEPENDENT_SAFETY_REVIEW_PR3.md).
 The build/validation pipeline comes from parent PR #2. The source PR is stacked
 on it and requires that infrastructure to merge first.
 
@@ -20,6 +22,10 @@ Place the `.wotmod` and optional `grz.sessionstats.json` together in the active
 `mods/<game_version>/` directory. Preserve your custom JSON when updating. OpenWG
 Gameface 1.2.2 is included under MIT; install only one copy even if another mod
 uses it. Remove the old Session Stats package without deleting AppData history.
+The Session Stats `.wotmod` itself works without OpenWG: collection and the native
+panel opened with **Ctrl+F10** remain available; only the garage footer button needs
+OpenWG. Its shared Gameface resource still needs compatibility testing with the
+other UI frameworks in a mod pack.
 
 Session Stats uses its own `mod_grz_session_stats` entrypoint, `grz_session_stats`
 package, `grz.sessionstats` resources and data/log directory. Medkit Reminder has

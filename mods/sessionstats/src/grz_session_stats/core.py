@@ -51,8 +51,10 @@ def _series(values):
     known = [value for value in values if value is not None]
     if not known:
         return {'min': None, 'avg': None, 'max': None, 'sum': None, 'count': 0}
-    total = sum(known)
-    return {'min': min(known), 'avg': total / float(len(known)),
+    total = _number(sum(known))
+    # Finite source values can still overflow during aggregation. Unknown
+    # derived values must not make the native JSON payload unrenderable.
+    return {'min': min(known), 'avg': total / float(len(known)) if total is not None else None,
             'max': max(known), 'sum': total, 'count': len(known)}
 
 
@@ -65,13 +67,15 @@ def wn8_from_totals(actual, expected):
         if got is None or reference is None or reference <= 0:
             return None
         ratios[key] = got / float(reference)
+        if _number(ratios[key], True) is None:
+            return None
     damage = max(0.0, (ratios['damage'] - 0.22) / 0.78)
     wins = max(0.0, (ratios['wins'] - 0.71) / 0.29)
     frags = max(0.0, min(damage + 0.2, (ratios['frags'] - 0.12) / 0.88))
     spots = max(0.0, min(damage + 0.1, (ratios['spots'] - 0.38) / 0.62))
     defense = max(0.0, min(damage + 0.1, (ratios['defense'] - 0.10) / 0.90))
-    return (980.0 * damage + 210.0 * damage * frags + 155.0 * frags * spots +
-            75.0 * defense * frags + 145.0 * min(1.8, wins))
+    return _number(980.0 * damage + 210.0 * damage * frags + 155.0 * frags * spots +
+                   75.0 * defense * frags + 145.0 * min(1.8, wins), True)
 
 
 class ExpectedTable(object):
@@ -121,7 +125,7 @@ def _money(records, currency):
     for key in ('income', 'costs', 'net'):
         values = [record.get('currencies', {}).get(currency, {}).get(key) for record in records]
         known = [value for value in values if value is not None]
-        money[key] = sum(known) if known else None
+        money[key] = _number(sum(known)) if known else None
         money[key + '_count'] = len(known)
     money['breakdown'] = {}
     money['breakdown_counts'] = {}
@@ -129,7 +133,7 @@ def _money(records, currency):
         values = [record.get('currencies', {}).get(currency, {}).get('breakdown', {}).get(key)
                   for record in records]
         known = [value for value in values if value is not None]
-        money['breakdown'][key] = sum(known) if known else None
+        money['breakdown'][key] = _number(sum(known)) if known else None
         money['breakdown_counts'][key] = len(known)
     return money
 
@@ -157,10 +161,13 @@ def aggregate_stats(records, expected_table):
             continue
         values = dict((key, record.get(key)) for key in ('damage', 'frags', 'spots', 'defense'))
         values['wins'] = 1 if record['outcome'] == 'win' else 0
+        rating = wn8_from_totals(values, expected)
+        if rating is None:
+            continue
         for key in actual:
             actual[key] += values[key]
             reference[key] += expected[key]
-        per_battle.append(wn8_from_totals(values, expected))
+        per_battle.append(rating)
     stats['wn8_count'] = len(per_battle)
     stats['wn8'] = wn8_from_totals(actual, reference) if per_battle else None
     stats['battle_wn8'] = _series(per_battle)

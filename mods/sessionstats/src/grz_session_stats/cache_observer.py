@@ -21,21 +21,32 @@ class CacheObserver(object):
         self._active = True
         self._warned = False
         self._cls = type(cache)
+        self._defined_here = 'get' in self._cls.__dict__
         self._original = _function(self._cls.get)
         original = self._original
 
         @wraps(original)
-        def observed_get(instance, arena_id, callback):
-            if (not self._active or instance is not self.cache or
-                    getattr(callback, OWN_CALLBACK, False)):
-                return original(instance, arena_id, callback)
+        def observed_get(instance, *args, **kwargs):
+            # This is a shared method, including for other cache instances.
+            # Keep native keyword names and any earlier mod's extensions.
+            # Unknown/ambiguous call shapes bypass optional observation and
+            # retain the original method's validation and exception behavior.
+            if not self._active or instance is not self.cache:
+                return original(instance, *args, **kwargs)
+            arena_id = args[0] if args else kwargs.get('arenaUniqueID', kwargs.get('arena_id'))
+            positional_callback = len(args) >= 2
+            if arena_id is None or (not positional_callback and 'callback' not in kwargs):
+                return original(instance, *args, **kwargs)
+            if positional_callback and 'callback' in kwargs:
+                return original(instance, *args, **kwargs)
+            callback = args[1] if positional_callback else kwargs['callback']
             try:
-                context = self._capture()
+                context = None if getattr(callback, OWN_CALLBACK, False) else self._capture()
             except Exception:
                 context = None
                 self._warn()
             if context is None:
-                return original(instance, arena_id, callback)
+                return original(instance, *args, **kwargs)
 
             def received(*args, **kwargs):
                 if self._active:
@@ -48,7 +59,11 @@ class CacheObserver(object):
                 if callback is not None:
                     return callback(*args, **kwargs)
 
-            return original(instance, arena_id, received)
+            if positional_callback:
+                args = args[:1] + (received,) + args[2:]
+            else:
+                kwargs = dict(kwargs, callback=received)
+            return original(instance, *args, **kwargs)
 
         self._wrapper = observed_get
         self._cls.get = observed_get
@@ -61,7 +76,10 @@ class CacheObserver(object):
     def close(self):
         self._active = False
         if _function(self._cls.get) is self._wrapper:
-            self._cls.get = self._original
+            if self._defined_here:
+                self._cls.get = self._original
+            else:
+                del self._cls.get
         # A later mod may retain our inert wrapper in its chain. Do not retain
         # the runtime or overwrite that mod's method during cleanup.
         self.cache = self._capture = self._consume = None

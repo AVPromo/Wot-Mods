@@ -147,7 +147,12 @@ class FooterInstallation(object):
         def on_loading(view, *args, **kwargs):
             result = original(view, *args, **kwargs)
             if installation._enabled:
-                installation._attach(view)
+                try:
+                    installation._attach(view)
+                except Exception:
+                    # Even rollback/ownership adapters are optional. Never
+                    # interrupt native loading or a later mod in the chain.
+                    LOG.exception('Statistics footer attachment failed; native loading continues.')
             return result
 
         self._wrapper = on_loading
@@ -266,8 +271,10 @@ class FooterInstallation(object):
                 LOG.warning('Statistics footer position is occupied; shortcut remains active.')
                 return
             child = self.child_class()
+            if not self._enabled:
+                return
             view._registerChild(POSITION_ID, child)
-            if view.getChildView(POSITION_ID) is child:
+            if self._enabled and view.getChildView(POSITION_ID) is child:
                 self._children.append((weakref.ref(view), weakref.ref(child)))
                 self._push_activity(child)
                 self._push_appearance(child)
