@@ -31,13 +31,29 @@ def measure(count):
         sample = service._state['battles']['0']
         service._state['battles'] = dict((str(index), dict(copy.deepcopy(sample), arena_id=str(index)))
                                         for index in range(count))
+        # Seed a real durable legacy ledger, then build indexes through normal load.
+        # Direct in-memory seeding would bypass both migration and cache construction.
+        service.store.save(service._state)
+        started = timer()
+        service = StatsService(directory, 'synthetic:7', 'synthetic-launch', EXPECTED, clock)
+        load_seconds = timer() - started
+        assert not service.last_error, service.last_error
         started = timer()
         assert service.begin_battle(str(count)), 'Synthetic save failed'
         write_seconds = timer() - started
         started = timer()
+        assert service.record_result(result('1', reconcile=True, xp_received=2100))
+        revision_seconds = timer() - started
+        started = timer()
         payload = json.dumps(service.snapshot(), ensure_ascii=True, separators=(',', ':'), allow_nan=False)
-        return {'records': count, 'write_seconds': round(write_seconds, 3),
-                'snapshot_seconds': round(timer() - started, 3), 'snapshot_bytes': len(payload),
+        snapshot_seconds = timer() - started
+        started = timer()
+        restored = StatsService(directory, 'synthetic:7', 'synthetic-launch', EXPECTED, clock)
+        restart_seconds = timer() - started
+        assert restored._state == service._state, 'Journal restart changed history'
+        return {'records': count, 'write_seconds': round(write_seconds, 6),
+                'revision_seconds': round(revision_seconds, 6), 'load_seconds': round(load_seconds, 3),
+                'snapshot_seconds': round(snapshot_seconds, 6), 'journal_restart_seconds': round(restart_seconds, 3), 'snapshot_bytes': len(payload),
                 'python': sys.version.split()[0], 'live_client': False}
     finally:
         shutil.rmtree(directory)

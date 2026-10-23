@@ -29,6 +29,11 @@ class LedgerRecoveryTests(unittest.TestCase):
         self.assertTrue(self.service.record_result(result('2', started_at=150, ended_at=160)))
         self.good = copy.deepcopy(self.service._state)
         self.good_files = self.files()
+        for root, unused_dirs, names in os.walk(os.path.join(self.service.store.directory, 'journal')):
+            for name in names:
+                path = os.path.join(root, name)
+                with open(path, 'rb') as stream:
+                    self.good_files[path] = stream.read()
 
     def tearDown(self):
         shutil.rmtree(self.directory)
@@ -83,6 +88,8 @@ class LedgerRecoveryTests(unittest.TestCase):
         shutil.rmtree(self.service.store.directory)
         os.makedirs(self.service.store.directory)
         for path, content in self.good_files.items():
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
             with open(path, 'wb') as stream:
                 stream.write(content)
         self.service.store.load()

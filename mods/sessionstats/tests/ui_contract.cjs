@@ -561,6 +561,7 @@ async function nativeHost(browser, options) {
     await degraded.close();
   }
   await require('./ui-connection.cjs')({browser,nativeHost,check});
+  await require('./ui-pagination.cjs')({browser,nativeHost,check});
   const loading=await nativeHost(browser,{pendingDom:true});
   check('Loading panel owns a DOM-ready listener before model binding',await loading.evaluate(()=>
     !GRZSessionStats.getState().nativeBound && __grzEngineOn.join(',')==='self.onDomBuilt'));

@@ -21,6 +21,9 @@ import uuid
 SCHEMA_VERSION = 1
 STORAGE_VERSION = 1
 MAX_JSON_DEPTH = 64
+MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
+MAX_TRANSACTION_BYTES = 1024 * 1024
+_JOURNAL_RE = re.compile(r'^[a-f0-9]{32}\.(?:json|log)$')
 _GENERATION_RE = re.compile(r'^state-([0-9]{20})\.json$')
 _PROCESS_LOCK = threading.RLock()
 
@@ -62,6 +65,10 @@ def _ensure_directory(directory):
         except OSError as error:
             if error.errno != errno.EEXIST or not os.path.isdir(directory):
                 raise
+
+
+def _create_file(path):
+    return os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb')
 
 
 class _WriteLock(object):
@@ -121,6 +128,12 @@ class _WriteLock(object):
                 _PROCESS_LOCK.release()
 
 
+class StateDelta(dict):
+    """Internal, explicit update; ordinary dictionaries remain full snapshots."""
+    def __init__(self, fields, battles, periods=None):
+        dict.__init__(self, schema_version=SCHEMA_VERSION, fields=fields, battles=battles, periods=periods or {})
+
+
 class GenerationStore(object):
     def __init__(self, directory, schema_version=SCHEMA_VERSION, keep_generations=3):
         self.directory = directory
@@ -130,6 +143,10 @@ class GenerationStore(object):
         self._observed_generation = 0
         self.read_only = False
         self.warning = None
+        self._journal_ref = None
+        self._base_path = None
+        self._writer_path = None
+        self._writer_offset = 0
 
     def _files(self):
         if not os.path.isdir(self.directory):
@@ -141,12 +158,16 @@ class GenerationStore(object):
                 found.append((int(match.group(1)), os.path.join(self.directory, name)))
         return sorted(found, reverse=True)
 
-    def _decode(self, path, generation):
+    def _decode(self, path, generation, allow_journal=True, file_checksum=None):
         with open(path, 'rb') as handle:
-            envelope = json.loads(handle.read().decode('utf-8'))
+            raw = handle.read(MAX_SNAPSHOT_BYTES + 1)
+        if len(raw) > MAX_SNAPSHOT_BYTES:
+            # Fail closed, rather than rolling back a large but possibly valid ledger.
+            raise UnsupportedSchemaError('History exceeds the supported snapshot size; data is preserved.')
+        envelope = json.loads(raw.decode('utf-8'))
         if not isinstance(envelope, dict):
             raise ValueError('invalid envelope')
-        if envelope.get('storage_version') != STORAGE_VERSION:
+        if envelope.get('storage_version') not in (STORAGE_VERSION, 2):
             raise UnsupportedSchemaError(message('storage.format'))
         if envelope.get('generation') != generation:
             raise ValueError('generation mismatch')
@@ -156,10 +177,192 @@ class GenerationStore(object):
         if payload.get('schema_version') != self.schema_version:
             raise UnsupportedSchemaError(message('storage.schema'))
         check_json_depth(payload)
-        actual = hashlib.sha256(canonical_bytes(payload)).hexdigest()
-        if actual != envelope.get('payload_checksum'):
-            raise ValueError('checksum mismatch')
+        if file_checksum is not None:
+            # Journal parents authenticate the complete immutable base bytes.
+            # Avoid re-encoding every historical record on subsequent launches.
+            if hashlib.sha256(raw).hexdigest() != file_checksum:
+                raise ValueError('base file checksum mismatch')
+        else:
+            actual = hashlib.sha256(canonical_bytes(payload)).hexdigest()
+            if actual != envelope.get('payload_checksum'):
+                raise ValueError('checksum mismatch')
+        self._candidate_ref = None
+        if envelope['storage_version'] == 2:
+            if not allow_journal:
+                raise UnsupportedSchemaError(message('storage.format'))
+            state = self._replay(payload)
+            self._candidate_ref = payload
+            return state
         return payload
+
+    def _journal_path(self, name):
+        if not isinstance(name, type(u'')) or not _JOURNAL_RE.match(name):
+            raise ValueError('invalid journal name')
+        return os.path.join(self.directory, 'journal', name)
+
+    def _segment(self, reference):
+        path = self._journal_path(reference['journal'])
+        offset = reference.get('offset')
+        if isinstance(offset, bool) or not isinstance(offset, (int, type(2 ** 64))) or offset < 1:
+            raise ValueError('invalid journal offset')
+        for candidate in (path, path + '.bak'):
+            try:
+                with open(candidate, 'rb') as handle:
+                    header = handle.readline(MAX_TRANSACTION_BYTES + 1)
+                    if len(header) > MAX_TRANSACTION_BYTES or not header.endswith(b'\n'):
+                        raise ValueError('invalid journal header')
+                    digest = hashlib.sha256(header).hexdigest()
+                    while handle.tell() < offset:
+                        raw = handle.readline(min(MAX_TRANSACTION_BYTES + 1, offset - handle.tell()))
+                        if not raw.endswith(b'\n') or len(raw) > MAX_TRANSACTION_BYTES:
+                            raise ValueError('incomplete journal transaction')
+                        digest = hashlib.sha256(digest.encode('ascii') + raw).hexdigest()
+                    if handle.tell() != offset or digest != reference.get('checksum'):
+                        raise ValueError('journal checksum mismatch')
+                if candidate != path:
+                    self.warning = message('storage.recovered')
+                return candidate, header
+            except (ValueError, IOError, OSError):
+                continue
+        raise StorageError(message('storage.corrupt'))
+
+    def _replay(self, reference):
+        """Stream bounded transactions; no recursive JSON or dependency traversal."""
+        segments, seen = [], set()
+        while 'journal' in reference:
+            name = reference['journal']
+            if name in seen:
+                raise ValueError('journal cycle')
+            seen.add(name)
+            path, raw = self._segment(reference)
+            header = json.loads(raw.decode('utf-8'))
+            check_json_depth(header)
+            if header.get('journal_version') != 1:
+                raise UnsupportedSchemaError(message('storage.format'))
+            segments.append((path, reference, raw))
+            reference = header['parent']
+        path = self._journal_path(reference['base'])
+        state = None
+        for candidate in (path, path + '.bak'):
+            try:
+                # Bases must be v1, not recursive replay entry points.
+                state = self._decode(candidate, reference['generation'], allow_journal=False,
+                                     file_checksum=reference.get('file_checksum'))
+                if candidate != path:
+                    self.warning = message('storage.recovered')
+                break
+            except UnsupportedSchemaError:
+                raise
+            except (StorageError, ValueError, TypeError, UnicodeError, IOError, OSError, RuntimeError, KeyError, IndexError, AttributeError, OverflowError):
+                continue
+        if state is None:
+            raise StorageError(message('storage.corrupt'))
+        for path, pointer, header in reversed(segments):
+            digest = hashlib.sha256(header).hexdigest()
+            with open(path, 'rb') as handle:
+                handle.seek(len(header))
+                while handle.tell() < pointer['offset']:
+                    raw = handle.readline(min(MAX_TRANSACTION_BYTES + 1, pointer['offset'] - handle.tell()))
+                    if not raw.endswith(b'\n') or len(raw) > MAX_TRANSACTION_BYTES:
+                        raise ValueError('incomplete journal transaction')
+                    patch = json.loads(raw.decode('utf-8'))
+                    if patch.get('schema_version') != self.schema_version:
+                        raise UnsupportedSchemaError(message('storage.schema'))
+                    check_json_depth(patch)
+                    fields, battles = patch['fields'], patch['battles']
+                    if not isinstance(fields, dict) or not isinstance(battles, dict) or 'battles' in fields:
+                        raise ValueError('invalid journal patch')
+                    if fields.get('schema_version', self.schema_version) != self.schema_version:
+                        raise UnsupportedSchemaError(message('storage.schema'))
+                    state.update(fields)
+                    for kind, change in patch.get('periods', {}).items():
+                        if kind not in ('launch_sessions', 'manual_sessions'):
+                            raise ValueError('invalid period update')
+                        periods = state[kind]
+                        length = change['length']
+                        if isinstance(length, bool) or not isinstance(length, int) or not len(periods) <= length <= len(periods) + 1:
+                            raise ValueError('invalid period length')
+                        if length > len(periods):
+                            periods.append(None)
+                        for position, period in change['entries'].items():
+                            position = int(position)
+                            if not 0 <= position < length:
+                                raise ValueError('invalid period position')
+                            periods[position] = period
+                        if periods and periods[-1] is None:
+                            raise ValueError('missing period')
+                    state['battles'].update(battles)
+                    digest = hashlib.sha256(digest.encode('ascii') + raw).hexdigest()
+                if handle.tell() != pointer['offset'] or digest != pointer['checksum']:
+                    raise ValueError('journal checksum mismatch')
+        return state
+
+    def prepare(self):
+        """Prepare immutable base/segment files during load, before live events."""
+        if self.read_only or self._writer_path is not None:
+            return
+        with _WriteLock(self.directory):
+            files = self._files()
+            if not files or files[0][0] != self._observed_generation:
+                raise StorageError(message('storage.changed'))
+            self._prepare_journal()
+
+    def _prepare_journal(self):
+        directory = os.path.join(self.directory, 'journal')
+        _ensure_directory(directory)
+        if self._writer_path is None:
+            parent = self._journal_ref
+            if parent is None:
+                if self._base_path is None:
+                    raise StorageError('An incremental update requires a committed snapshot.')
+                name = uuid.uuid4().hex + '.json'
+                path = self._journal_path(name)
+                # Copy the already validated bytes once when upgrading v1. Do not
+                # re-encode the complete battle history on the gameplay write path.
+                checksum = None
+                for candidate in (path, path + '.bak'):
+                    digest = hashlib.sha256()
+                    with open(self._base_path, 'rb') as source, _create_file(candidate) as target:
+                        while True:
+                            block = source.read(65536)
+                            if not block:
+                                break
+                            digest.update(block)
+                            target.write(block)
+                        target.flush()
+                        os.fsync(target.fileno())
+                    if checksum is not None and checksum != digest.hexdigest():
+                        raise StorageError(message('storage.changed'))
+                    checksum = digest.hexdigest()
+                parent = {'base': name, 'generation': self.sequence, 'file_checksum': checksum}
+            writer_path = self._journal_path(uuid.uuid4().hex + '.log')
+            header = canonical_bytes({'journal_version': 1, 'parent': parent}) + b'\n'
+            for candidate in (writer_path, writer_path + '.bak'):
+                with _create_file(candidate) as handle:
+                    handle.write(header)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            self._writer_path = writer_path
+            self._writer_offset = len(header)
+            self._writer_checksum = hashlib.sha256(header).hexdigest()
+            self._sync_directory(directory)
+
+    def _append_delta(self, patch):
+        encoded = canonical_bytes(patch) + b'\n'
+        if len(encoded) > MAX_TRANSACTION_BYTES:
+            raise StorageError('History update exceeds the supported transaction size; data is preserved.')
+        self._prepare_journal()
+        for path in (self._writer_path, self._writer_path + '.bak'):
+            with open(path, 'r+b') as handle:
+                handle.seek(self._writer_offset)
+                handle.truncate()  # Only this writer's uncommitted tail; never shared data.
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+        return {'schema_version': self.schema_version,
+                'journal': os.path.basename(self._writer_path),
+                'offset': self._writer_offset + len(encoded),
+                'checksum': hashlib.sha256(self._writer_checksum.encode('ascii') + encoded).hexdigest()}
 
     def load(self, validate=None):
         """Select the newest generation accepted by storage and the caller.
@@ -169,6 +372,7 @@ class GenerationStore(object):
         selection, including when raised by the validator.
         """
         self.warning = None
+        self._writer_path = None
         files = self._files()
         self._observed_generation = files[0][0] if files else 0
         damaged = 0
@@ -180,12 +384,14 @@ class GenerationStore(object):
             except UnsupportedSchemaError:
                 self.read_only = True
                 raise
-            except (StorageError, ValueError, TypeError, UnicodeError, IOError, OSError, RuntimeError):
+            except (StorageError, ValueError, TypeError, UnicodeError, IOError, OSError, RuntimeError, KeyError, IndexError, AttributeError, OverflowError):
                 # Python 2.7 reports decoder/encoder recursion as RuntimeError;
                 # Python 3 RecursionError is its subclass. Try an older backup.
                 damaged += 1
                 continue
             self.sequence = generation
+            self._journal_ref = self._candidate_ref
+            self._base_path = path if self._journal_ref is None else None
             if damaged:
                 self.warning = (message('storage.recovered'))
             return payload
@@ -215,10 +421,12 @@ class GenerationStore(object):
                 final_name = 'state-%020d.json' % generation
                 final_path = os.path.join(self.directory, final_name)
                 temporary = os.path.join(self.directory, '.%s-%s.tmp' % (final_name, uuid.uuid4().hex))
-                envelope = {'storage_version': STORAGE_VERSION,
+                delta = isinstance(payload, StateDelta)
+                stored = self._append_delta(payload) if delta else payload
+                envelope = {'storage_version': 2 if delta else STORAGE_VERSION,
                             'generation': generation,
-                            'payload_checksum': hashlib.sha256(canonical_bytes(payload)).hexdigest(),
-                            'payload': payload}
+                            'payload_checksum': hashlib.sha256(canonical_bytes(stored)).hexdigest(),
+                            'payload': stored}
                 encoded = canonical_bytes(envelope)
                 try:
                     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -226,7 +434,14 @@ class GenerationStore(object):
                         handle.write(encoded)
                         handle.flush()
                         os.fsync(handle.fileno())
-                    self._decode(temporary, generation)
+                    if delta:
+                        # Read back only the small commit descriptor. Replay is a
+                        # startup/recovery operation, never a per-battle operation.
+                        with open(temporary, 'rb') as handle:
+                            if handle.read(len(encoded) + 1) != encoded:
+                                raise StorageError(message('storage.failed'))
+                    else:
+                        self._decode(temporary, generation)
                     if os.path.exists(final_path):
                         raise StorageError(message('storage.collision'))
                     os.rename(temporary, final_path)
@@ -237,6 +452,14 @@ class GenerationStore(object):
                     committed = generation
                     self.sequence = generation
                     self._observed_generation = generation
+                    if delta:
+                        self._journal_ref = stored
+                        self._writer_offset = stored['offset']
+                        self._writer_checksum = stored['checksum']
+                    else:
+                        self._journal_ref = None
+                        self._writer_path = None
+                        self._base_path = final_path
                     self._sync_directory()
                 finally:
                     if os.path.exists(temporary):
@@ -260,12 +483,12 @@ class GenerationStore(object):
                 return committed
             raise StorageError(message('storage.failed'))
 
-    def _sync_directory(self):
+    def _sync_directory(self, directory=None):
         if os.name == 'nt' or not hasattr(os, 'O_DIRECTORY'):
             return
         directory_fd = None
         try:
-            directory_fd = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY)
+            directory_fd = os.open(directory or self.directory, os.O_RDONLY | os.O_DIRECTORY)
             os.fsync(directory_fd)
         except OSError:
             # Some filesystems do not support directory fsync. File fsync is required above.

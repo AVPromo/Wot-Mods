@@ -19,14 +19,17 @@ was used. All generated battle data is synthetic.
 | P2 | Footer construction/registration could synchronously uninstall the integration before returning. | A newly registered child remained after teardown, even though the integration was disabled. | Fixed: recheck ownership after construction/registration; remove late children or retain failed cleanup for retry. |
 | P1 | A directory-listing or lock-release error after successful generation rename was reported as a failed save. | The durable ledger advanced while `StatsService` retained its previous state; the next successful write could erase the accepted battle/reset. | Fixed: publish the committed generation at rename; post-commit cleanup errors do not roll back accepted memory. Prune from the already observed file list. Always release the process lock even if handle close fails. |
 | P2 | Finite positive WN8 overrides, or finite values whose sums/products overflow, could produce infinity. Example: `expDamage = 1e-308`. | Strict native JSON serialization failed, preventing the statistics panel from opening/updating. | Fixed: unrepresentable derived values become unknown; invalid ratings are excluded from WN8 coverage. Valid XP/finance information remains available. |
-| P1 | Full history is copied, serialized, checksummed, reread and rewritten synchronously; the panel serializes every battle in both active scopes. | History growth can cause long stalls on battle entry/result delivery and when opening the garage panel. | **Open architectural finding; reproduced below.** |
+| P1 | Full history is copied, serialized, checksummed, reread and rewritten synchronously; the panel serializes every battle in both active scopes. | History growth can cause long stalls on battle entry/result delivery and when opening the garage panel. | **Per-battle writes and panel projection fixed in the performance follow-up. Synchronous startup remains open; see [HISTORY_PERFORMANCE.md](HISTORY_PERFORMANCE.md).** |
 
 The native cache signature was verified against the existing pinned
 [client source](https://github.com/izeberg/wot-src/blob/5e721e36891c80d8d51a431164960c863641ee63/sources/res/scripts/client_common/shared_utils/account_helpers/BattleResultsCache.py).
 Its actual implementation is evidence for argument compatibility; synthetic
 tests do not claim that a particular installed mod currently makes those calls.
 
-## Reproduced history scaling issue
+## Original history scaling measurements
+
+These measurements describe the audited baseline. The implemented follow-up and
+current limits are documented in [HISTORY_PERFORMANCE.md](HISTORY_PERFORMANCE.md).
 
 `tools/benchmark_history.py` uses real `StatsService`/`GenerationStore` code with
 synthetic records. Run it outside the game:
@@ -48,17 +51,15 @@ Measurements on this review's Linux execution host, without live WoT:
 These are observations, not predictions for another CPU, disk, embedded Python
 build, or game client. They exclude localization, image enrichment, native
 transfer and DOM rendering. The optional installation ledger adds another write.
-The account ledger keeps historical records after manual reset, so resetting
-the visible period does not bound persistence work. `GenerationStore._decode`
-also reads an entire generation without a byte limit. An oversized/corrupt local
+In the baseline, the account ledger kept historical records after manual reset,
+so resetting the visible period did not bound persistence work. Its
+`GenerationStore._decode` also read an entire generation without a byte limit. An oversized/corrupt local
 file can therefore create additional memory pressure before validation.
 
-This correction does not silently truncate or delete history, reduce durability,
-or move game APIs to worker threads. A follow-up needs bounded incremental
-persistence, a safe oversized-file policy, and paginated/virtualized battle
-history with aggregate summaries. It must retain crash recovery, account and
-installation isolation, reset membership and stale-writer protection. Stress
-tests must run on Python 2.7 and include a live-client frame-time check.
+The performance follow-up adds incremental mirrored persistence, bounded reads,
+incremental active-period totals and paginated history without deleting records
+or weakening the accepted-write boundary. Initial loading still needs further
+work, and a live-client frame-time test remains necessary.
 
 ## Independence and coexistence
 
@@ -102,7 +103,7 @@ baseline production source; all 18 pass with this correction.
 | Footer/window teardown and retained callbacks | Native doubles, new reentrant registration cases, browser lifecycle suites | Chromium and Wulf doubles are not the real Gameface/Wulf runtime. |
 | Write failure, stale writer, corruption, unsupported schema, commit cleanup | Existing storage/recovery suites plus post-commit regressions | Windows locking/antivirus, power loss and actual disk exhaustion need platform testing. |
 | Bad config/catalogs, numeric extremes, unavailable optional APIs | Existing boundary suites plus finite-overflow regressions | Finite tests cannot exhaust every value or future client API. |
-| Large persistent histories and panel payloads | Reproducible benchmark above | Performance finding remains open; no bounded latency claim. |
+| Large persistent histories and panel payloads | Reproducible benchmark above | Write/panel paths improved; synchronous startup remains open. See the follow-up benchmark. |
 
 Validation of this correction: 503 Python tests on CPython 3.12; the same 503 on
 CPython 2.7.18 with nine expected Python-3-only packaging skips; 211 repository
@@ -112,5 +113,5 @@ The package builds successfully, all six assets reproduce exactly, and integrati
 and recursive source/archive/bytecode privacy checks pass locally. Hosted CI is
 separate and was not used as evidence for these local results.
 No claim of complete branch/state coverage or compatibility with
-500 installed mods is made. The open scaling issue prevents an unconditional
-recommendation that this version cannot stall gameplay.
+500 installed mods is made. The remaining synchronous startup and untested native frame times prevent an
+unconditional recommendation that this version cannot stall gameplay.

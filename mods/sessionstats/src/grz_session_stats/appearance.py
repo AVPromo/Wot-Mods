@@ -345,6 +345,9 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
   .ss-footer { padding-left:8rem; padding-right:8rem; }
   .ss-footer .ss-button { padding-left:7rem; padding-right:7rem; }
 }
+
+.ss-pagination { align-items: center; justify-content: space-between; margin: 8px 0; }
+.ss-pagination .ss-control { min-width: 84px; padding: 6px 12px; }
 '''
 
 FOOTER_TEMPLATE = '''/* Own compact icon in LobbyFooter. All dimensions follow the native rem scale. */

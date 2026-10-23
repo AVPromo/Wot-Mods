@@ -1210,7 +1210,9 @@ class Runtime(object):
             warnings.append(message('runtime.backlog').format(backlog))
         try:
             from .visuals import enrich_snapshot
-            ledger = dict(getattr(self.active_service, '_state', {}).get('battles', {}))
+            source = getattr(self.active_service, '_state', {}).get('battles', {})
+            ledger = dict((row['id'], source[row['id']]) for scope in result['scopes'].values()
+                          for row in scope.get('battles', []) if row['id'] in source)
             ledger.update(instance_records)
             enrich_snapshot(result, ledger)
             self.compatibility_warnings.pop('visuals', None)
@@ -1265,6 +1267,23 @@ class Runtime(object):
                     return
                 session.reset()
             else:
+                return
+            self._window_call('refresh')
+        elif action == 'page' and self.active_service is not None:
+            if getter('account_key') != self.active_key:
+                return
+            raw_page = getter('page')
+            if not isinstance(raw_page, text_type) or len(raw_page) > 8 or not raw_page or any(char not in '0123456789' for char in raw_page):
+                return
+            page = int(raw_page)
+            scope, group = getter('scope'), getter('group')
+            service = self.active_service
+            if scope == 'instance' and self._instance_tab_enabled:
+                session = self._ensure_installation_session()
+                if session is None:
+                    return
+                service, scope = session.service, 'manual'
+            if not getter('period_id') or not service.set_page(scope, group, page, getter('period_id')):
                 return
             self._window_call('refresh')
         elif action == 'refresh':

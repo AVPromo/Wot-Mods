@@ -321,9 +321,14 @@ Standard Windows data location:
 
 Paste this path into Explorer. Each account/region has a subdirectory derived
 from its identifier, not its nickname. Data is outside mods/2.4.1.0, so moving
-the mod to a new client version does not erase the manual period. Saves create
-complete checksummed JSON generations and retain the newest three. An unknown
-newer schema blocks writes instead of damaging files.
+the mod to a new client version does not erase the manual period. Saves append
+checksummed changes to mirrored journals and retain three atomic commit descriptors.
+Back up the entire account/installation directory while the game is closed,
+including journal/ and its .bak files; state-*.json alone is not a complete backup.
+Unknown newer formats block writes instead of damaging files. Older releases
+cannot write the new journal format. History lists use pages of 40 rows; totals
+still cover the whole period. Initial history loading remains synchronous; see
+docs/HISTORY_PERFORMANCE.md for measurements and remaining limits.
 
 Existing shortcut and garage-button settings remain separate from appearance.
 Optionally create %APPDATA%/grz_wot_session_stats/config.json:

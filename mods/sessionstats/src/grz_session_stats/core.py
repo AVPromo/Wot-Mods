@@ -6,13 +6,14 @@ from .localization import message
 
 import copy
 import hashlib
+import itertools
 import math
 import os
 import time
 import uuid
 
 from . import VERSION
-from .storage import GenerationStore, SCHEMA_VERSION, StorageError
+from .storage import GenerationStore, StateDelta, SCHEMA_VERSION, StorageError
 
 try:
     text_type = unicode
@@ -248,6 +249,8 @@ class StatsService(object):
         self.store = GenerationStore(os.path.join(data_dir, account_dir))
         self.last_error = None
         self._warnings = []
+        self._indexes = None
+        self._pages = {}
         current_time = self._time()
         self._state = self._empty_state(current_time)
         try:
@@ -256,7 +259,7 @@ class StatsService(object):
                 self._state = existing
             if self.store.warning:
                 self._warnings.append(self.store.warning)
-            candidate = copy.deepcopy(self._state)
+            candidate = self._candidate()
             # Older ledgers tracked activity only on launches and battle updates.
             # Preserve that durable high-water mark before allowing manual reset.
             manual = candidate['manual_sessions'][-1]
@@ -279,13 +282,62 @@ class StatsService(object):
             elif found.get('ended_at') is not None:
                 raise StorageError(message('core.closed'))
             if existing is None or candidate != self._state:
-                if not self._commit(candidate):
+                if not self._commit(candidate, {} if existing is not None else None):
                     raise StorageError(self.last_error or message('core.create'))
+            self.store.prepare()
         except (StorageError, IOError, OSError, ValueError, TypeError, KeyError) as error:
             self.store.read_only = True
             self.last_error = message('core.load')
             if isinstance(error, StorageError):
                 self.last_error = _text(error)
+
+        self._rebuild_indexes()
+
+    def _rebuild_indexes(self):
+        from .projection import ScopeIndex, contribution
+        self._indexes = {
+            'launch': ScopeIndex(self.launch_id, self.expected_table),
+            'manual': ScopeIndex(self._state['current_manual_id'], self.expected_table)}
+        self._pending_ids = set()
+        self._unassigned = 0
+        members = {'launch': [], 'manual': []}
+        for record in self._state['battles'].values():
+            if record.get('mode') not in (None, 'random'):
+                continue
+            if self._pending(record):
+                self._pending_ids.add(record['arena_id'])
+            if record.get('_manual_id') is None or record.get('_launch_id') is None:
+                self._unassigned += 1
+            item = None
+            for name, field in (('launch', '_launch_id'), ('manual', '_manual_id')):
+                if record.get(field) == self._indexes[name].identifier:
+                    if item is None:
+                        item = contribution(record, self.expected_table)
+                    members[name].append(item)
+        for name, index in self._indexes.items():
+            index.build(members[name])
+
+    def _index_record(self, record, item):
+        if record.get('mode') not in (None, 'random'):
+            return
+        identifier = record['arena_id']
+        self._pending_ids.discard(identifier)
+        if self._pending(record):
+            self._pending_ids.add(identifier)
+        for name, field in (('launch', '_launch_id'), ('manual', '_manual_id')):
+            index = self._indexes[name]
+            if record.get(field) == index.identifier:
+                index.replace(record, item)
+        if record.get('_manual_id') is None or record.get('_launch_id') is None:
+            self._unassigned += 1
+
+    def set_page(self, scope, group, page, period_id=None):
+        if scope not in ('launch', 'manual') or group not in ('battles', 'vehicles', 'maps'):
+            return False
+        if period_id is not None and period_id != self._indexes[scope].identifier:
+            return False
+        self._pages.setdefault(scope, {})[group] = page
+        return True
 
     def _time(self):
         value = _number(self._now(), True)
@@ -373,9 +425,27 @@ class StatsService(object):
                 return epoch
         return None
 
-    def _commit(self, candidate):
+    def _candidate(self):
+        candidate = dict(self._state)
+        candidate['launch_sessions'] = copy.deepcopy(self._state['launch_sessions'])
+        candidate['manual_sessions'] = copy.deepcopy(self._state['manual_sessions'])
+        return candidate
+
+    def _commit(self, candidate, changes=None):
         try:
-            self.store.save(candidate)
+            payload = candidate
+            if changes is not None:
+                kinds = ('launch_sessions', 'manual_sessions')
+                periods = {}
+                for kind in kinds:
+                    old, new = self._state[kind], candidate[kind]
+                    entries = dict((_text(position), period) for position, period in enumerate(new)
+                                   if position >= len(old) or period != old[position])
+                    if entries:
+                        periods[kind] = {'length': len(new), 'entries': entries}
+                payload = StateDelta(dict((key, value) for key, value in candidate.items()
+                                          if key not in kinds + ('battles',)), changes, periods)
+            self.store.save(payload)
         except StorageError as error:
             self.last_error = _text(error)
             return False
@@ -498,10 +568,18 @@ class StatsService(object):
             return False
         merged['revision'] = old.get('revision', 0) + 1
         merged['_updated_at'] = timestamp
-        candidate = copy.deepcopy(self._state)
-        candidate['battles'][arena_id] = merged
+        candidate = self._candidate()
         self._touch(candidate, timestamp)
-        return self._commit(candidate)
+        if not self._commit(candidate, {arena_id: merged}):
+            return False
+        # Publish the single immutable replacement only after durable commit.
+        candidate['battles'][arena_id] = merged
+        if self._indexes is not None:
+            from .projection import contribution
+            if old and (old.get('_manual_id') is None or old.get('_launch_id') is None):
+                self._unassigned -= 1
+            self._index_record(merged, contribution(merged, self.expected_table))
+        return True
 
     def reset_manual(self, now=None):
         timestamp = self._time() if now is None else _number(now, True)
@@ -510,25 +588,28 @@ class StatsService(object):
             self.last_error = message('core.reset_time')
             return None
         new_id = uuid.uuid4().hex
-        candidate = copy.deepcopy(self._state)
+        candidate = self._candidate()
         candidate['manual_sessions'][-1]['ended_at'] = timestamp
         candidate['manual_sessions'].append({'id': new_id, 'started_at': timestamp, 'ended_at': None})
         candidate['current_manual_id'] = new_id
         self._touch(candidate, timestamp)
-        return new_id if self._commit(candidate) else None
+        if not self._commit(candidate, {}):
+            return None
+        from .projection import ScopeIndex
+        self._indexes['manual'] = ScopeIndex(new_id, self.expected_table)
+        self._pages.pop('manual', None)
+        return new_id
 
     def pending_arena_ids(self):
-        return sorted(arena_id for arena_id, record in self._state['battles'].items()
-                      if record.get('mode') in (None, 'random') and self._pending(record))
+        return sorted(self._pending_ids)
 
     @staticmethod
     def _pending(record):
         return not record.get('complete') or record.get('outcome') not in _OUTCOMES
 
     def _scope(self, key, identifier, label, started_at):
-        records = [record for record in self._state['battles'].values()
-                   if record.get(key) == identifier and record.get('mode') in (None, 'random')]
-        return self.project_scope(records, label, started_at)
+        name = 'launch' if key == '_launch_id' else 'manual'
+        return self._indexes[name].snapshot(label, started_at, self._pages.get(name))
 
     def launch_records(self):
         """Independent records from this account and game process only."""
@@ -574,12 +655,15 @@ class StatsService(object):
             warnings.append(self.last_error)
         if not self.expected_table.values:
             warnings.append(message('core.wn8'))
-        if any(record.get('_manual_id') is None or record.get('_launch_id') is None
-               for record in self._state['battles'].values()):
+        if self._unassigned:
             warnings.append(_UNKNOWN_MEMBERSHIP)
-        for record in self._state['battles'].values():
-            if record.get('_manual_id') == manual['id'] or record.get('_launch_id') == self.launch_id:
-                warnings.extend(record.get('warnings', []))
+        truncated = False
+        for index in self._indexes.values():
+            warnings.extend(itertools.islice(index.warnings, 200))
+            truncated = truncated or len(index.warnings) > 200
+        warnings = sorted(set(warnings))
+        if truncated or len(warnings) > 200:
+            warnings = warnings[:200] + [message('core.more_notices')]
         return {'version': VERSION, 'account_key': self.account_key, 'generated_at': timestamp,
                 'expected': copy.deepcopy(self.expected_table.metadata), 'warnings': sorted(set(warnings)),
                 'scopes': {'launch': self._scope('_launch_id', self.launch_id, message('scope.launch'),

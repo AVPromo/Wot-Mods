@@ -10,8 +10,9 @@ Both default scopes and manual resets are isolated per account and region.
 Its shared history and independent manual reset persist across game restarts;
 the tab is hidden by default. See [ACCOUNT_SESSIONS.md](docs/ACCOUNT_SESSIONS.md).
 Import review fixes: [REVIEW_FIXES_PR3.md](docs/REVIEW_FIXES_PR3.md).
-Independent stability/coexistence review, corrections and the remaining large-history
-performance finding: [INDEPENDENT_SAFETY_REVIEW_PR3.md](docs/INDEPENDENT_SAFETY_REVIEW_PR3.md).
+Independent stability/coexistence review and corrections: [INDEPENDENT_SAFETY_REVIEW_PR3.md](docs/INDEPENDENT_SAFETY_REVIEW_PR3.md).
+Incremental saves, paged history, benchmarks and the remaining synchronous-startup
+limit: [HISTORY_PERFORMANCE.md](docs/HISTORY_PERFORMANCE.md).
 The build/validation pipeline comes from parent PR #2. The source PR is stacked
 on it and requires that infrastructure to merge first.
 

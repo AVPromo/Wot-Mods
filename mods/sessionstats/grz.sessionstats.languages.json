@@ -182,7 +182,11 @@
       "unknown.map_id": "Map {0}",
       "preview.label": "Preview · synthetic data",
       "preview.open": "Open panel",
-      "preview.restore": "Restore example"
+      "preview.restore": "Restore example",
+      "page.previous": "Previous",
+      "page.next": "Next",
+      "page.status": "Page {0} of {1}",
+      "core.more_notices": "Additional data notices are retained in local history."
     },
     "pl": {
       "title": "Statystyki sesji",
@@ -365,7 +369,11 @@
       "unknown.map_id": "Mapa {0}",
       "preview.label": "Podgląd · dane przykładowe",
       "preview.open": "Otwórz panel",
-      "preview.restore": "Przywróć przykład"
+      "preview.restore": "Przywróć przykład",
+      "page.previous": "Poprzednia",
+      "page.next": "Następna",
+      "page.status": "Strona {0} z {1}",
+      "core.more_notices": "Pozostałe komunikaty o danych są zachowane w lokalnej historii."
     },
     "ru": {
       "title": "Статистика сессии",
@@ -548,7 +556,11 @@
       "unknown.map_id": "Карта {0}",
       "preview.label": "Предпросмотр · пример данных",
       "preview.open": "Открыть панель",
-      "preview.restore": "Восстановить пример"
+      "preview.restore": "Восстановить пример",
+      "page.previous": "Назад",
+      "page.next": "Далее",
+      "page.status": "Страница {0} из {1}",
+      "core.more_notices": "Дополнительные сообщения о данных сохранены в локальной истории."
     },
     "fr": {
       "title": "Statistiques de session",
@@ -731,7 +743,11 @@
       "unknown.map_id": "Carte {0}",
       "preview.label": "Aperçu · données fictives",
       "preview.open": "Ouvrir le panneau",
-      "preview.restore": "Restaurer l’exemple"
+      "preview.restore": "Restaurer l’exemple",
+      "page.previous": "Précédente",
+      "page.next": "Suivante",
+      "page.status": "Page {0} sur {1}",
+      "core.more_notices": "Les autres remarques sur les données sont conservées dans l’historique local."
     },
     "de": {
       "title": "Sitzungsstatistik",
@@ -914,7 +930,11 @@
       "unknown.map_id": "Karte {0}",
       "preview.label": "Vorschau · Beispieldaten",
       "preview.open": "Fenster öffnen",
-      "preview.restore": "Beispiel wiederherstellen"
+      "preview.restore": "Beispiel wiederherstellen",
+      "page.previous": "Zurück",
+      "page.next": "Weiter",
+      "page.status": "Seite {0} von {1}",
+      "core.more_notices": "Weitere Datenhinweise bleiben im lokalen Verlauf gespeichert."
     },
     "es": {
       "title": "Estadísticas de sesión",
@@ -1097,7 +1117,11 @@
       "unknown.map_id": "Mapa {0}",
       "preview.label": "Vista previa · datos ficticios",
       "preview.open": "Abrir panel",
-      "preview.restore": "Restaurar ejemplo"
+      "preview.restore": "Restaurar ejemplo",
+      "page.previous": "Anterior",
+      "page.next": "Siguiente",
+      "page.status": "Página {0} de {1}",
+      "core.more_notices": "Los avisos adicionales sobre los datos se conservan en el historial local."
     },
     "uk": {
       "title": "Статистика сесії",
@@ -1280,7 +1304,11 @@
       "unknown.map_id": "Мапа {0}",
       "preview.label": "Попередній перегляд · приклад даних",
       "preview.open": "Відкрити панель",
-      "preview.restore": "Відновити приклад"
+      "preview.restore": "Відновити приклад",
+      "page.previous": "Попередня",
+      "page.next": "Наступна",
+      "page.status": "Сторінка {0} з {1}",
+      "core.more_notices": "Додаткові повідомлення про дані збережено в локальній історії."
     }
   }
 }
