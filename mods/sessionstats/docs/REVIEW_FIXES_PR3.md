@@ -1,5 +1,28 @@
 # PR #3 review fixes
 
+## Review 5625868921: launch overlap after clock rollback
+
+New launch boundaries are clamped to the greatest prior launch end after crash
+closure, including a known closed end later than its last observed activity.
+The new launch's initial last-seen value uses that same boundary. Ordinary
+forward-clock starts retain their real start and unobserved gap. Existing battle
+timestamps, durable memberships and manual reset identity remain unchanged.
+
+Generation selection also checks the ordering between consecutive periods for
+both launch/manual lists: a historical period must be closed, and the next start
+cannot precede its end. A damaged overlap therefore recovers a valid older
+generation instead of being accepted and amplified on restart. Equal touching
+boundaries remain valid. Launch lookup gives prior observed activity first claim
+on such a boundary for an unseen delayed result; explicit live observations
+still select the current launch, including while its clamped boundary is ahead
+of the rolled-back wall clock.
+
+Regressions cover real rollback/restart and delayed results, equality, repeated
+rollback, closed ends, normal forward gaps, live observations, manual-reset
+ownership, account/installation ledgers, damaged overlap recovery, all-invalid
+read-only behavior and failed launch commit/retry.
+
+
 ## Review 5624888833: record manual activity through normal writes
 
 Every committed beginning, result/enrichment and reset now updates the active

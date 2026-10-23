@@ -259,13 +259,16 @@ class StatsService(object):
             manual['last_seen_at'] = max(activity)
             found = self._launch(candidate, self.launch_id)
             if found is None:
+                launch_start = current_time
                 for previous in candidate['launch_sessions']:
                     if previous.get('ended_at') is None:
                         # A crash has no known exit timestamp. Do not invent activity
                         # during the unobserved gap up to this process's start.
                         previous['ended_at'] = self._last_seen(previous)
-                candidate['launch_sessions'].append({'id': self.launch_id, 'started_at': current_time,
-                                                     'last_seen_at': current_time, 'ended_at': None})
+                    # A rolled-back wall clock cannot reopen a historical range.
+                    launch_start = max(launch_start, previous['ended_at'])
+                candidate['launch_sessions'].append({'id': self.launch_id, 'started_at': launch_start,
+                                                     'last_seen_at': launch_start, 'ended_at': None})
             elif found.get('ended_at') is not None:
                 raise StorageError(message('core.closed'))
             if existing is None or candidate != self._state:
@@ -303,6 +306,7 @@ class StatsService(object):
             periods = state[kind]
             identifiers = set()
             period_ids[kind] = identifiers
+            previous = None
             for epoch in periods:
                 if (not isinstance(epoch, dict) or not isinstance(epoch.get('id'), text_type)
                         or not epoch['id'] or epoch['id'] in identifiers
@@ -319,6 +323,10 @@ class StatsService(object):
                 if (last_seen < epoch['started_at'] or
                         (ended is not None and (ended < epoch['started_at'] or last_seen > ended))):
                     raise StorageError(message('core.boundaries'))
+                if previous is not None and (previous.get('ended_at') is None or
+                        epoch['started_at'] < previous['ended_at']):
+                    raise StorageError(message('core.boundaries'))
+                previous = epoch
         manual_periods = state['manual_sessions']
         if (state.get('current_manual_id') != manual_periods[-1]['id']
                 or manual_periods[-1].get('ended_at') is not None
@@ -384,7 +392,10 @@ class StatsService(object):
             if timestamp >= epoch['started_at'] and (epoch.get('ended_at') is None or timestamp < epoch['ended_at']):
                 manual_id = epoch['id']
                 break
-        for epoch in reversed(self._state['launch_sessions']):
+        # Launch activity includes its last observed instant. At a touching
+        # boundary, historical evidence wins over an unseen result-only reading.
+        # Live begin_battle observations still explicitly select this launch.
+        for epoch in self._state['launch_sessions']:
             if timestamp < epoch['started_at']:
                 continue
             if epoch['id'] == self.launch_id and epoch.get('ended_at') is None:
