@@ -1,3 +1,14 @@
+# World of Tanks — mods
+
+| Mod | Source and instructions | Releases |
+|---|---|---|
+| Session Stats — WN8, XP, finances, session history | [mods/sessionstats](mods/sessionstats) | `sessionstats-v…` tags, ZIP with dependency and configuration |
+| Stay Sharp — Medkit Reminder | [source](source), description below | `staysharp-v…` tags, standalone `.wotmod` |
+
+Both mods can be installed independently. [Latest shared release snapshot](../../releases/latest). Unchanged packages are carried forward byte-for-byte; each mod builds independently. See [release flow](docs/MULTIMOD_RELEASES.md).
+Sources, tests and licenses are separate; the Session Stats license does not cover the medkit mod.
+Integration rules: [mods/sessionstats/README.md](mods/sessionstats/README.md).
+
 # Stay Sharp — Medkit Reminder for World of Tanks
 
 A small **client-side visual reminder** for the Commander's *Stay Sharp* perk.
@@ -7,7 +18,7 @@ The mod uses the regular consumables HUD and works independently of arcade, snip
 
 ## Downloads
 
-**[GitHub Releases](../../releases/latest)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest published release. The latest immutable Release is a **snapshot**: it may also include unchanged files of other mods, carried byte-for-byte from the preceding verified Release. An update to Session Stats does **not** rebuild Stay Sharp. Only fully published Releases are downloadable; a failed draft is not a usable release.
+**[GitHub Releases](../../releases)** — download `com.staysharp.medkitreminder_<version>.wotmod` from the latest release. Releases become downloadable for everyone after the first reviewed PR is merged and the Release workflow succeeds.
 
 ## Installation
 
@@ -33,7 +44,7 @@ sha256sum dist/*.wotmod
 
 The `assets/medkit_pulse_master.dds.b85` file is a compressed, ASCII-encoded source DDS. The builder recreates **all 21 original DDS animation frames byte-for-byte** using an exact, tested alpha-scaling formula; the full assets do not need to be separately committed. The **historical v1.6.0** artifact has SHA-256 `9f3d98948ed398c3a4dc14b6785b68f10f1319381f896c6cd49b8709359c4927`. This legacy check applies only when building v1.6.0. Current code starts at **v1.6.1**, which includes a Windows log-rotation fix.
 
-See [independent builds and shared Release snapshots](docs/MULTIMOD_RELEASES.md), [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](docs/REVIEW_1.6.0.md), and [installation guide](docs/INSTALACJA.md).
+See [build and release documentation](docs/BUILD_RELEASE.md), [technical notes](docs/REVIEW_1.6.0.md), and [installation guide](docs/INSTALACJA.md).
 
 ## Changes, reviews and releases
 
