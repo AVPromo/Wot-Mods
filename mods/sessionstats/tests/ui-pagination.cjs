@@ -20,8 +20,10 @@ module.exports = async ({browser,nativeHost,check}) => {
   check('Pagination label is visible',await page.locator('#ss-page-label').textContent()==='Page 1 of 4');
   check('Paging buttons share the panel action colors, border and font',await page.evaluate(()=>{
     const next=getComputedStyle(document.getElementById('ss-page-next'));
-    const refresh=getComputedStyle(document.getElementById('ss-refresh'));
-    return ['backgroundImage','color','borderTopColor','borderTopWidth','fontFamily'].every(key=>next[key]===refresh[key]);
+    // Refresh intentionally uses ss-quiet; compare the existing standard action.
+    const action=getComputedStyle(document.getElementById('ss-reset-cancel'));
+    return next.backgroundImage!=='none' &&
+      ['backgroundImage','color','borderTopColor','borderTopWidth','fontFamily'].every(key=>next[key]===action[key]);
   }));
   for(const width of [320,744]) {
     await page.setViewportSize({width,height:820});
