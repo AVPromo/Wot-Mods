@@ -30,7 +30,7 @@ except NameError:
 NUMBER_TYPES = integer_types + (float,)
 
 DEFAULT_CONFIG = {'schema_version': 1,
- 'language': 'en',
+ 'language': 'auto',
  'colors': {'body_text': '#e5e2cb',
             'body_background': 'transparent',
             'window_border': '#646044',
@@ -346,8 +346,14 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
   .ss-footer .ss-button { padding-left:7rem; padding-right:7rem; }
 }
 
-.ss-pagination { align-items: center; justify-content: space-between; margin: 8px 0; }
-.ss-pagination .ss-control { min-width: 84px; padding: 6px 12px; }
+.ss-pagination { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; margin:8rem 1rem; }
+.ss-pagination .ss-button { min-width:84rem; max-width:38%; min-height:25rem; padding:3rem 10rem; }
+.ss-pagination .ss-button:disabled { cursor:default; pointer-events:none; }
+#ss-page-label { display:block; flex:1; min-width:0; padding:0 8rem; text-align:center; color:{{colors.list_meta_text}}; font-size:12rem; line-height:17rem; }
+.ss-outcome-art { width:100rem; max-width:36%; padding:0; background:none; }
+.ss-outcome-image { display:block; width:100rem; max-width:100%; height:58rem; background-repeat:no-repeat; background-position:center; background-size:contain; }
+.ss-outcome-label { display:block; text-align:center; }
+.ss-outcome-art .ss-outcome-label { padding:2rem 4rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 '''
 
 FOOTER_TEMPLATE = '''/* Own compact icon in LobbyFooter. All dimensions follow the native rem scale. */
@@ -554,7 +560,7 @@ def validate_config(raw):
     if 'language' in raw:
         from .localization import LANGUAGE
         value = raw['language']
-        if isinstance(value, text_type) and LANGUAGE.match(value):
+        if isinstance(value, text_type) and (value == 'auto' or LANGUAGE.match(value)):
             result['language'] = value
         else:
             reporter.issue('language', 'expected_language_code')

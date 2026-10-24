@@ -17,6 +17,7 @@ FILENAME = 'grz.sessionstats.languages.json'
 MAX_BYTES = 2 * 1024 * 1024
 MAX_TEXT = 4096
 LANGUAGE = re.compile(r'\A[a-z]{2,3}(?:-[A-Z]{2})?\Z')
+CLIENT_LANGUAGE = re.compile(r'\A([a-zA-Z]{2,3})(?:[-_]([a-zA-Z]{2}))?\Z')
 try:
     text_type = unicode
 except NameError:
@@ -113,9 +114,39 @@ def bundled_catalog():
         return {'en': dict(ENGLISH)}
 
 
+def client_language_code(client_language):
+    """Normalize only real locale codes, never silently alias an unknown locale."""
+    if isinstance(client_language, bytes) and not isinstance(client_language, text_type):
+        try:
+            client_language = client_language.decode('ascii')
+        except UnicodeError:
+            return None
+    if not isinstance(client_language, text_type):
+        return None
+    match = CLIENT_LANGUAGE.match(client_language)
+    if match is None:
+        return None
+    base, region = match.groups()
+    base = base.lower()
+    return base + '-' + region.upper() if region else base
+
+
+def select_language(configured, client_language, catalogs):
+    """Explicit configuration wins; auto follows supported client locales."""
+    if configured != 'auto':
+        return configured if isinstance(configured, text_type) and configured in catalogs else 'en'
+    code = client_language_code(client_language)
+    if code is None:
+        return 'en'
+    base = code.split('-')[0]
+    return code if code in catalogs else base if base in catalogs else 'en'
+
+
 class Localizer(object):
-    def __init__(self, language='en', path=None, catalog=None):
-        catalogs = copy.deepcopy(bundled_catalog() if catalog is None else catalog)
+    def __init__(self, language='en', path=None, catalog=None, client_language=None, native_messages=None):
+        defaults = bundled_catalog() if catalog is None else catalog
+        catalogs = copy.deepcopy(defaults)
+        overrides = {}
         if path is not None:
             try:
                 overrides = _read(path)
@@ -126,11 +157,29 @@ class Localizer(object):
                 # RecursionError subclass on Python 3. Keep config independent.
                 # Neither private file paths, JSON fragments nor values enter logs.
                 LOG.warning('I18N external catalog unavailable; using bundled translations.')
-        self.language = language if isinstance(language, text_type) and language in catalogs else 'en'
-        if self.language != language:
+        self.language = select_language(language, client_language, catalogs)
+        if language != 'auto' and self.language != language:
             LOG.warning('I18N selected language unavailable; using English.')
         self.messages = dict(ENGLISH)
         self.messages.update(catalogs.get(self.language, {}))
+        native_code = client_language_code(client_language)
+        if native_code and self.language in (native_code, native_code.split('-')[0]):
+            selected_overrides = overrides.get(self.language, {})
+            for key in ('outcome.win', 'outcome.loss', 'outcome.draw'):
+                # The installation ZIP includes a full editable catalog. Its
+                # unchanged template entries must not mask the client's labels.
+                if (key in selected_overrides and selected_overrides[key] !=
+                        defaults.get(self.language, {}).get(key)):
+                    continue
+                value = native_messages.get(key) if isinstance(native_messages, dict) else None
+                if isinstance(value, bytes) and not isinstance(value, text_type):
+                    try:
+                        value = value.decode('utf-8')
+                    except UnicodeError:
+                        continue
+                if (valid_text(key, value) and len(value) <= 128 and
+                        not value.startswith('#') and '<' not in value and '>' not in value):
+                    self.messages[key] = value
         self._known = {}
         self._patterns = []
         # English strings remain canonical in saves. The original Polish strings
@@ -185,6 +234,9 @@ class Localizer(object):
                         if is_fallback(value):
                             row[field] = self.translate(row[field])
                     visual = row.get('visual')
+                    outcome_visual = row.get('outcome_visual')
+                    if isinstance(outcome_visual, dict) and row.get('outcome') in ('win', 'loss', 'draw'):
+                        outcome_visual['alt'] = self.text('outcome.' + row['outcome'])
                     visual_names = (ENGLISH['visual.vehicle'], ENGLISH['visual.map'],
                                     LEGACY_POLISH['visual.vehicle'], LEGACY_POLISH['visual.map'])
                     if visual and (is_fallback(visual.get('alt')) or visual.get('alt') in visual_names):

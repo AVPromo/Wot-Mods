@@ -155,6 +155,15 @@ class GameAPI(object):
     def is_replay(self):
         return bool(self.replays.isPlaying())
 
+    def client_language(self):
+        from helpers import getClientLanguage
+        return getClientLanguage()
+
+    def outcome_messages(self):
+        from helpers import i18n
+        return dict(('outcome.' + outcome, i18n.makeString('#battle_results:status/' + status))
+                    for outcome, status in (('win', 'win'), ('loss', 'lose'), ('draw', 'tie')))
+
     def in_battle(self):
         player = self.player()
         return player is not None and getattr(player, 'arena', None) is not None
@@ -440,6 +449,22 @@ class Runtime(object):
             self._warn_once('footer:activity', 'Pending-result indicator is unavailable.',
                             exception=True, visible=False)
 
+    def _client_language(self):
+        try:
+            getter = getattr(self.api, 'client_language', None)
+            return getter() if callable(getter) else None
+        except Exception:
+            LOG.warning('I18N client language unavailable; using configured or English translations.')
+            return None
+
+    def _outcome_messages(self):
+        try:
+            getter = getattr(self.api, 'outcome_messages', None)
+            return getter() if callable(getter) else None
+        except Exception:
+            # Optional game labels must not disable configuration or collection.
+            return None
+
     def _load_appearance(self):
         # Read only on start, opening the panel or explicit Refresh. Never do
         # file I/O in a render/animation frame or on every result-polling tick.
@@ -452,7 +477,9 @@ class Runtime(object):
             self.appearance_path = path
             config = load_config(path)
             languages_path = os.path.join(os.path.dirname(path), LANGUAGES_FILENAME) if path else None
-            self._localizer = Localizer(config['language'], languages_path)
+            self._localizer = Localizer(config['language'], languages_path,
+                                        client_language=self._client_language(),
+                                        native_messages=self._outcome_messages())
             self._presentation = build_presentation(config)
             self._instance_tab_enabled = config['sessions']['instance_tab']
         except Exception:
@@ -460,7 +487,7 @@ class Runtime(object):
             # collection. Static styles and the original wheel step remain.
             self._presentation = {'panel_css': '', 'footer_css': '', 'scroll_speed': 1.0}
             self._instance_tab_enabled = False
-            self._localizer = Localizer()
+            self._localizer = Localizer('auto', client_language=self._client_language())
             LOG.exception('CONFIG appearance unavailable; built-in styles and scrolling remain active.')
         if not self._instance_tab_enabled:
             self.compatibility_warnings.pop('installation:identity', None)

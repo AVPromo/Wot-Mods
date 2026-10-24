@@ -114,6 +114,40 @@ class RuntimeAppearanceTests(unittest.TestCase):
         self.assertTrue(self.mod.open_window())
         self.assertEqual(self.mod.snapshot()['appearance']['scroll_speed'], 3)
 
+    def test_default_game_language_and_native_outcomes_reload_without_changing_history(self):
+        self.api.client_language = lambda: 'pl_PL'
+        self.api.outcome_messages = lambda: {'outcome.win': 'WG fixture victory'}
+        self.start()
+        self.result()
+        before = self.mod.active_service.snapshot()['scopes']['manual']['summary']
+        localized = self.mod.snapshot()['localization']
+        self.assertEqual(localized['language'], 'pl')
+        self.assertEqual(localized['messages']['outcome.win'], 'WG fixture victory')
+        for configured, expected in (('en', 'en'), ('fr', 'fr'), ('auto', 'pl')):
+            self.write({'language': configured})
+            self.refresh()
+            self.assertEqual(self.mod.snapshot()['localization']['language'], expected)
+            self.assertEqual(self.mod.active_service.snapshot()['scopes']['manual']['summary'], before)
+        self.api.client_language = lambda: 'ja'
+        self.refresh()
+        self.assertEqual(self.mod.snapshot()['localization']['language'], 'en')
+        self.assertEqual(self.mod.snapshot()['localization']['messages']['outcome.win'], 'Victory')
+
+    def test_failing_game_localization_does_not_discard_config_or_stop_collection(self):
+        def unavailable():
+            raise RuntimeError('fixture native API unavailable')
+        self.api.client_language = unavailable
+        self.api.outcome_messages = unavailable
+        self.write({'language': 'pl', 'scroll': {'speed_multiplier': 2}})
+        self.start()
+        self.result()
+        self.assertEqual(self.mod.snapshot()['localization']['language'], 'pl')
+        self.assertEqual(self.mod.snapshot()['appearance']['scroll_speed'], 2)
+        self.assertEqual(self.mod.active_service.snapshot()['scopes']['manual']['summary']['battles'], 1)
+        self.write({'language': 'auto'})
+        self.refresh()
+        self.assertEqual(self.mod.snapshot()['localization']['language'], 'en')
+
     def test_malformed_edit_reverts_entire_presentation_and_logs_after_start(self):
         self.write({'scroll': {'speed_multiplier': 4}})
         self.start()

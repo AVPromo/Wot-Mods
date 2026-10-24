@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.2.8 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.2.9 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -67,12 +67,15 @@ This license does not alter the terms of other mods in the repository.
 
 WoT interfaces may change. Health checks cannot guarantee detection of changed
 field meanings when types and structures remain the same. The user tested 0.2.4
-in the game; this release was validated automatically and still needs a current-client test.
+and has also confirmed the preceding build works in game. The 0.2.9 UI/language
+changes still require a current-client test after automated validation.
 
 ## Interface languages and optional configuration
 
-English is the default interface language. Select `en`, `ru`, `fr`, `pl`, `de`,
-`es` or `uk` with the root `language` property in `grz.sessionstats.json`.
+The default `"language": "auto"` follows the game language, with English as the
+fallback. Explicit `en`, `ru`, `fr`, `pl`, `de`, `es` or `uk` in the root `language`
+property take priority. Existing `"language": "en"` files stay English; change
+that value to `"auto"` to follow the game.
 All mod labels and messages are customizable in `grz.sessionstats.languages.json`.
 The installation ZIP includes the editable catalog; the `.wotmod` also bundles
 all seven languages. The neighboring language file is optional: missing or invalid
@@ -91,3 +94,7 @@ The mod creates a missing main file using defaults, or copies the legacy JSON be
 the active package if present. Existing central files always win and are never rewritten.
 Optional translation overrides belong in `mods/configs/grz.sessionstats.languages.json`.
 Appearance fields and validation: [APPEARANCE_CONFIG.md](docs/APPEARANCE_CONFIG.md).
+
+Battle outcomes use unchanged local WG notification artwork with separate captions.
+No game artwork is edited, bundled or downloaded at runtime. Missing resources
+retain text outcomes. See [0.2.9 UI and language evidence](docs/UI_0.2.9_SOURCE_EVIDENCE.md).

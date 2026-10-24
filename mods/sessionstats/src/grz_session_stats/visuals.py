@@ -26,7 +26,10 @@ except NameError:
     text_type = str
     integer_types = (int,)
 
-_PREFIXES = {'vehicle': 'gui/maps/icons/vehicle/', 'map': 'gui/maps/icons/map/'}
+_PREFIXES = {'vehicle': 'gui/maps/icons/vehicle/', 'map': 'gui/maps/icons/map/',
+             'outcome': 'gui/maps/icons/library/'}
+_OUTCOME_FILES = dict((key, _PREFIXES['outcome'] + 'BgBattleResultIcon' + name + '-1.png')
+                      for key, name in (('win', 'Victory'), ('loss', 'Defeat'), ('draw', 'Draw')))
 _SAFE_PATH = re.compile(r'^[A-Za-z0-9_./-]+\Z')
 _SAFE_GEOMETRY = re.compile(r'^[A-Za-z0-9_-]{1,128}\Z')
 _DECIMAL = re.compile(r'^[0-9]+\Z')
@@ -64,6 +67,9 @@ def verified_image_url(native_url, kind, file_exists):
     if not url.startswith('img://'):
         return None
     path = url[len('img://'):]
+    if kind == 'outcome' and path not in tuple(_OUTCOME_FILES.values()) + tuple(
+            value[:-4] + '.dds' for value in _OUTCOME_FILES.values()):
+        return None
     if not path.startswith(_PREFIXES[kind]) or not _SAFE_PATH.match(path):
         return None
     if any(part in ('', '.', '..') for part in path.split('/')):
@@ -106,6 +112,7 @@ class NativeVisualResolver(object):
         self._file_exists = file_exists
         self._vehicles = {}
         self._maps = {}
+        self._outcomes = {}
 
     def _resource_url(self, node, kind):
         try:
@@ -153,6 +160,18 @@ class NativeVisualResolver(object):
             return source
         except Exception:
             return None
+
+    def outcome_src(self, outcome):
+        # Exact neutral-language WG notification artwork, verified in 2.4.1.
+        # Localized captions are supplied separately; never modify client art.
+        if not isinstance(outcome, text_type) or outcome not in _OUTCOME_FILES:
+            return None
+        if outcome not in self._outcomes:
+            source = verified_image_url('img://' + _OUTCOME_FILES[outcome], 'outcome', self._file_exists)
+            if source:
+                self._outcomes[outcome] = source
+            return source
+        return self._outcomes[outcome]
 
     def map_src(self, geometry):
         if not isinstance(geometry, (bytes, text_type)):
@@ -211,7 +230,7 @@ def enrich_snapshot(payload, battle_records=None, resolver=None):
         key = (kind, _text(identifier))
         if key not in cache:
             try:
-                getter = resolver.vehicle_src if kind == 'vehicle' else resolver.map_src
+                getter = getattr(resolver, kind + '_src')
                 cache[key] = getter(identifier)
             except Exception:
                 cache[key] = None
@@ -232,6 +251,11 @@ def enrich_snapshot(payload, battle_records=None, resolver=None):
                 if not isinstance(row, dict):
                     continue
                 row.pop('visual', None)
+                row.pop('outcome_visual', None)
+                if grouping == 'battles' and row.get('outcome') in ('win', 'loss', 'draw'):
+                    outcome = visual('outcome', row['outcome'], message('outcome.' + row['outcome']))
+                    if outcome is not None:
+                        row['outcome_visual'] = outcome
                 if grouping == 'vehicles':
                     image = visual('vehicle', row.get('id'), row.get('name'))
                 elif grouping == 'maps':

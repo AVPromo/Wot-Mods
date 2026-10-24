@@ -138,6 +138,45 @@ class NativeResolverTests(unittest.TestCase):
     def setUp(self):
         self.fixture = ResolverFixture()
 
+    def test_outcomes_use_only_their_original_wg_art_and_cache_successes(self):
+        for outcome, name in (('win', 'Victory'), ('loss', 'Defeat'), ('draw', 'Draw')):
+            path = 'gui/maps/icons/library/BgBattleResultIcon' + name + '-1.png'
+            self.fixture.files.add(path)
+            self.assertEqual(self.fixture.resolver.outcome_src(outcome), 'img://' + path)
+            count = len(self.fixture.paths_checked)
+            self.assertEqual(self.fixture.resolver.outcome_src(outcome), 'img://' + path)
+            self.assertEqual(len(self.fixture.paths_checked), count)
+        for unknown in (None, 'unknown', 'Victory', '../win', {}, 1):
+            self.assertIsNone(self.fixture.resolver.outcome_src(unknown))
+
+    def test_missing_outcome_retries_and_accepts_only_confirmed_dds_backing(self):
+        self.assertIsNone(self.fixture.resolver.outcome_src('win'))
+        path = 'gui/maps/icons/library/BgBattleResultIconVictory-1.dds'
+        self.fixture.files.add(path)
+        self.assertEqual(self.fixture.resolver.outcome_src('win'), 'img://' + path)
+        checked = []
+        for suffix in ('Other.png', '../map/01_karelia.png', 'BgBattleResultIconVictory-1.png?x'):
+            self.assertIsNone(verified_image_url('img://gui/maps/icons/library/' + suffix,
+                                                 'outcome', lambda path: checked.append(path) or True))
+        self.assertEqual(checked, [])
+
+    def test_outcome_art_is_snapshot_only_and_missing_art_preserves_result_and_totals(self):
+        payload, records = snapshot(), ledger()
+        payload['scopes']['launch']['battles'][0]['outcome'] = 'win'
+        original, original_records = copy.deepcopy(payload), copy.deepcopy(records)
+        path = 'gui/maps/icons/library/BgBattleResultIconVictory-1.png'
+        enriched = enrich_snapshot(copy.deepcopy(payload), records, self.fixture.resolver)
+        row = enriched['scopes']['launch']['battles'][0]
+        self.assertNotIn('outcome_visual', row)
+        self.assertEqual(row['outcome'], 'win')
+        self.fixture.files.add(path)
+        enriched = enrich_snapshot(copy.deepcopy(payload), records, self.fixture.resolver)
+        row = enriched['scopes']['launch']['battles'][0]
+        self.assertEqual(row['outcome_visual']['src'], 'img://' + path)
+        self.assertEqual(enriched['scopes']['launch']['summary'], original['scopes']['launch']['summary'])
+        self.assertEqual(payload, original)
+        self.assertEqual(records, original_records)
+
     def test_vehicle_uses_type_compact_and_registered_resource_name(self):
         fixture = self.fixture
         self.assertEqual(fixture.resolver.vehicle_src(str(VEHICLE_ID)), 'img://' + VEHICLE_PATH)

@@ -57,11 +57,81 @@ class LocalizationTests(unittest.TestCase):
     def test_default_and_unknown_language_use_english(self):
         self.assertEqual(loc.Localizer().text('title'), 'Session statistics')
         self.assertEqual(loc.Localizer('zz').language, 'en')
-        self.assertEqual(validate_config({})['language'], 'en')
+        self.assertEqual(validate_config({})['language'], 'auto')
         for value in (True, 12, {}, None, 'EN', '../pl', 'pl\n'):
-            self.assertEqual(validate_config({'language': value})['language'], 'en')
+            self.assertEqual(validate_config({'language': value})['language'], 'auto')
+        self.assertEqual(validate_config({'language': 'auto'})['language'], 'auto')
         self.assertEqual(validate_config({'language': 'uk'})['language'], 'uk')
         self.assertEqual(validate_config({'language': 'pt-BR'})['language'], 'pt-BR')
+
+    def test_auto_normalizes_game_locales_and_unsupported_games_use_english(self):
+        for game, expected in (('pl', 'pl'), ('PL_pl', 'pl'), (b'pl', 'pl'),
+                               ('uk-UA', 'uk'), ('en_GB', 'en'), ('ja', 'en'),
+                               (None, 'en'), (True, 'en'), ({}, 'en'),
+                               (b'\xff', 'en'), ('pl\n', 'en'), ('../pl', 'en')):
+            translator = loc.Localizer('auto', client_language=game)
+            self.assertEqual(translator.language, expected, repr(game))
+            self.assertEqual(translator.text('title'), self.catalog[expected]['title'])
+
+    def test_explicit_language_wins_over_game_and_unknown_override_uses_english(self):
+        for configured, expected in (('en', 'en'), ('fr', 'fr'), ('zz', 'en')):
+            self.assertEqual(loc.Localizer(configured, client_language='pl').language, expected)
+
+    def test_auto_supports_external_regions_before_their_base_language(self):
+        self.write({'pt': {'title': 'Base'}, 'pt-BR': {'title': 'Regional'}})
+        self.assertEqual(loc.Localizer('auto', self.path, client_language='pt_br').text('title'), 'Regional')
+        self.assertEqual(loc.Localizer('auto', self.path, client_language='pt_PT').text('title'), 'Base')
+
+    def test_native_outcomes_follow_only_the_selected_game_language(self):
+        native = {'outcome.win': 'WG victory fixture', 'outcome.loss': 'WG loss fixture',
+                  'outcome.draw': 'WG draw fixture'}
+        for configured in ('auto', 'pl'):
+            translator = loc.Localizer(configured, client_language='pl_PL', native_messages=native)
+            for key in native:
+                self.assertEqual(translator.text(key), native[key])
+        for configured, game in (('en', 'pl'), ('fr', 'pl'), ('auto', 'ja'), ('zz', 'pl')):
+            translator = loc.Localizer(configured, client_language=game, native_messages=native)
+            self.assertEqual(translator.text('outcome.win'), self.catalog[translator.language]['outcome.win'])
+
+    def test_native_labels_survive_unchanged_shipped_catalog_but_custom_entries_win(self):
+        self.write(self.catalog)
+        native = {'outcome.win': 'WG fixture'}
+        self.assertEqual(loc.Localizer('auto', self.path, client_language='pl', native_messages=native)
+                         .text('outcome.win'), 'WG fixture')
+        self.write({'pl': {'outcome.win': 'Custom victory'}})
+        self.assertEqual(loc.Localizer('auto', self.path, client_language='pl', native_messages=native)
+                         .text('outcome.win'), 'Custom victory')
+
+    def test_missing_or_malformed_native_text_retains_per_outcome_fallback(self):
+        for invalid in (None, 23, '#battle_results:status/win', '', '<b>Win</b>',
+                        'x' * 129, b'\xff', 'Win\n', '{0}'):
+            translator = loc.Localizer('auto', client_language='pl', native_messages={
+                'outcome.win': invalid, 'outcome.draw': 'WG draw fixture'})
+            self.assertEqual(translator.text('outcome.win'), self.catalog['pl']['outcome.win'])
+            self.assertEqual(translator.text('outcome.draw'), 'WG draw fixture')
+        self.assertEqual(loc.Localizer('auto', client_language='pl', native_messages={
+            'outcome.win': 'Zwycięstwo'.encode('utf-8')}).text('outcome.win'), 'Zwycięstwo')
+
+    def test_native_adapter_reads_client_language_and_exact_wg_result_keys(self):
+        import types
+        helpers = types.ModuleType(str('helpers'))
+        helpers.getClientLanguage = lambda: 'pl'
+        calls = []
+        helpers.i18n = type(str('I18n'), (), {'makeString': staticmethod(
+            lambda key: calls.append(key) or 'WG fixture')})
+        previous = sys.modules.get('helpers')
+        sys.modules['helpers'] = helpers
+        try:
+            api = GameAPI.__new__(GameAPI)
+            self.assertEqual(api.client_language(), 'pl')
+            self.assertEqual(set(api.outcome_messages()), {'outcome.win', 'outcome.loss', 'outcome.draw'})
+            self.assertEqual(calls, ['#battle_results:status/win', '#battle_results:status/lose',
+                                     '#battle_results:status/tie'])
+        finally:
+            if previous is None:
+                del sys.modules['helpers']
+            else:
+                sys.modules['helpers'] = previous
 
     def test_overrides_are_partial_and_new_languages_are_supported(self):
         self.write({'pl': {'title': 'Własny tytuł'}, 'pt-BR': {'title': 'Estatísticas'}})

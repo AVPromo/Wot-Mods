@@ -217,7 +217,7 @@ class ConfigPathTests(unittest.TestCase):
         self.write(os.path.join(base, 'mods', '0.9.1.0', cp.CONFIG_FILENAME), b'{"language":"fr"}')
         path = cp.prepare_config_path(resmgr=Resources(os.path.join(base, 'paths.xml')), cwd=self.root)
         from grz_session_stats.appearance import load_config
-        self.assertEqual(load_config(path)['language'], 'en')
+        self.assertEqual(load_config(path)['language'], 'auto')
 
     def test_recursive_package_still_uses_installation_configs_directory(self):
         base = self.game()

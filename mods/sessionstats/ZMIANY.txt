@@ -1,5 +1,20 @@
 SESSION STATS — CHANGELOG
 
+0.2.9 • 2026-10-24
+
+• Previous/Next now use the same olive/gold action-button style as the panel,
+  including native-scale spacing, captions and disabled states.
+• Battle outcomes reference unchanged, existing WG notification artwork and
+  show a separate caption. When languages match, captions use the original
+  client translations. Missing resources preserve readable text and statistics.
+  No artwork is edited, bundled or downloaded; no other mod is required.
+• New configuration defaults to "language": "auto": follow the game language,
+  otherwise English. An explicit configured language takes priority. Existing
+  "language": "en" is preserved; change it to "auto" to follow the game.
+• Advance package/runtime metadata and active installation guides to 0.2.9.
+  History format and calculations are unchanged; no reset or migration is needed.
+• See docs/UI_0.2.9_SOURCE_EVIDENCE.md for source checks and test scope.
+
 0.2.8 • 2026-10-23
 
 • Native window commands now forward page changes to the runtime, restoring

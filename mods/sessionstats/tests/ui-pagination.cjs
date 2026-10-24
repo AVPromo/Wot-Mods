@@ -18,6 +18,19 @@ module.exports = async ({browser,nativeHost,check}) => {
     document.getElementById('ss-page-previous').disabled && !document.getElementById('ss-page-next').disabled));
   check('Pagination uses explicit Gameface button labels',await page.locator('#ss-pagination .ss-control-label').count()===2);
   check('Pagination label is visible',await page.locator('#ss-page-label').textContent()==='Page 1 of 4');
+  check('Paging buttons share the panel action colors, border and font',await page.evaluate(()=>{
+    const next=getComputedStyle(document.getElementById('ss-page-next'));
+    const refresh=getComputedStyle(document.getElementById('ss-refresh'));
+    return ['backgroundImage','color','borderTopColor','borderTopWidth','fontFamily'].every(key=>next[key]===refresh[key]);
+  }));
+  for(const width of [320,744]) {
+    await page.setViewportSize({width,height:820});
+    check('Paging controls and counter fit at width '+width,await page.locator('#ss-pagination').evaluate(bar=>{
+      const box=bar.getBoundingClientRect();
+      return Array.from(bar.children).every(node=>{const child=node.getBoundingClientRect();
+        return child.width>0 && child.left>=box.left-1 && child.right<=box.right+1;});
+    }));
+  }
   await page.locator('#ss-page-next').click();
   check('Page command carries account, period and grouping ownership',await page.evaluate(()=>{
     const command=__grzCommands.filter(c=>c.action==='page').pop();

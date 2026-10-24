@@ -1,11 +1,11 @@
-# Appearance and scrolling configuration — 0.2.8
+# Appearance and scrolling configuration — 0.2.9
 
 ## File placement and applying changes
 
 Place **`grz.sessionstats.json`** in the game installation's **`mods/configs`** directory:
 
 ```text
-mods/2.4.1.0/grz.sessionstats_0.2.8.wotmod
+mods/2.4.1.0/grz.sessionstats_0.2.9.wotmod
 mods/configs/grz.sessionstats.json
 ```
 
@@ -206,8 +206,10 @@ and `build_presentation(config)`. The last returns `panel_css`, `footer_css` and
 
 ## Language selection
 
-The same configuration accepts root `"language": "en"`. English is the default;
-`ru`, `fr`, `pl`, `de`, `es` and `uk` are also bundled inside the `.wotmod`.
+The root `"language": "auto"` is the default and follows the game language,
+with English as fallback. Explicit `en`, `ru`, `fr`, `pl`, `de`, `es` or `uk`
+take priority. Existing `"language": "en"` remains an English override; change
+it to `"auto"` to follow the game. All seven catalogs are bundled in the `.wotmod`.
 The neighboring `grz.sessionstats.languages.json` is optional and editable.
 Removing it preserves bundled translations; embedded English is the final fallback.
 See [LANGUAGES.md](LANGUAGES.md) for overrides and added languages.

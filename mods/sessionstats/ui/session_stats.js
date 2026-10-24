@@ -293,6 +293,22 @@
     function battleOutcome(outcome) {
         return { win:t('outcome.win'), loss:t('outcome.loss'), draw:t('outcome.draw') }[outcome] || t('outcome.unknown');
     }
+    function appendOutcome(parent, item) {
+        var outcome = {win:'win', loss:'loss', draw:'draw'}[item.outcome] || 'unknown';
+        var badge = append(parent, element('span', 'ss-battle-outcome ss-outcome-' + outcome));
+        var visual = item.outcome_visual, src = visual && visual.src;
+        var name = {win:'Victory', loss:'Defeat', draw:'Draw'}[outcome];
+        var base = name && 'img://gui/maps/icons/library/BgBattleResultIcon' + name + '-1';
+        /* Only the verified WG artwork for this exact result; labels remain
+           translated text and survive missing textures or rejected URLs. */
+        if (visual && visual.kind === 'outcome' && base && (src === base + '.png' || src === base + '.dds')) {
+            badge.className += ' ss-outcome-art';
+            var art = append(badge, element('span', 'ss-outcome-image'));
+            art.setAttribute('aria-hidden', 'true');
+            art.style.backgroundImage = 'url("' + src + '")';
+        }
+        append(badge, element('span', 'ss-outcome-label', battleOutcome(item.outcome)));
+    }
     function ordered(items) {
         var copy = items.slice(0);
         copy.sort(function (a, b) {
@@ -323,7 +339,7 @@
         var list = state.list;
         var end = Math.min(list.length, limit);
         var fragment = document.createDocumentFragment();
-        var index, item, stats, group, header, identity, subtitle, outcome;
+        var index, item, stats, group, header, identity, subtitle;
         var battle = state.group === 'battles';
         for (index = state.renderedCount; index < end; index += 1) {
             item = list[index];
@@ -340,8 +356,7 @@
                 (battle ? date(item.started_at, true) + ' · ' + (item.map || t('unknown.map')) : '');
             if (subtitle) { append(identity, element('div', 'ss-group-subtitle', subtitle)); }
             if (battle) {
-                outcome = {win: 'win', loss: 'loss', draw: 'draw'}[item.outcome] || 'unknown';
-                append(header, element('span', 'ss-battle-outcome ss-outcome-' + outcome, battleOutcome(item.outcome)));
+                appendOutcome(header, item);
             } else {
                 headlineStat(header, t('metric.battles'), battleCount(stats), false, true);
                 headlineStat(header, t('metric.win_rate'), rate(stats.win_rate), false, true);

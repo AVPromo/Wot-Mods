@@ -1,6 +1,8 @@
 # Interface languages
 
-The mod defaults to **English**, independently of the game client's language.
+The mod defaults to **the game client language** (`"language": "auto"`).
+An explicit supported code in the configuration takes priority. An unavailable
+game language or explicit unsupported code falls back to English.
 The supported codes are `en` (English), `ru` (Russian), `fr` (French), `pl`
 (Polish), `de` (German), `es` (Spanish), and `uk` (Ukrainian).
 
@@ -15,9 +17,22 @@ panel or select Refresh to reload both configuration files. Language changes
 do not reset statistics, change account ownership or modify saved battle facts.
 The main configuration is optional and supports partial nested overrides. For
 example, `{"language":"fr"}` changes only the language; every omitted setting
-keeps its built-in default. A missing main file is created with English defaults,
+keeps its built-in default. A missing main file is created with automatic language selection,
 or copied from the legacy file beside the active package. An existing central file
 always wins; failure to create/read the optional file retains defaults.
+
+Existing files containing `"language": "en"` remain an explicit English override.
+To follow the game after upgrading, change that value to `"auto"` or remove the
+`language` property. Regional client codes such as `pl_PL` select their bundled
+base language; an exact external regional catalog takes priority when available.
+No files are polled per frame: selection reloads on startup, panel opening and Refresh.
+
+Victory, Defeat and Draw use the client's original `battle_results:status` text
+when the selected mod language matches the game. If configuration selects another
+language, bundled translations in that language are used. Missing game APIs,
+resource keys returned instead of translations and malformed text retain safe
+per-message fallbacks. An unchanged shipped catalog does not mask the native
+outcome text; a customized outcome entry takes priority. No history is rewritten.
 
 ## Custom translations
 
