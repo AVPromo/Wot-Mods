@@ -74,6 +74,42 @@ class BonusAccountOwnershipTests(unittest.TestCase):
         self.assertIsNone(self.mod._bonus_callback_id)
         self.assertIsNone(self.mod._bonus_account_key)
 
+    def test_old_account_cache_result_cannot_borrow_current_accounts_xp_bonus(self):
+        self.begin()
+        self.garage()
+        self.mod._poll_one(self.mod.active_service, self.mod.active_key)
+        unused, callback = self.api.pending_callbacks.pop()
+        original = self.mod.active_service
+        self.api.dbid = 8
+        self.api.events.onAccountBecomePlayer()
+        current = self.mod.active_service
+        reusable = fixtures.Obj(personal=fixtures.Obj(xpProgress={1: {'xp': 9876}},
+                                                      isAddXPBonusApplied=True))
+        self.api.posts[ARENA_ID] = fixtures.Obj(results=raw_result(dbid=8), reusable=reusable)
+        callback(1, raw_result())
+        row = original._state['battles'][ARENA_ID]
+        self.assertEqual(row['xp_received'], raw_result()['personal'][1]['xp'])
+        self.assertFalse(row['xp_bonus_applied'])
+        self.assertEqual(current._state['battles'], {})
+        # The same bundle is valid for its own account and must remain usable.
+        self.api.events.onBattleResultsReceived(True, raw_result(dbid=8))
+        self.assertEqual(current._state['battles'][ARENA_ID]['xp_received'], 9876)
+
+    def test_posted_bonus_requires_matching_account_and_battle_identity(self):
+        self.begin()
+        self.garage()
+        raw = raw_result()
+        wrong_battle = raw_result()
+        wrong_battle['arenaUniqueID'] += 1
+        for posted_raw in (raw_result(dbid=8), wrong_battle, None, {'personal': {}}):
+            reusable = fixtures.Obj(personal=fixtures.Obj(xpProgress={1: {'xp': 9876}},
+                                                          isAddXPBonusApplied=True))
+            self.api.posts[ARENA_ID] = fixtures.Obj(results=posted_raw, reusable=reusable)
+            self.api.events.onBattleResultsReceived(True, raw)
+            row = self.mod.active_service._state['battles'][ARENA_ID]
+            self.assertEqual(row['xp_received'], raw['personal'][1]['xp'])
+            self.assertFalse(row['xp_bonus_applied'])
+
 
 if __name__ == '__main__':
     unittest.main()

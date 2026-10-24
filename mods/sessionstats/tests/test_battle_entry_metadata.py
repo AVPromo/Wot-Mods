@@ -64,6 +64,47 @@ class NativeEntryContextTests(unittest.TestCase):
         self.assertEqual(context['map_name'], METADATA['map_name'])
         self.assertNotIn('PRIVATE_EXCEPTION_SENTINEL', json.dumps(context))
 
+    def test_optional_map_name_failure_keeps_beginning_vehicle_and_map_identity(self):
+        class NotReadyMap(object):
+            geometryName = '17_map'
+
+            @property
+            def name(self):
+                raise RuntimeError('PRIVATE_EXCEPTION_SENTINEL')
+
+        self.arena.arenaType = NotReadyMap()
+        context = self.api.battle_context()
+        self.assertEqual(context['arena_id'], ARENA_ID)
+        self.assertEqual(context['vehicle_id'], 1)
+        self.assertEqual(context['map_id'], '17_map')
+        self.assertIsNone(context['map_name'])
+
+    def test_optional_vehicle_identity_failure_keeps_beginning_display_and_map(self):
+        class NotReadyType(object):
+            shortUserString, level, classTag = 'Entry vehicle', 8, 'mediumTank'
+
+            @property
+            def compactDescr(self):
+                raise RuntimeError('PRIVATE_EXCEPTION_SENTINEL')
+
+        self.vehicle['vehicleType'] = fixtures.Obj(type=NotReadyType())
+        context = self.api.battle_context()
+        self.assertEqual(context['arena_id'], ARENA_ID)
+        self.assertIsNone(context['vehicle_id'])
+        for key, value in METADATA.items():
+            self.assertEqual(context[key], value)
+
+    def test_unavailable_roster_does_not_hide_verified_random_battle(self):
+        self.arena.vehicles = None
+        context = self.api.battle_context()
+        self.assertEqual(context['arena_id'], ARENA_ID)
+        self.assertEqual(context['started_at'], START)
+        self.assertEqual(context['mode'], 'random')
+        self.assertIsNone(context['vehicle_id'])
+        self.assertEqual(context['map_name'], METADATA['map_name'])
+        self.arena.bonusType = 2
+        self.assertIsNone(self.api.battle_context())
+
 
 class DurableEntryMetadataTests(unittest.TestCase):
     setUp = fixtures.RuntimeTests.__dict__['setUp']

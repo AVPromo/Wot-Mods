@@ -37,6 +37,14 @@ MAX_EXPECTED_BYTES = 8 * 1024 * 1024
 DEFAULT_LOCAL_CONFIG = {'hotkey': 'CTRL+F10', 'footer_button': True}
 
 
+def _optional_attr(owner, name):
+    """Isolate optional native metadata, including temporarily failing getters."""
+    try:
+        return getattr(owner, name, None)
+    except Exception:
+        return None
+
+
 def _filesystem_text(value):
     # WoT uses Python 2.7: environment values can be filesystem-encoded bytes.
     # Decode before joining with Unicode paths (e.g. a Polish Windows profile).
@@ -176,30 +184,27 @@ class GameAPI(object):
         arena_id = getattr(player, 'arenaUniqueID', None)
         if not arena_id:
             return None
-        vehicle = arena.vehicles.get(getattr(player, 'playerVehicleID', None), {})
-        descriptor = vehicle.get('vehicleType')
-        vehicle_type = getattr(descriptor, 'type', None)
-        vehicle_id = getattr(vehicle_type, 'compactDescr', None)
-        # Display metadata is optional during arena loading. Never let it
-        # prevent the durable beginning; later avatar events/ticks enrich it.
-        vehicle_metadata = {}
+        vehicle_type = None
         try:
-            vehicle_metadata = {
-                'vehicle_name': getattr(vehicle_type, 'shortUserString', None) or
-                                getattr(vehicle_type, 'userString', None),
-                'vehicle_tier': getattr(vehicle_type, 'level', None),
-                'vehicle_type': getattr(vehicle_type, 'classTag', None),
-            }
+            vehicle = arena.vehicles.get(getattr(player, 'playerVehicleID', None), {})
+            vehicle_type = _optional_attr(vehicle.get('vehicleType'), 'type')
         except Exception:
             pass
-        map_type = getattr(arena, 'arenaType', None)
+        # The arena identity and random mode are already verified. Optional
+        # roster/descriptor/map data can arrive later or fail independently;
+        # none may prevent the durable beginning used for result recovery.
+        map_type = _optional_attr(arena, 'arenaType')
         context = {
             'arena_id': str(arena_id), 'started_at': arena_start(arena_id),
-            'account_dbid': self.account_dbid(), 'vehicle_id': vehicle_id,
-            'map_id': getattr(map_type, 'geometryName', None),
-            'map_name': getattr(map_type, 'name', None), 'mode': 'random',
+            'account_dbid': self.account_dbid(),
+            'vehicle_id': _optional_attr(vehicle_type, 'compactDescr'),
+            'vehicle_name': _optional_attr(vehicle_type, 'shortUserString') or
+                            _optional_attr(vehicle_type, 'userString'),
+            'vehicle_tier': _optional_attr(vehicle_type, 'level'),
+            'vehicle_type': _optional_attr(vehicle_type, 'classTag'),
+            'map_id': _optional_attr(map_type, 'geometryName'),
+            'map_name': _optional_attr(map_type, 'name'), 'mode': 'random',
         }
-        context.update(vehicle_metadata)
         return context
 
     def vehicle_info(self, compact):
@@ -1033,13 +1038,22 @@ class Runtime(object):
             # A current result can arrive even when the avatar-ready event was
             # missed. Replayed historical events must not revive waiting.
             self._observed_arenas.add((account_key, record['arena_id']))
-        if reusable is None and source != 'late_cache':
+        if reusable is None and source != 'late_cache' and account_key == self.active_key:
             try:
                 # A cache callback can be older than the displayed result.
                 # Consult the native controller so it cannot undo an applied
                 # post-battle multiplier when events arrive out of order.
                 posted = self.api.posted_bundle(record['arena_id'])
-                reusable = getattr(posted, 'reusable', None)
+                posted_raw = getattr(posted, 'results', None)
+                personal = posted_raw.get('personal') if isinstance(posted_raw, dict) else None
+                avatar = personal.get('avatar') if isinstance(personal, dict) else None
+                # The controller belongs to the current login. A retained or
+                # mismatched bundle must not mark another account's raw XP as
+                # bonus-adjusted: that durable flag would block later repairs.
+                if (isinstance(avatar, dict) and
+                        str(posted_raw.get('arenaUniqueID')) == record['arena_id'] and
+                        _integer(avatar.get('accountDBID')) == context['account_dbid']):
+                    reusable = getattr(posted, 'reusable', None)
             except Exception:
                 self.monitor.fault('bonus_reader', 'postedResults.reusable', 'readable bonus data', 'exception', source)
                 self._warn_once('results:bonus',

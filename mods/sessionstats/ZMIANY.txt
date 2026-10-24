@@ -2,6 +2,13 @@ SESSION STATS — CHANGELOG
 
 0.2.8 • 2026-10-23
 
+• Native window commands now forward page changes to the runtime, restoring
+  access beyond the first 40 rows in every scope and grouping.
+• Delayed results cannot borrow a posted XP bonus from a different account or
+  battle. Matching current-account bonus updates remain supported.
+• Optional roster, vehicle descriptor and map metadata failures no longer block
+  recording a verified random-battle beginning. See docs/FINAL_REVIEW_PR3.md.
+
 • Appearance/language configuration now lives in mods/configs, outside the client
   version folder. Missing main configuration is created from defaults or copied
   from the active package's legacy adjacent JSON. Optional language overrides
