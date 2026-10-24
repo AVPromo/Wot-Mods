@@ -2,20 +2,33 @@
 
 ## File placement and applying changes
 
-Place **`grz.sessionstats.json`** beside the active package:
+Place **`grz.sessionstats.json`** in the game installation's **`mods/configs`** directory:
 
 ```text
 mods/2.4.1.0/grz.sessionstats_0.2.8.wotmod
-mods/2.4.1.0/grz.sessionstats.json
+mods/configs/grz.sessionstats.json
 ```
 
-The JSON filename has no release number. Preserve your custom file when replacing
-the package. The mod only reads it; it never overwrites it or inserts missing fields.
+The JSON path has no release/client version. Preserve your custom file when replacing
+the package; the configs directory remains in place across client-version changes.
+The mod creates missing directories and the main JSON on startup, panel open or Refresh.
+It copies a legacy JSON beside the uniquely identified active package if available;
+otherwise it writes the complete defaults. Existing files, even malformed ones, are
+never overwritten or filled with missing fields. Legacy originals remain intact.
+Do not install packaged defaults over your custom configuration. To migrate an old
+installation automatically, leave the central JSON absent when replacing the .wotmod.
+
+Optional translation overrides use `mods/configs/grz.sessionstats.languages.json`.
+A legacy override is copied only when its central counterpart is absent; no external
+language file is required because the package contains all supported languages.
+Creation uses a complete temporary file and create-only publication; concurrent
+creation cannot replace another writer's file. Permission, disk and migration errors
+are logged as `CONFIG_SETUP` without stopping collection or modifying source files.
 Configuration loads at startup, when opening the panel and after **Refresh**.
 Save the file, then reopen or refresh the panel. There is no per-frame polling.
 
 The full supplied JSON contains **the current appearance as defaults**: 140 colors,
-12 corner radii, three opacity settings and a scrolling multiplier. A missing file,
+12 corner radii, three opacity settings and a scrolling multiplier. An unavailable file,
 empty object `{}` and omitted fields use the built-in defaults. Partial nested
 sections are supported; include only the fields you want to override.
 

@@ -149,12 +149,14 @@ Unavailable results remain explicit gaps, not fabricated statistics. Server rete
 is not established by synthetic tests. See docs/OFFLINE_RESULT_RECOVERY.md.
 
 APPEARANCE CONFIGURATION
-The user-facing file is grz.sessionstats.json next to the actual current package
-grz.sessionstats_0.2.8.wotmod, ordinarily mods/2.4.1.0/grz.sessionstats.json.
-Bundle the complete default configuration outside the archive. Its unversioned filename
-lets users keep settings when replacing the package; never write or rewrite it at runtime.
-Document preserving the user's existing JSON when copying future updates and moving it
-alongside the package when the client changes its active mods directory.
+The user-facing file is mods/configs/grz.sessionstats.json in the verified game root.
+The package remains mods/2.4.1.0/grz.sessionstats_0.2.8.wotmod. Bundle complete defaults
+outside the archive in mods/configs, together with optional language overrides.
+Create a missing main file from legacy adjacent JSON or defaults; never overwrite an
+existing central file. Copy legacy language overrides only if their destination is absent.
+Keep legacy originals. Use bounded reads and atomic create-only publication; contain
+permission/disk/migration failures. Preserve custom JSON when extracting installer defaults.
+Configuration stays in mods/configs across client-version changes.
 Keep AppData config.json separate: it still controls hotkey/footer_button on restart.
 
 appearance.py is pure Python 2.7/3 and exposes default_config(), load_config(path),
@@ -194,7 +196,7 @@ field diagnostics to 64 per read plus an omitted-count notice. A missing file is
 default selection, not a result-health warning. See docs/APPEARANCE_CONFIG.md.
 
 config_path.find_config_path(package_name=None, resmgr=None, cwd=None) returns an absolute
-neighbor JSON path or None. Default package name uses the current VERSION and exact
+mods/configs/grz.sessionstats.json path or None without writing files. Default package name uses the current VERSION and exact
 grz.sessionstats_<VERSION>.wotmod filename. Do not infer the disk path from virtual __file__.
 Prefer an existing physical paths.xml resolved by ResMgr; parse declared *.wotmod paths
 and respect recursive mode. Relative roots are anchored to that physical XML's directory.
@@ -203,8 +205,9 @@ installation. Otherwise use only a bounded set of appDirectory/cwd/parent locati
 existing paths.xml and one unambiguous current package. Do not choose the highest-numbered
 mods directory or an inactive old-version copy. Preserve distinct XML locations whose
 relative roots may differ; repeated references to the same package are deduplicated.
-Require one current package, even if its neighbor JSON does not yet exist. A renamed,
-missing or duplicated active package cannot be guessed. No automatic file creation.
+Require one current package even if the central JSON does not yet exist. A renamed,
+missing or duplicated active package cannot be guessed. prepare_config_path performs
+optional creation/migration only after this unambiguous discovery succeeds.
 Bound physical XML size to 256 KiB, elements to 4096, roots to 32, scanned entries to 8192
 and depth to 8. Reject DTD/ENTITY before parsing; import the XML parser lazily and guard
 unavailability. Skip encountered symlink directories/packages. Resolve Unicode, BOM and
@@ -358,7 +361,8 @@ res/scripts/client/gui/mods/grz_session_stats/*.pyc
 res/gui/gameface/mods/grz_session_stats/{SessionStats.html,session_stats.css,session_stats.js,footer.js,footer.css}
 res/gui/gen_resources/grz.sessionstats.json -> R.mods.grz.sessionstats.views.SessionStats
 res/grz_session_stats/wn8exp.json (bundled WG table)
-Outside .wotmod, beside it: mods/<active-version>/grz.sessionstats.json
+Outside .wotmod: mods/configs/grz.sessionstats.json
+Optional translation overrides: mods/configs/grz.sessionstats.languages.json
   - full default appearance JSON, UTF-8; exact defaults match appearance.py.
   - distinct from res/gui/gen_resources/grz.sessionstats.json resource registration inside
     the archive and from the user's AppData config.json hotkey/footer settings.

@@ -66,9 +66,9 @@ def installer_checksums(package, dependency, config, client_version, languages=N
     target = 'mods/'+client_version+'/'
     entries = [(package, target+package.name),
                (dependency, target+'net.openwg/'+dependency.name),
-               (config, target+config.name)]
+               (config, 'mods/configs/'+config.name)]
     if languages is not None:
-        entries.append((languages, target+languages.name))
+        entries.append((languages, 'mods/configs/'+languages.name))
     return ''.join(digest(path)+'  '+name+'\n' for path, name in entries).encode('ascii')
 
 
@@ -120,7 +120,7 @@ def main():
             raise RuntimeError('UI file missing: '+name)
     source_paths = sorted((ROOT/'src').rglob('*.py'))
     expected_modules = ['core', 'storage', 'runtime', 'normalize', 'views', 'footer', 'visuals',
-                        'health', 'monitor', 'diagnostics', 'appearance', 'config_path',
+                        'health', 'monitor', 'diagnostics', 'appearance', 'config_path', 'config_files',
                         'localization', 'language_defaults']
     for name in expected_modules:
         if not (ROOT/'src'/'grz_session_stats'/(name+'.py')).is_file():
@@ -182,6 +182,7 @@ def main():
         'package_sha256': digest(package), 'openwg_sha256': digest(dependency),
         'appearance_config': CONFIG_FILENAME, 'appearance_config_sha256': digest(config_path),
         'languages_config': languages_path.name, 'languages_config_sha256': digest(languages_path),
+        'config_directory': 'mods/configs',
         'expected': json.loads((ROOT/'data'/'wn8-source.json').read_text()),
         'live_client_tested': False,
     }
@@ -189,8 +190,8 @@ def main():
     with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         target = 'mods/'+args.client_version+'/'
         put(z, target+package.name, package.read_bytes())
-        put(z, target+CONFIG_FILENAME, config_path.read_bytes())
-        put(z, target+languages_path.name, languages_path.read_bytes())
+        put(z, 'mods/configs/'+CONFIG_FILENAME, config_path.read_bytes())
+        put(z, 'mods/configs/'+languages_path.name, languages_path.read_bytes())
         put(z, target+'net.openwg/'+dependency.name, dependency.read_bytes())
         for name in ['README_PL.txt', 'ZMIANY.txt', 'LICENSE.txt', 'THIRD_PARTY.txt']:
             put(z, name, render_guide(name, (ROOT/name).read_bytes(), version_tag, args.client_version))

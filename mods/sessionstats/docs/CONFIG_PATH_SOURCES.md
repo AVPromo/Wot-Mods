@@ -1,12 +1,19 @@
-# Configuration beside the package — discovery and sources, 0.2.7
+# Configuration in mods/configs — discovery and sources, 0.2.8
 
 ## Contract
 
 `config_path.find_config_path(package_name=None, resmgr=None, cwd=None)` returns
-the absolute `grz.sessionstats.json` path beside the identified physical package,
+the absolute `mods/configs/grz.sessionstats.json` path in the identified physical game root,
 or `None`. The default package name is `grz.sessionstats_<VERSION>.wotmod`.
 It creates no files and changes neither installation nor history. The JSON need
 not exist for discovery; reading, validation and defaults belong to the loader.
+Runtime uses `prepare_config_path` to create a missing central JSON from bounded
+legacy adjacent bytes or built-in defaults. It can also copy optional language
+overrides into mods/configs. Existing targets always win; old files stay intact.
+Only the uniquely identified active package is eligible for migration. Atomic
+create-only publication prevents partial destination writes and replacement of
+concurrently created files. Failures produce CONFIG_SETUP diagnostics and leave
+collection operational. No files are created when discovery is ambiguous.
 
 ## Selecting the active installation
 
@@ -21,8 +28,10 @@ not exist for discovery; reading, validation and defaults belong to the loader.
 4. Select XML `Paths/Path` declarations with `mask="*.wotmod"`. Resolve relative
    paths against the XML directory. Honor `mode="recursive"`; absent/empty mode
    scans only the immediate directory.
-5. Match the current package's exact filename. Its JSON is in the same directory,
-   including when the package is in a subdirectory of an active resource root.
+5. Match the current package's exact filename to verify the active installation
+   and locate its legacy adjacent configuration. The new destination is always
+   `mods/configs` relative to the physical XML directory, even when the package
+   is in a nested/custom resource root. It does not depend on the client version.
 
 Discovery does not choose the highest `mods` version, search old versions or infer
 archive placement from `__file__`. Renaming the package without changing the expected

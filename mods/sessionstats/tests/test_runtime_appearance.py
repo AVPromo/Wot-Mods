@@ -192,16 +192,46 @@ class RuntimeAppearanceTests(unittest.TestCase):
         self.assertEqual(self.mod.active_service.snapshot()['scopes']['manual']['summary']['battles'], 1)
         self.assertIn('CONFIG appearance unavailable', self.log())
 
-    def test_runtime_uses_resolved_adjacent_path_when_no_test_override_is_given(self):
+    def test_runtime_uses_prepared_configs_path_when_no_test_override_is_given(self):
         self.write({'scroll': {'speed_multiplier': 1.5}})
-        original = config_path.find_config_path
-        config_path.find_config_path = lambda: self.path
+        original = config_path.prepare_config_path
+        config_path.prepare_config_path = lambda: self.path
         try:
             self.start(located=True)
         finally:
-            config_path.find_config_path = original
+            config_path.prepare_config_path = original
         self.assertEqual(self.mod.appearance_path, self.path)
         self.assertEqual(self.mod.snapshot()['appearance']['scroll_speed'], 1.5)
+
+    def test_runtime_creates_central_config_and_reloads_edits_without_resetting_history(self):
+        legacy = self.path
+        self.path = os.path.join(self.directory, 'mods', 'configs', 'grz.sessionstats.json')
+        from test_config_path import changed
+        with changed(config_path, '_find_config_location', lambda *args: (self.path, legacy)):
+            self.start(located=True)
+            self.assertTrue(os.path.isfile(self.path))
+            self.assertFalse(os.path.exists(legacy))
+            self.result()
+            before = self.mod.active_service.snapshot()['scopes']['manual']['summary']
+            self.write({'language': 'pl', 'scroll': {'speed_multiplier': 2}})
+            self.refresh()
+            self.assertEqual(self.mod.appearance_path, self.path)
+            self.assertEqual(self.mod.snapshot()['appearance']['scroll_speed'], 2)
+            self.assertEqual(self.mod.snapshot()['localization']['language'], 'pl')
+            self.assertEqual(self.mod.active_service.snapshot()['scopes']['manual']['summary'], before)
+
+    def test_runtime_migrates_legacy_once_then_reads_only_central_config(self):
+        self.write({'language': 'pl', 'scroll': {'speed_multiplier': 2}})
+        legacy = self.path
+        self.path = os.path.join(self.directory, 'mods', 'configs', 'grz.sessionstats.json')
+        from test_config_path import changed
+        with changed(config_path, '_find_config_location', lambda *args: (self.path, legacy)):
+            self.start(located=True)
+            self.assertEqual(self.mod.snapshot()['appearance']['scroll_speed'], 2)
+            with io.open(legacy, 'w', encoding='utf-8') as handle:
+                handle.write('{"scroll":{"speed_multiplier":8}}')
+            self.refresh()
+            self.assertEqual(self.mod.snapshot()['appearance']['scroll_speed'], 2)
 
 
 if __name__ == '__main__':

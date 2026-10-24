@@ -4,8 +4,9 @@ Version 0.2.8 • 2026-10-23 • target: Wargaming EU 2.4.1.0
 RELEASE STATUS
 This installable .wotmod contains CPython 2.7.18 bytecode, a dedicated Gameface
 window, a battle-result adapter and persistent session storage. Since 0.2.7, it
-reads grz.sessionstats.json next to the .wotmod for colors, corner radii, opacity
-and scrolling speed. Bundled defaults preserve the panel, icon and wheel behavior.
+supports grz.sessionstats.json for colors, corner radii, opacity
+and scrolling speed. Configuration now lives in mods/configs, independently of the
+active client-version folder. Bundled defaults preserve the panel, icon and wheel behavior.
 Each field is validated on load; errors go to the mod's own log. Result health
 checks, WoT warnings, the activity spinner and the integration safeguards from
 0.2.5/0.2.6 remain available. Automated checks cover the logic, package and simulated
@@ -16,14 +17,19 @@ This is not an official Wargaming product.
 UPDATING AN EXISTING INSTALLATION
 Close the game, remove the previous grz.sessionstats_*.wotmod from the active
 mods directory and replace it with grz.sessionstats_0.2.8.wotmod
-from this package. Place grz.sessionstats.json beside it. Keep only one active
+from this package. Place grz.sessionstats.json in mods/configs. Keep only one active
 version of grz.sessionstats. Bundled OpenWG 1.2.2 is unchanged; keep one copy.
 Existing history remains readable. Updating does not require a data reset.
 
 The configuration filename has no release number. Preserve your own
 grz.sessionstats.json instead of overwriting it with the new package's defaults.
-The mod only reads it; it never overwrites it or inserts fields. When moving to
-a new client-version directory, move your JSON together with the mod package.
+Existing central files are never overwritten or filled with missing fields.
+If the central main file is absent, the mod copies the legacy JSON beside the
+active package, or creates the full defaults when no legacy file exists. Optional
+legacy language overrides are also copied only if their central file is absent.
+Legacy files stay intact. Copy your custom JSON into mods/configs before extracting
+new package defaults, or install just the .wotmod to let this migration run.
+The configs directory stays in place when the client's version folder changes.
 
 QUICK INSTALLATION
 1. Close World of Tanks.
@@ -31,8 +37,8 @@ QUICK INSTALLATION
 3. Copy the included mods directory into the World of Tanks root containing
    WorldOfTanks.exe. For client 2.4.1.0, the installed files should include:
    mods/2.4.1.0/grz.sessionstats_0.2.8.wotmod
-   mods/2.4.1.0/grz.sessionstats.json
-   mods/2.4.1.0/grz.sessionstats.languages.json
+   mods/configs/grz.sessionstats.json
+   mods/configs/grz.sessionstats.languages.json
    mods/2.4.1.0/net.openwg/net.openwg.gameface_1.2.2.wotmod
    Preserve your existing configuration and language overrides when copying.
 4. If another mod pack already provides OpenWG Gameface 1.2.2 or newer, retain
@@ -48,8 +54,7 @@ license files do not need to be in the game directory. Python is not required
 on the player's computer.
 
 If the active mods directory is not 2.4.1.0, use your client's version directory
-for the .wotmod files and place grz.sessionstats.json directly beside
-grz.sessionstats_0.2.8.wotmod. Moving files alone does not establish compatibility
+for the .wotmod files. Both configuration JSON files stay in mods/configs. Moving files alone does not establish compatibility
 with a new client. This adapter uses interfaces from the 2.4.1 branch.
 
 LANGUAGES AND OPTIONAL FILES
@@ -105,8 +110,8 @@ HOW THE PANEL WORKS
   excluded from WN8 for this scope.
 
 APPEARANCE AND SCROLLING — grz.sessionstats.json
-The file sits beside the .wotmod in the active mods directory, for example:
-mods/2.4.1.0/grz.sessionstats.json
+The file sits in the installation-wide configs directory:
+mods/configs/grz.sessionstats.json
 The full supplied file contains 140 color settings, 12 corner radii, 3 opacity
 settings and a scrolling multiplier. Defaults preserve layout, spacing, tables,
 icons, the spinner and wheel speed.
@@ -155,7 +160,8 @@ Configuration is read at mod startup, when opening the panel and after clicking
 "Refresh". Save the JSON, then refresh or reopen the panel. The mod does not
 inspect the file every frame or on every timer tick.
 
-A missing file uses all defaults. Invalid JSON syntax/encoding, duplicate keys,
+If configuration cannot be created or read, the mod uses defaults. Invalid JSON
+syntax/encoding, duplicate keys,
 NaN/Infinity, files larger than 128 KiB, an invalid root type or an unsupported
 schema_version also restore all defaults. An invalid field restores only its own
 default; other valid changes remain active. An incorrectly typed section restores
@@ -281,8 +287,8 @@ Standard Windows location:
 
 The UTF-8 log records UTC timestamps, severity, mod version and diagnostics such
 as pending-count changes or health-check codes/paths/types. CONFIG entries describe
-configuration reads and validation; CONFIG_PATH describes discovery of the JSON
-beside the active package. Health diagnostics contain schema metadata without
+configuration reads and validation; CONFIG_PATH describes discovery of mods/configs
+in the active installation. CONFIG_SETUP records creation/migration or a failure. Health diagnostics contain schema metadata without
 raw results, nicknames, account identifiers or statistic values. Exception logging
 keeps exception types and code locations, omitting messages that could contain
 result data.
@@ -345,8 +351,8 @@ Optionally create %APPDATA%/grz_wot_session_stats/config.json:
 }
 F1–F12 support CTRL, SHIFT or ALT combinations, for example CTRL+SHIFT+F10.
 Shortcut/footer_button changes take effect after restarting the game. An invalid
-shortcut restores Ctrl+F10. Edit appearance and scrolling in grz.sessionstats.json
-beside the .wotmod.
+shortcut restores Ctrl+F10. Edit appearance, language and scrolling in
+mods/configs/grz.sessionstats.json.
 
 WN8 AND GAME UPDATES
 The bundled offline XVM Wargaming table is dated 2026-10-19 and covers 999 vehicles.

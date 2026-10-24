@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Find a read-only configuration beside the active physical mod package.
+"""Find configuration in mods/configs of the active physical installation.
 
 The virtual module filename cannot identify its .wotmod. The verified client
 paths.xml declares package roots; only those roots are searched. No version
-directory guessing, installation writes or XML parser import at module load.
+directory guessing or XML parser import at module load. Discovery is read-only;
+preparation separately creates missing configuration without replacing files.
 """
 from __future__ import absolute_import, unicode_literals
 
@@ -184,8 +185,12 @@ def _fallback_files(resmgr, cwd):
     return list(files.values())
 
 
-def find_config_path(package_name=None, resmgr=None, cwd=None):
-    """Return an absolute adjacent JSON path or None; never write installation.
+def _config_location(xml_path, legacy_path):
+    return (os.path.join(os.path.dirname(xml_path), 'mods', 'configs', CONFIG_FILENAME), legacy_path)
+
+
+def _find_config_location(package_name=None, resmgr=None, cwd=None):
+    """Return central/legacy JSON paths or None; never write installation.
 
     A physically confirmed resolver result is authoritative, even if malformed
     or ambiguous. Only when it cannot identify a physical paths.xml may the
@@ -217,13 +222,16 @@ def find_config_path(package_name=None, resmgr=None, cwd=None):
             result = _find_package(xml_path, package_name, budget)
             if result is None:
                 raise _LocationError('active_package_missing')
-            return result
+            return _config_location(xml_path, result)
         candidates = _fallback_files(resmgr, cwd)
         results = {}
         for candidate in candidates:
             result = _find_package(candidate, package_name, budget)
             if result is not None:
-                results[os.path.normcase(os.path.realpath(result))] = result
+                location = _config_location(candidate, result)
+                # A shared/linked configs directory does not make two physical
+                # XML locations the same installation or legacy source.
+                results[os.path.normcase(candidate)] = location
         if len(results) != 1:
             raise _LocationError('fallback_ambiguous' if results else 'config_location_unavailable')
         return next(iter(results.values()))
@@ -232,10 +240,26 @@ def find_config_path(package_name=None, resmgr=None, cwd=None):
     except Exception:
         code = 'unexpected_location_error'
     try:
-        LOG.warning('CONFIG_PATH code=%s; configuration next to the active .wotmod was not resolved; using defaults.', code)
+        LOG.warning('CONFIG_PATH code=%s; mods/configs for the active installation was not resolved; using defaults.', code)
     except Exception:
         pass
     return None
+
+
+def find_config_path(package_name=None, resmgr=None, cwd=None):
+    """Locate mods/configs/grz.sessionstats.json without creating any files."""
+    location = _find_config_location(package_name, resmgr, cwd)
+    return location[0] if location is not None else None
+
+
+def prepare_config_path(package_name=None, resmgr=None, cwd=None):
+    """Locate configuration and create/migrate only missing optional files."""
+    location = _find_config_location(package_name, resmgr, cwd)
+    if location is None:
+        return None
+    from .config_files import prepare_config
+    prepare_config(*location)
+    return location[0]
 
 
 def find_installation_root(resmgr=None, cwd=None):

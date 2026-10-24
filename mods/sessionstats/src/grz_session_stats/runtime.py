@@ -440,10 +440,10 @@ class Runtime(object):
         # file I/O in a render/animation frame or on every result-polling tick.
         try:
             from .appearance import load_config, build_presentation
-            from .config_path import find_config_path
+            from .config_path import prepare_config_path
             path = self._appearance_override_path
             if path is None:
-                path = find_config_path()
+                path = prepare_config_path()
             self.appearance_path = path
             config = load_config(path)
             languages_path = os.path.join(os.path.dirname(path), LANGUAGES_FILENAME) if path else None

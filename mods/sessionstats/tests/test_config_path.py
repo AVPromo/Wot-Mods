@@ -134,8 +134,8 @@ class ConfigPathTests(unittest.TestCase):
     def install(self, base, subdir='mods/2.4.1.0', name=None):
         return self.write(os.path.join(base, subdir, name or self.package), b'package fixture')
 
-    def expected(self, package):
-        return os.path.join(os.path.dirname(package), cp.CONFIG_FILENAME)
+    def expected(self, base):
+        return os.path.join(base, 'mods', 'configs', cp.CONFIG_FILENAME)
 
     def locate(self, base, **kwargs):
         kwargs.setdefault('resmgr', Resources(os.path.join(base, 'paths.xml')))
@@ -151,12 +151,12 @@ class ConfigPathTests(unittest.TestCase):
         self.assertIsNone(record.exc_info)
         self.assertNotIn(self.root, record.getMessage())
 
-    def test_default_filename_returns_adjacent_absent_json_without_writing_it(self):
+    def test_default_filename_returns_central_absent_json_without_writing_it(self):
         base = self.game()
         package = self.install(base)
         resource = Resources(os.path.join(base, 'paths.xml'))
         result = self.locate(base, resmgr=resource)
-        self.assertEqual(result, self.expected(package))
+        self.assertEqual(result, self.expected(base))
         self.assertTrue(os.path.isabs(result))
         self.assertFalse(os.path.exists(result))
         self.assertEqual(resource.calls, ['../paths.xml'])
@@ -167,18 +167,68 @@ class ConfigPathTests(unittest.TestCase):
         package = self.install(base)
         self.install(base, 'mods/0.9.1.0')
         self.install(base, 'mods/99.9.9.9')
-        self.assertEqual(self.locate(base), self.expected(package))
+        self.assertEqual(self.locate(base), self.expected(base))
 
-    def test_recursive_package_uses_its_own_subdirectory(self):
+    def test_configuration_path_survives_client_version_change(self):
+        base = self.game()
+        self.install(base)
+        before = self.locate(base)
+        self.game(entries=[('./mods/2.5.0.0', 'recursive')])
+        self.install(base, 'mods/2.5.0.0')
+        self.assertEqual(self.locate(base), before)
+
+    def test_prepare_migrates_only_from_the_active_physical_package(self):
         base = self.game()
         package = self.install(base, 'mods/2.4.1.0/custom/stats')
-        self.assertEqual(self.locate(base), self.expected(package))
+        legacy = self.write(os.path.join(os.path.dirname(package), cp.CONFIG_FILENAME), b'{"language":"pl"}')
+        self.write(os.path.join(base, 'mods', '99.9.9.9', cp.CONFIG_FILENAME), b'{"language":"fr"}')
+        path = cp.prepare_config_path(resmgr=Resources(os.path.join(base, 'paths.xml')), cwd=self.root)
+        self.assertEqual(path, self.expected(base))
+        with io.open(path, 'rb') as handle:
+            self.assertEqual(handle.read(), b'{"language":"pl"}')
+        self.assertTrue(os.path.isfile(legacy))
+
+    def test_prepare_does_not_write_to_either_ambiguous_installation(self):
+        first, second = self.game('one'), self.game('two')
+        self.install(first)
+        self.install(second)
+        self.assertIsNone(cp.prepare_config_path(resmgr=Resources(app=first), cwd=second))
+        self.assertFalse(os.path.exists(os.path.dirname(self.expected(first))))
+        self.assertFalse(os.path.exists(os.path.dirname(self.expected(second))))
+
+    @unittest.skipUnless(hasattr(os, 'symlink'), 'No symlink support')
+    def test_shared_configs_target_does_not_disambiguate_two_installations(self):
+        first, second = self.game('one'), self.game('two')
+        self.install(first)
+        self.install(second)
+        shared = os.path.join(self.root, 'shared-configs')
+        os.makedirs(shared)
+        try:
+            for base in (first, second):
+                os.symlink(shared, os.path.dirname(self.expected(base)))
+        except (OSError, NotImplementedError):
+            self.skipTest('Creating symlinks is unavailable')
+        self.assertIsNone(cp.prepare_config_path(resmgr=Resources(app=first), cwd=second))
+        self.assertEqual(os.listdir(shared), [])
+
+    def test_old_inactive_version_config_is_not_migrated(self):
+        base = self.game()
+        self.install(base)
+        self.write(os.path.join(base, 'mods', '0.9.1.0', cp.CONFIG_FILENAME), b'{"language":"fr"}')
+        path = cp.prepare_config_path(resmgr=Resources(os.path.join(base, 'paths.xml')), cwd=self.root)
+        from grz_session_stats.appearance import load_config
+        self.assertEqual(load_config(path)['language'], 'en')
+
+    def test_recursive_package_still_uses_installation_configs_directory(self):
+        base = self.game()
+        package = self.install(base, 'mods/2.4.1.0/custom/stats')
+        self.assertEqual(self.locate(base), self.expected(base))
 
     def test_nonrecursive_root_ignores_nested_copy(self):
         base = self.game(entries=[('./mods/2.4.1.0', '')])
         package = self.install(base)
         self.install(base, 'mods/2.4.1.0/subfolder')
-        self.assertEqual(self.locate(base), self.expected(package))
+        self.assertEqual(self.locate(base), self.expected(base))
         os.remove(package)
         self.failed(self.locate(base), 'active_package_missing')
 
@@ -193,18 +243,18 @@ class ConfigPathTests(unittest.TestCase):
                                  ('./mods/2.4.1.0/.', ''),
                                  ('./mods/2.4.1.0/sub', 'recursive')])
         package = self.install(base, 'mods/2.4.1.0/sub')
-        self.assertEqual(self.locate(base), self.expected(package))
+        self.assertEqual(self.locate(base), self.expected(base))
 
     def test_renamed_package_and_json_alone_do_not_identify_this_mod(self):
         base = self.game()
         renamed = self.install(base, name='renamed.wotmod')
-        self.write(self.expected(renamed), b'{}')
+        self.write(self.expected(base), b'{}')
         self.failed(self.locate(base), 'active_package_missing')
 
     def test_explicit_package_name_can_identify_a_known_alternative(self):
         base = self.game()
         package = self.install(base, name='test.stats_4.wotmod')
-        self.assertEqual(self.locate(base, package_name='test.stats_4.wotmod'), self.expected(package))
+        self.assertEqual(self.locate(base, package_name='test.stats_4.wotmod'), self.expected(base))
 
     def test_authoritative_malformed_xml_never_uses_another_installation(self):
         active, other = self.game('active'), self.game('other')
@@ -222,13 +272,13 @@ class ConfigPathTests(unittest.TestCase):
         base = self.game()
         package = self.install(base)
         self.assertEqual(self.locate(base, resmgr=Resources(app=os.path.join(base, 'win64'), fail=True)),
-                         self.expected(package))
+                         self.expected(base))
 
     def test_fallback_cwd_parent_and_duplicate_candidates_are_unambiguous(self):
         base = self.game()
         package = self.install(base)
         self.assertEqual(cp.find_config_path(resmgr=Resources(app=base), cwd=os.path.join(base, 'win64')),
-                         self.expected(package))
+                         self.expected(base))
 
     def test_fallback_two_installations_with_packages_fail(self):
         first, second = self.game('one'), self.game('two')
@@ -247,7 +297,7 @@ class ConfigPathTests(unittest.TestCase):
         with io.open(xml, 'rb') as handle:
             content = handle.read()
         self.write(xml, b'\xef\xbb\xbf' + content)
-        self.assertEqual(self.locate(base), self.expected(package))
+        self.assertEqual(self.locate(base), self.expected(base))
 
     def test_windows_filesystem_bytes_and_native_utf8_bytes(self):
         base = self.game('Żółć')
@@ -255,8 +305,8 @@ class ConfigPathTests(unittest.TestCase):
         xml = os.path.join(base, 'paths.xml')
         with changed(sys, 'getfilesystemencoding', lambda: 'cp1250'):
             for encoding in ('utf-8', 'cp1250'):
-                self.assertEqual(self.locate(base, resmgr=Resources(xml.encode(encoding))), self.expected(package))
-                self.assertEqual(cp.find_config_path(resmgr=Resources(), cwd=base.encode(encoding)), self.expected(package))
+                self.assertEqual(self.locate(base, resmgr=Resources(xml.encode(encoding))), self.expected(base))
+                self.assertEqual(cp.find_config_path(resmgr=Resources(), cwd=base.encode(encoding)), self.expected(base))
         self.assertEqual(self.capture.records, [])
 
     def test_dtd_and_entities_rejected_before_xml_parser(self):
@@ -322,7 +372,7 @@ class ConfigPathTests(unittest.TestCase):
             os.symlink(external, os.path.join(os.path.dirname(package), 'linked'))
         except (OSError, NotImplementedError):
             self.skipTest('Creating symlinks is unavailable')
-        self.assertEqual(self.locate(base), self.expected(package))
+        self.assertEqual(self.locate(base), self.expected(base))
 
     def test_missing_optional_parser_uses_defaults_and_one_warning(self):
         base = self.game()

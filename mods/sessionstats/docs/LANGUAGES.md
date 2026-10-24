@@ -4,8 +4,7 @@ The mod defaults to **English**, independently of the game client's language.
 The supported codes are `en` (English), `ru` (Russian), `fr` (French), `pl`
 (Polish), `de` (German), `es` (Spanish), and `uk` (Ukrainian).
 
-Set the root `language` property in `grz.sessionstats.json`, next to the active
-`.wotmod`, for example:
+Set the root `language` property in `mods/configs/grz.sessionstats.json`, for example:
 
 ```json
 {"schema_version": 1, "language": "uk"}
@@ -16,12 +15,14 @@ panel or select Refresh to reload both configuration files. Language changes
 do not reset statistics, change account ownership or modify saved battle facts.
 The main configuration is optional and supports partial nested overrides. For
 example, `{"language":"fr"}` changes only the language; every omitted setting
-keeps its built-in default. A missing main file selects the English defaults.
+keeps its built-in default. A missing main file is created with English defaults,
+or copied from the legacy file beside the active package. An existing central file
+always wins; failure to create/read the optional file retains defaults.
 
 ## Custom translations
 
 `grz.sessionstats.languages.json` is the editable UTF-8 catalog. The installation
-ZIP places it next to `grz.sessionstats.json`. The `.wotmod` also includes all
+ZIP places it in `mods/configs`, next to `grz.sessionstats.json`. The `.wotmod` also includes all
 seven languages, so installing the `.wotmod` alone still provides translations.
 The six top-level release assets are unchanged; the editable catalog is inside
 the installation ZIP and its source bundle.

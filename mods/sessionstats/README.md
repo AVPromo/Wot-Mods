@@ -19,8 +19,9 @@ on it and requires that infrastructure to merge first.
 ## Installation and integration with other mods
 
 Download the **Session Stats** installation ZIP from [Releases](https://github.com/Szwarceneger16/WotMods/releases).
-Place the `.wotmod` and optional `grz.sessionstats.json` together in the active
-`mods/<game_version>/` directory. Preserve your custom JSON when updating. OpenWG
+Place the `.wotmod` in the active `mods/<game_version>/` directory and configuration
+in **`mods/configs/grz.sessionstats.json`**. This path survives client-version changes.
+Preserve your custom JSON when updating. OpenWG
 Gameface 1.2.2 is included under MIT; install only one copy even if another mod
 uses it. Remove the old Session Stats package without deleting AppData history.
 The Session Stats `.wotmod` itself works without OpenWG: collection and the native
@@ -85,5 +86,8 @@ omitted fields and nested settings use defaults. For example:
 {"language": "pl", "scroll": {"speed_multiplier": 1.5}}
 ```
 
-Save beside the Session Stats `.wotmod`, then reopen the panel or click Refresh.
+Save in `mods/configs/grz.sessionstats.json`, then reopen the panel or click Refresh.
+The mod creates a missing main file using defaults, or copies the legacy JSON beside
+the active package if present. Existing central files always win and are never rewritten.
+Optional translation overrides belong in `mods/configs/grz.sessionstats.languages.json`.
 Appearance fields and validation: [APPEARANCE_CONFIG.md](docs/APPEARANCE_CONFIG.md).

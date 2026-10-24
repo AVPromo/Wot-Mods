@@ -119,8 +119,8 @@ class BuildContracts(unittest.TestCase):
         files=[]
         for name, relative in [('grz.sessionstats_0.2.8.wotmod','mods/2.5.0.0/'),
                                ('net.openwg.gameface_1.2.2.wotmod','mods/2.5.0.0/net.openwg/'),
-                               ('grz.sessionstats.json','mods/2.5.0.0/'),
-                               ('grz.sessionstats.languages.json','mods/2.5.0.0/')]:
+                               ('grz.sessionstats.json','mods/configs/'),
+                               ('grz.sessionstats.languages.json','mods/configs/')]:
             path = self.directory/relative/name
             path.parent.mkdir(parents=True,exist_ok=True)
             path.write_bytes(name.encode('ascii')); files.append(path)

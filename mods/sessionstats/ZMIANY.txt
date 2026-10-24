@@ -2,6 +2,12 @@ SESSION STATS — CHANGELOG
 
 0.2.8 • 2026-10-23
 
+• Appearance/language configuration now lives in mods/configs, outside the client
+  version folder. Missing main configuration is created from defaults or copied
+  from the active package's legacy adjacent JSON. Optional language overrides
+  migrate too. Existing central files and legacy originals are never overwritten.
+  Installer paths, internal checksums and guides use the same new location.
+
 • Assign a new package version to the accumulated review, reliability and
   performance corrections. Package metadata, runtime version and active guides
   now identify 0.2.8; the client target and OpenWG dependency are unchanged.
