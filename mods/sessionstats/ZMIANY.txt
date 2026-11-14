@@ -1,5 +1,13 @@
 SESSION STATS — CHANGELOG
 
+0.9.13 • 2026-11-14
+• Place source arrows immediately after their figures and keep native numeric nodes intact.
+• Center compact financial Min/Max pairs with a 3 px gap and add thin table cell rules.
+• Reuse the native alert triangle for framed filter warnings and partial-value indicators.
+• Add Back beside Selected battle to restore the exact source view.
+• Share aggregate header space naturally and size the gold value block to its content.
+• Preserve missing-value semantics, source ownership and coverage help.
+
 0.9.12 • 2026-11-14
 • Show premium account bonuses as absolute earned amounts rather than multipliers.
 • Translate vehicle role tooltips using the selected mod language with English fallback.

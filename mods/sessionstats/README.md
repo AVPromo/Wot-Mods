@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.12 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.13 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -27,14 +27,17 @@ Earlier manual resets appear as time points and saved battles remain available.
 The account and region determine which history and time points are shown.
 
 Advanced sorting marks the existing card value in orange when that value is
-already present. Additional credit or XP-total figures use a stable header slot.
-The active sorting caption and value are centered within that slot. When received
-results in the selected period lack the selected metric, the filter section shows
-an orange-red incomplete-data warning. Pending battles alone do not trigger it.
-Min/Max offers a rounded arrow cue beside the number to open its source battle,
-across Maps, Vehicles and Tiers. The whole numeric cell remains clickable; only
-the small cue changes its background on hover or focus. Financial Min/Max buttons
-fit their captions and have equal surrounding spacing. For WN8, the large figure shows the selected Min/Average/Max while
+already present. Additional credit or XP-total figures use a compact gold value
+block sized to its caption and figure. Aggregate headers share the available
+space between their identity, statistics and controls. When received results in
+the selected period lack the selected metric, the filter section shows a framed
+warning with the game's native alert triangle. Pending battles alone do not
+trigger it. Min/Max offers a rounded arrow cue immediately after the number,
+with a 3 px gap, to open its source battle across Maps, Vehicles and Tiers.
+The whole numeric cell remains clickable; only the small cue changes its
+background on hover or focus. Financial Min/Max buttons fit their captions and
+form centered pairs with a 3 px gap. Thin grey-olive rules separate the small
+performance and finance table cells. For WN8, the large figure shows the selected Min/Average/Max while
 that sort is active; otherwise the **Combined WN8** headline recalculates a rating
 from all group results and expected vehicle values. It differs from the arithmetic
 mean of individual-battle WN8 in the table. The card information button explains
@@ -43,7 +46,8 @@ known values. Credit income and net sorting separately offer Base (before bonuse
 and Received (settled income). Base totals and Base **All** sorting stay unavailable
 until every recorded battle in the group has the corresponding Base value;
 historical missing Base values remain unknown. Base Min/Average/Max still use the
-known sample, marked with `*` when incomplete; hover for its coverage. One known
+known sample, marked with the native alert triangle when incomplete; hover for
+its coverage. One known
 battle therefore has equal Min/Average/Max. Both net variants subtract actual
 battle costs. All is not offered for
 WN8, win rate or individual battles. Credit sums mark the existing finance total;
@@ -69,10 +73,13 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.9 permanent links and base/received credits](docs/UI_REFINEMENTS_0.9.9.md), and
 [0.9.10 native rendering and single coverage](docs/UI_REFINEMENTS_0.9.10.md), and
 [0.9.11 source arrows and historical data corrections](docs/UI_REFINEMENTS_0.9.11.md), and
-[0.9.12 bonus amounts, localized hints and source navigation](docs/UI_REFINEMENTS_0.9.12.md).
+[0.9.12 bonus amounts, localized hints and source navigation](docs/UI_REFINEMENTS_0.9.12.md), and
+[0.9.13 adjacent source actions and native warnings](docs/UI_REFINEMENTS_0.9.13.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
-already selected, including in a full-history Timeline range. Vehicle role names
+already selected, including in a full-history Timeline range. **Back**, beside
+**Selected battle**, returns to the exact source context captured by that opening
+action. Vehicle role names
 and descriptions follow the selected mod language across the seven supported
 languages, with English fallback for missing translations.
 

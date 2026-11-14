@@ -1,4 +1,4 @@
-/* Sorting changes values/decoration, never the logical control or KPI slots. */
+/* Filter controls stay stable while aggregate headers fit their actual content. */
 const fs=require('fs'),path=require('path');
 // Width/mode/native acknowledgements precede each case; metric changes keep that width.
 const frames=page=>page.evaluate(()=>new Promise((resolve,reject)=>{let left=6;
@@ -49,7 +49,7 @@ module.exports=async({browser,nativeHost,check})=>{
               scope[group].forEach(item=>{item.sort_value=metric==='battle_wn8'?(statistic==='min'?334:5035):metric==='xp_received'&&statistic==='sum'?12345678:metric.indexOf('credits_')===0?149678:8;});
               model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();document.getElementById('ss-group-'+group).onclick();
             },{group,metric,statistic});await frames(page);
-            const value=await page.evaluate(()=>{
+            const audit=()=>page.evaluate(()=>{
               const bar=document.getElementById('ss-list-controls'),card=document.querySelector('#ss-groups .ss-group');
               const barBox=bar.getBoundingClientRect(),cardBox=card.getBoundingClientRect();
               const rect=(node,origin)=>{const box=node.getBoundingClientRect();return [box.left-origin.left,box.top-origin.top,box.width,box.height];};
@@ -64,17 +64,35 @@ module.exports=async({browser,nativeHost,check})=>{
               const hostBox=host.getBoundingClientRect(),parts=host.querySelectorAll('.ss-group-sort-caption,.ss-group-sort-number,.ss-count-coverage');
               const hostFits=[...parts].every(node=>{const box=node.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node);
                 return [...range.getClientRects()].every(part=>part.left>=box.left-1&&part.right<=box.right+1&&part.top>=box.top-1&&part.bottom<=box.bottom+1);});
-              return {controls,kpis,host:rect(host,cardBox),hostFits,card:rect(card,cardBox),header:rect(card.querySelector('.ss-group-header'),cardBox),sorting:rect(document.getElementById('ss-sorting'),barBox),
+              const header=card.querySelector('.ss-group-header'),headerBox=header.getBoundingClientRect();
+              const contained=nodes=>nodes.filter(node=>node.getBoundingClientRect().width>0).every(node=>{
+                const box=node.getBoundingClientRect();return box.left>=headerBox.left-1&&box.right<=headerBox.right+1&&box.top>=headerBox.top-1&&box.bottom<=headerBox.bottom+1;
+              });
+              const separate=nodes=>{const boxes=nodes.map(node=>node.getBoundingClientRect()).filter(box=>box.width>0&&box.height>0);
+                return boxes.every((a,index)=>boxes.slice(index+1).every(b=>Math.min(a.right,b.right)-Math.max(a.left,b.left)<=1||Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)<=1));};
+              const siblings=[...header.children],statistics=[...card.querySelector('.ss-group-stats').children];
+              return {controls,kpis,host:rect(host,cardBox),hostFits,headerFits:contained(siblings)&&contained(statistics)&&separate(siblings)&&separate(statistics),
+                card:rect(card,cardBox),header:rect(header,cardBox),sorting:rect(document.getElementById('ss-sorting'),barBox),
                 hidden:getComputedStyle(field).visibility==='hidden',aria:field.getAttribute('aria-hidden'),disabled:trigger.disabled};
             });
+            const value=await audit();
             const caption=language+'/'+scale+'x/'+width+'/'+group+'/'+metric+'/'+statistic;
             if(!baseline)baseline=value;
             const same=(left,right)=>left.length===right.length&&left.every((part,index)=>Array.isArray(part)?same(part,right[index]):Math.abs(part-right[index])<=scale*0.1);
-            const unchanged=same(value.controls,baseline.controls)&&same(value.sorting,baseline.sorting)&&same(value.header,baseline.header)&&same(value.host,baseline.host)&&same(value.card,baseline.card)&&
-              value.kpis.every((item,index)=>same(item.box,baseline.kpis[index].box)&&same(item.label,baseline.kpis[index].label)&&same(item.value,baseline.kpis[index].value));
-            check('Metric changes preserve filter boxes and aggregate header slots '+caption+(unchanged?'':': '+JSON.stringify(value)),unchanged);
-            const centered=value.kpis.every(item=>item.centered&&item.fits)&&value.hostFits;
-            check('Every aggregate figure and active-value/date caption fits its fixed slot '+caption+(centered?'':': '+JSON.stringify(value)),centered);
+            const unchanged=same(value.controls,baseline.controls)&&same(value.sorting,baseline.sorting);
+            check('Metric changes preserve the logical filter control boxes '+caption+(unchanged?'':': '+JSON.stringify(value)),unchanged);
+            const centered=value.kpis.every(item=>item.centered&&item.fits)&&value.hostFits&&value.headerFits&&
+              Math.max(...value.kpis.map(item=>item.label[1]))-Math.min(...value.kpis.map(item=>item.label[1]))<=scale&&
+              Math.max(...value.kpis.map(item=>item.value[1]+item.value[3]))-Math.min(...value.kpis.map(item=>item.value[1]+item.value[3]))<=scale;
+            check('Aggregate text stays aligned, readable and contained in its natural header '+caption+(centered?'':': '+JSON.stringify(value)),centered);
+            if(language==='en'&&width===1200&&group==='maps'&&metric==='credits_costs'){
+              await page.evaluate(()=>{const payload=JSON.parse(model.payload);payload.scopes.launch.ordering.maps.direction='asc';
+                model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();});await frames(page);
+              const repeated=await audit();
+              check('Unchanged header content keeps the same geometry when only ordering direction changes '+caption,
+                same(value.header,repeated.header)&&same(value.host,repeated.host)&&same(value.card,repeated.card)&&
+                value.kpis.every((item,index)=>same(item.box,repeated.kpis[index].box)&&same(item.label,repeated.kpis[index].label)&&same(item.value,repeated.kpis[index].value)));
+            }
             if(metric==='battles'||metric==='win_rate')check('Inapplicable Statistic reserves space without becoming visible or focusable '+caption,
               value.hidden&&value.aria==='true'&&value.disabled);
           }

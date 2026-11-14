@@ -46,6 +46,7 @@ with tempfile.TemporaryDirectory(prefix='grz-summary-navigation-') as directory:
   return JSON.parse(output.stdout);
 }
 module.exports=async({browser,nativeHost,check})=>{
+  await require('./ui-battle-return.cjs')({browser,nativeHost,check});
   const fixtures=nativeFixtures(),page=await nativeHost(browser,{initialViewport:{width:1800,height:1400},viewport:{width:1800,height:1400,scale:1}});
   const selector=statistic=>'#ss-summary .ss-metric-battle-link[data-ss-source-metric="xp_received"][data-ss-extreme="'+statistic+'"]';
   try{

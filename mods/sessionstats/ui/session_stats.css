@@ -117,18 +117,19 @@ button:disabled { opacity:0.45; }
 .ss-narrow-summary .ss-money-head .ss-money-count { display:block; width:100%; padding:0 4rem; }
 .ss-narrow-summary .ss-money-row .ss-money-label { width:100%; padding-bottom:0; }
 .ss-narrow-summary .ss-money-value { width:33.333%; }
-/* WoT-style insets and quiet row rules replace the cell grid. Use explicit
+/* WoT-style insets and quiet cell rules keep the small tables readable. Use explicit
    block/flex boxes, supported corner radii and colours for Gameface. */
 .ss-metric-head, .ss-metric-row, .ss-money-head, .ss-money-row { display:flex; align-items:stretch; min-height:26rem; }
 .ss-metric-head, .ss-money-head { min-height:22rem; margin-bottom:1rem; border-radius:5rem; background:linear-gradient(#292e1f, #222719); color:#c4c1a7; font-size:12rem; line-height:17rem; }
-.ss-metric-row, .ss-money-row { border-radius:4rem; background:#181d11; }
-.ss-metric-row + .ss-metric-row, .ss-money-row + .ss-money-row { border-top:1rem solid #2e3522; background:#1a1f13; }
+.ss-metric-row, .ss-money-row { border-top:1rem solid #3c4434; border-radius:4rem; background:#181d11; }
+.ss-metric-row + .ss-metric-row, .ss-money-row + .ss-money-row { border-top:1rem solid #3c4434; background:#1a1f13; }
+.ss-metric-head > .ss-metric-number, .ss-metric-row > .ss-metric-number,
+.ss-money-head > .ss-money-value, .ss-money-row > .ss-money-value { border-left:1rem solid #3c4434; }
 .ss-metric-row:hover, .ss-money-row:hover { background:#252d1b; }
 .ss-metric-name, .ss-metric-number, .ss-money-label, .ss-money-value { padding:3rem 4rem; line-height:20rem; }
 .ss-metric-name { display:block; width:28%; flex-shrink:0; color:#d4ccb0; font-size:13rem; }
 .ss-metric-number { display:block; width:24%; padding-right:3rem; text-align:right; color:#ebe7d4; font-size:16rem; }
-/* Right-aligned numbers retain a 3rem metric / 4rem money trailing inset. There is no
-   vertical cell rule; spare leading space belongs to the full amount. */
+/* Right-aligned amounts retain their reading inset inside the thin cell rules. */
 .ss-metric-number, .ss-money-value { padding-left:0; }
 .ss-metric-head .ss-metric-name, .ss-metric-head .ss-metric-number, .ss-money-head .ss-money-label, .ss-money-head .ss-money-value { padding-top:2rem; padding-bottom:2rem; font-size:12rem; line-height:17rem; color:#c4c1a7; }
 .ss-free-xp { display:flex; align-items:center; flex-wrap:wrap; font-size:13rem; color:#c3bea3; margin:0; line-height:17rem; }
@@ -137,9 +138,9 @@ button:disabled { opacity:0.45; }
 .ss-money-label { display:block; width:19%; font-size:13rem; color:#d4ccb0; }
 .ss-money-value { display:block; width:27%; text-align:right; font-size:14rem; }
 /* Base and received credit totals share compact, permanent extrema actions. */
-.ss-credit-extreme-actions { display:flex; align-items:center; min-height:18rem; width:100%; }
-.ss-credit-extreme-spacer { display:block; flex:1 1 0; min-width:0; }
+.ss-credit-extreme-actions { display:flex; align-items:center; justify-content:center; min-height:18rem; width:100%; }
 .ss-credit-extreme-actions > .ss-metric-battle-link { flex:0 0 auto; width:auto; min-width:0; max-width:none; height:18rem; min-height:18rem; padding:0 4rem; font-size:11rem; line-height:16rem; }
+.ss-credit-extreme-actions > .ss-metric-battle-link + .ss-metric-battle-link { margin-left:3rem; }
 .ss-credit-extreme-actions .ss-control-label, .ss-credit-extreme-actions .ss-metric-action-label { font-size:11rem; line-height:16rem; white-space:nowrap; }
 .ss-credit-cell > .ss-cell-value { white-space:normal; overflow-wrap:break-word; }
 .ss-positive { color:#c0d889; }
@@ -163,7 +164,12 @@ button:disabled { opacity:0.45; }
 .ss-group-tab:hover, .ss-group-tab:focus { background:#252614; color:#eaddb4; }
 .ss-group-tab.is-active { color:#f1d195; background:linear-gradient(#292614, #35301b); box-shadow:inset 0 -2rem #b17d2b, inset 0 1rem #646149; }
 .ss-list-controls { position:relative; display:flex; flex-wrap:wrap; align-items:flex-end; width:100%; padding:5rem 28rem 0 0; }
-.ss-sort-data-warning { width:100%; min-width:0; padding:4rem 4rem 1rem; color:#e67345; font-size:13rem; font-weight:bold; line-height:18rem; text-align:center; white-space:normal; overflow-wrap:break-word; }
+.ss-sort-data-warning { display:flex; align-items:center; justify-content:center; width:100%; min-width:0; padding:5rem 4rem 2rem; color:#ee7000; font-size:14rem; font-weight:normal; line-height:18rem; white-space:normal; overflow-wrap:break-word; }
+.ss-client-warning { display:flex; flex:0 1 auto; align-items:center; justify-content:center; min-width:0; max-width:100%; padding:6rem 9rem; border:1rem solid #ee7000; border-radius:4rem; background:#111309; box-shadow:inset 0 0 1rem #000, inset 0 0 8rem #000, inset 0 0 6rem #8d0d03; }
+.ss-warning-icon { display:inline-block; flex:0 0 16rem; width:16rem; height:16rem; background-image:url("img://gui/maps/icons/library/alertIcon.png"); background-repeat:no-repeat; background-position:center; background-size:contain; vertical-align:middle; }
+.ss-client-warning > .ss-warning-icon { margin-left:7rem; }
+.ss-warning-message { display:block; flex:0 1 auto; min-width:0; max-width:100%; text-align:left; }
+.ss-sort-partial-icon { width:14rem; height:14rem; margin-left:4rem; vertical-align:-2rem; }
 .ss-list-controls.ss-filters-wrapped { justify-content:center; padding-left:28rem; }
 .ss-list-controls.ss-filters-wide { justify-content:center; }
 .ss-filters-wrapped .ss-list-meta, .ss-filters-wrapped .ss-pagination, .ss-filters-wrapped .ss-sorting { margin-left:4rem; margin-right:4rem; }
@@ -502,43 +508,46 @@ button:disabled { opacity:0.45; }
 .ss-map-more-button { min-width:48rem; padding:3rem 7rem; margin-left:6rem; }
 .ss-narrow-cards [id^="ss-card-maps-"] .ss-group-header, .ss-narrow-cards [id^="ss-card-vehicles-"] .ss-group-header { flex-wrap:wrap; }
 .ss-narrow-cards [id^="ss-card-maps-"] .ss-group-name, .ss-narrow-cards [id^="ss-card-vehicles-"] .ss-group-name { flex:1 1 340rem; min-width:0; }
-/* Aggregate cards keep one compact statistical row across sort modes. */
-.ss-group-stats { display:flex; flex:0 0 290rem; align-items:center; min-width:0; width:290rem; }
-.ss-group-stats.ss-group-stats-more { flex-basis:366rem; width:366rem; }
-.ss-aggregate .ss-group-header { min-height:66rem; flex-wrap:nowrap; }
-.ss-aggregate .ss-group-name { min-width:0; padding-right:4rem; }
-.ss-aggregate .ss-group-kpi { flex:0 0 62rem; width:62rem; min-width:0; margin-top:0; padding:0 2rem; }
-.ss-aggregate .ss-group-count { flex-basis:60rem; width:60rem; }
-.ss-aggregate .ss-group-wn8-kpi { flex-basis:72rem; width:72rem; }
-.ss-aggregate .ss-group-kpi .ss-kpi-label { height:26rem; min-height:26rem; font-size:11rem; line-height:13rem; overflow-wrap:break-word; }
-.ss-aggregate .ss-group-kpi .ss-kpi-value { display:flex; flex-direction:column; align-items:center; justify-content:center; height:38rem; min-height:38rem; font-size:20rem; line-height:23rem; overflow-wrap:break-word; }
+/* Content-sized identities leave the remaining width to aligned statistics. */
+.ss-group-stats { display:flex; flex:1 1 0rem; align-items:stretch; min-width:0; width:auto; }
+.ss-group-stats.ss-group-stats-more { flex-basis:0rem; width:auto; }
+.ss-aggregate .ss-group-header { align-items:stretch; min-height:0; flex-wrap:nowrap; }
+.ss-aggregate .ss-group-name { flex:0 1 auto; align-self:center; min-width:0; max-width:32%; padding-right:8rem; }
+.ss-aggregate .ss-group-thumb { align-self:center; }
+.ss-aggregate .ss-group-kpi { display:flex; flex:1 1 0rem; flex-direction:column; align-items:center; justify-content:space-between; width:auto; min-width:0; margin-top:0; padding:0 3rem; }
+.ss-aggregate .ss-group-count, .ss-aggregate .ss-group-wn8-kpi { flex-basis:0rem; width:auto; }
+.ss-aggregate .ss-group-kpi .ss-kpi-label { width:100%; min-width:0; height:auto; min-height:0; font-size:11rem; line-height:13rem; overflow-wrap:break-word; }
+.ss-aggregate .ss-group-kpi .ss-kpi-value { display:block; width:100%; min-width:0; height:auto; min-height:0; font-size:20rem; line-height:23rem; overflow-wrap:break-word; }
 .ss-aggregate .ss-group-count .ss-kpi-value { font-size:18rem; }
 .ss-aggregate .ss-group-rate .ss-kpi-value { font-size:17rem; }
-.ss-group-sort-host { position:relative; flex:0 0 96rem; width:96rem; min-width:0; height:64rem; padding:0 3rem; text-align:center; }
-.ss-group-sort-caption { display:block; width:100%; height:26rem; min-height:26rem; color:#b3b69a; font-size:11rem; font-weight:normal; line-height:13rem; overflow-wrap:break-word; }
-.ss-group-sort-number { display:block; width:100%; height:38rem; min-height:38rem; margin:0; color:#e8e5d2; font-size:16rem; line-height:19rem; white-space:normal; overflow-wrap:break-word; }
-.ss-group-sort-host .ss-group-sort-value { display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:64rem; min-height:64rem; margin:0; padding:0 2rem; border:0; text-align:center; }
-.ss-group-sort-host .ss-group-sort-caption, .ss-group-sort-host .ss-group-sort-number { display:block; flex:0 0 auto; height:auto; min-height:0; text-align:center; }
+.ss-group-sort-host { position:relative; display:flex; flex:1 1 0rem; align-items:center; justify-content:center; width:auto; min-width:0; padding:0 3rem; text-align:center; }
+.ss-group-sort-host[data-ss-sort-display="empty"] { display:none; }
+.ss-group-sort-caption { display:flex; align-items:center; justify-content:center; width:auto; max-width:100%; color:#b3b69a; font-size:11rem; font-weight:normal; line-height:13rem; overflow-wrap:break-word; }
+.ss-group-sort-caption-text { display:block; flex:0 1 auto; min-width:0; max-width:100%; }
+.ss-group-sort-caption > .ss-sort-partial-icon { flex:0 0 14rem; }
+.ss-group-sort-number { display:block; width:auto; max-width:100%; margin:0; color:#e8e5d2; font-size:16rem; line-height:19rem; white-space:normal; overflow-wrap:break-word; }
+.ss-group-sort-host .ss-group-sort-value { display:flex; flex:0 1 auto; flex-direction:column; align-items:center; justify-content:center; width:auto; max-width:100%; height:auto; min-height:0; margin:0; padding:3rem 6rem; border:0; text-align:center; }
+.ss-group-sort-host .ss-group-sort-caption, .ss-group-sort-host .ss-group-sort-number { flex:0 0 auto; height:auto; min-height:0; text-align:center; }
 /* Keep numeric text in its native cell; only the transparent hit target overlays it. */
 .ss-metric-battle-link { display:block; min-width:0; width:100%; min-height:26rem; margin:0; padding:3rem 0; border:1rem solid #555944; border-radius:5rem; background:linear-gradient(#45483a,#34392a 48%,#2d3325); color:#dfd4ae; font-family:Warhelios, Arial, sans-serif; font-size:14rem; font-weight:normal; line-height:20rem; text-align:center; cursor:pointer; }
 .ss-metric-battle-link:hover, .ss-metric-battle-link:focus { outline:1rem solid #e7a23b; outline-offset:-1rem; border-color:#e7a23b; }
 .ss-metric-extreme-action .ss-metric-action-label { display:block; width:100%; min-width:0; height:16rem; font-size:11rem; line-height:16rem; text-align:center; }
-.ss-metric-number.ss-extreme-cell { position:relative; padding-left:20rem; }
+.ss-metric-row .ss-metric-number.ss-extreme-cell { position:relative; padding-left:0; padding-right:21rem; }
 .ss-group .ss-extreme-cell.ss-sort-active-value { background:none; box-shadow:none; }
 .ss-extreme-cell > .ss-metric-battle-link,
 .ss-extreme-cell > .ss-metric-battle-link:hover,
 .ss-extreme-cell > .ss-metric-battle-link:focus { position:absolute; left:0; top:0; width:100%; height:100%; min-height:22rem; padding:0; background:none; border:0; outline:none; box-shadow:none; }
-.ss-extreme-link-cue { display:block; position:absolute; left:2rem; top:50%; margin-top:-9rem; width:16rem; height:18rem; border:0; outline:none; box-shadow:none; border-radius:4rem; background:#303726; pointer-events:none; }
+.ss-extreme-link-cue { display:block; position:absolute; right:2rem; top:50%; margin-top:-9rem; width:16rem; height:18rem; border:0; outline:none; box-shadow:none; border-radius:4rem; background:#303726; pointer-events:none; }
 .ss-extreme-link-cue:before { content:""; display:block; position:absolute; left:3rem; top:9rem; width:10rem; height:1rem; background:#c4c7ac; transform:rotate(-45deg); }
 .ss-extreme-link-cue:after { content:""; display:block; position:absolute; left:7rem; top:4rem; width:5rem; height:5rem; border-top:1rem solid #c4c7ac; border-right:1rem solid #c4c7ac; }
 .ss-extreme-cell > .ss-metric-battle-link:hover .ss-extreme-link-cue,
 .ss-extreme-cell > .ss-metric-battle-link:focus .ss-extreme-link-cue,
 .ss-extreme-cell.ss-sort-active-value .ss-extreme-link-cue { background:#50583b; }
-.ss-group-stats > .ss-map-more-button { flex:0 0 72rem; width:72rem; min-width:72rem; margin-left:4rem; padding:3rem 4rem; font-size:11rem; line-height:16rem; }
+.ss-group-stats > .ss-map-more-button { flex:0 0 72rem; align-self:center; width:72rem; min-width:72rem; margin-left:4rem; padding:3rem 4rem; font-size:11rem; line-height:16rem; }
 .ss-group-stats > .ss-map-more-button .ss-control-label { font-size:11rem; line-height:16rem; }
 .ss-aggregate.ss-compact-headline .ss-group-header { flex-wrap:wrap; }
-.ss-aggregate.ss-compact-headline .ss-group-name { flex:1 1 340rem; min-width:0; }
-.ss-aggregate.ss-compact-headline .ss-group-stats { flex:1 1 100%; width:100%; max-width:100%; flex-wrap:wrap; justify-content:flex-end; }
+.ss-aggregate.ss-compact-headline .ss-group-name { flex:1 1 0rem; min-width:0; max-width:none; }
+.ss-aggregate.ss-compact-headline .ss-group-stats { flex:1 1 100%; width:100%; max-width:100%; flex-wrap:nowrap; }
 .ss-more-panel { display:flex; flex-wrap:wrap; align-items:flex-start; padding:5rem 0 2rem; border-top:1rem solid #655431; font-size:13rem; line-height:18rem; overflow-wrap:break-word; }
 .ss-more-panel > p { width:100%; margin:3rem 5rem; }
 .ss-more-title { margin:4rem 5rem; color:#f0d392; font-size:13rem; line-height:18rem; }
@@ -571,7 +580,13 @@ button:disabled { opacity:0.45; }
 /* The card's ordinary border is the native-safe selection baseline. Preserve
    its width/layout; optional overlay effects never control visibility. */
 .ss-group.ss-battle-target { outline:none; border-color:#e7a23b; }
-.ss-battle-selection-banner { display:block; position:absolute; z-index:4; top:-10rem; right:6rem; max-width:95%; margin:0; padding:1rem 6rem; border:1rem solid #e7a23b; border-radius:5rem; background:#292e1f; color:#e7a23b; font-size:12rem; font-weight:bold; line-height:16rem; pointer-events:none; }
+.ss-battle-selection-banner { display:flex; align-items:center; position:absolute; z-index:4; top:-10rem; right:6rem; max-width:95%; margin:0; padding:1rem 6rem; border:1rem solid #e7a23b; border-radius:5rem; background:#292e1f; color:#e7a23b; font-size:12rem; font-weight:bold; line-height:16rem; }
+.ss-battle-selection-label { display:block; min-width:0; }
+.ss-battle-return { display:block; position:relative; flex:0 0 20rem; width:20rem; min-width:20rem; height:18rem; min-height:18rem; padding:0; margin:0 5rem 0 0; border:0; border-radius:4rem; background:#303726; color:#c4c7ac; cursor:pointer; }
+.ss-battle-return:hover, .ss-battle-return:focus { background:#50583b; outline:1rem solid #e7a23b; outline-offset:0; }
+.ss-battle-return-arrow { display:block; position:absolute; left:3rem; top:1rem; width:14rem; height:14rem; pointer-events:none; }
+.ss-battle-return-arrow:before { content:""; display:block; position:absolute; left:2rem; top:7rem; width:11rem; height:1rem; background:#c4c7ac; }
+.ss-battle-return-arrow:after { content:""; display:block; position:absolute; left:2rem; top:4rem; width:6rem; height:6rem; border-left:1rem solid #c4c7ac; border-bottom:1rem solid #c4c7ac; transform:rotate(45deg); }
 .ss-battle-target-outline { display:block; position:absolute; z-index:3; top:-3rem; right:-3rem; bottom:-3rem; left:-3rem; border:3rem solid #e7a23b; border-radius:7rem; box-shadow:0 0 9rem #e7a23b, inset 0 0 0 1rem #e7a23b; pointer-events:none; }
 .ss-target-pulsing .ss-battle-target-outline { animation:ss-battle-target-pulse 1s ease-in-out 5; }
 .ss-target-muted .ss-battle-target-outline { opacity:0.7; }

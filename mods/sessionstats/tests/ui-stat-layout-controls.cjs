@@ -1,5 +1,14 @@
 /* Statistic text is centered as one readable block; table rows share the finance height. */
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+async function naturalKPIBoxes(page){
+  return page.locator('#ss-groups .ss-group-kpi .ss-kpi-label,#ss-groups .ss-group-kpi .ss-kpi-value').evaluateAll(nodes=>nodes.length===6&&nodes.every(node=>{
+    const range=document.createRange();range.selectNodeContents(node);
+    const rectangles=[...range.getClientRects()].filter(rect=>rect.width>0&&rect.height>0).sort((a,b)=>a.top-b.top),lines=[];
+    for(const rect of rectangles)if(!lines.length||rect.top-lines[lines.length-1]>1)lines.push(rect.top);
+    const style=getComputedStyle(node),scale=parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return lines.length>0&&node.getBoundingClientRect().height<=lines.length*parseFloat(style.lineHeight)+scale;
+  }));
+}
 module.exports=async({browser,nativeHost,check})=>{
   for(const scale of [1,2]){
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2560},viewport:{width:3840,height:2560,scale}});
@@ -37,6 +46,19 @@ module.exports=async({browser,nativeHost,check})=>{
           if(options.partial)item.stats.credits_net_received.count=2;
           if(options.pending)item.stats.observed_battles=6;
           if(options.noSources)delete item.extrema_battles;
+          if(options.name)item.name=options.name;
+          if(options.width){payload.account_key+='-profile-'+sequence;payload.window_size=[options.width,1100];}
+          if(options.count!==undefined)item.stats.battles=item.stats.observed_battles=options.count;
+          if(options.empty){
+            const stats=item.stats;stats.battles=stats.wins=stats.losses=stats.draws=stats.wn8_count=0;
+            stats.observed_battles=137;stats.wn8=stats.win_rate=null;
+            for(const data of Object.values(stats))if(data&&typeof data==='object'&&typeof data.count==='number'){
+              data.count=0;data.min=data.avg=data.max=data.sum=null;
+            }
+            for(const data of Object.values(stats.currencies))for(const field of ['income','costs','net','income_base','net_base']){
+              data[field]=null;data[field+'_count']=0;
+            }
+          }
           if(options.large){
             item.stats.observed_battles=6;
             const amount=-1234567890,stats=item.stats;
@@ -50,19 +72,31 @@ module.exports=async({browser,nativeHost,check})=>{
         },{metric,statistic,options,sequence:++sequence});
         await page.locator('#ss-group-maps').click();await frames(page);
       }
-      let baseline;
       for(const [metric,statistic,options]of [['credits_costs','max',{}],['credits_income_received','min',{}],
         ['credits_income_received','avg',{}],['credits_net_received','max',{partial:true}],['xp_received','sum',{}],
         ['xp_received','min',{}],['battle_wn8','avg',{}],['off','avg',{}]]){
         await publish(metric,statistic,options);
         const geometry=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
           const header=card.querySelector('.ss-group-header').getBoundingClientRect(),badge=card.querySelector('.ss-group-sort-value');
-          const result={header:header.height/scale,card:card.getBoundingClientRect().height/scale,badge:null};
+          const name=card.querySelector('.ss-group-name').getBoundingClientRect(),stats=card.querySelector('.ss-group-stats').getBoundingClientRect();
+          const identity=card.querySelector('.ss-group-name'),walker=document.createTreeWalker(identity,NodeFilter.SHOW_TEXT),used=[];
+          let part;while((part=walker.nextNode()))if(part.textContent.trim()){
+            const text=document.createRange();text.selectNodeContents(part);used.push(...text.getClientRects());
+          }
+          for(const icon of identity.querySelectorAll('.ss-vehicle-icon,.ss-info-button'))used.push(icon.getBoundingClientRect());
+          const result={header:header.height/scale,card:card.getBoundingClientRect().height/scale,
+            identityWidth:name.width/scale,identityUsed:(Math.max(...used.map(rect=>rect.right))-name.left)/scale,
+            content:Math.max(name.height,stats.height)/scale,badge:null};
           if(badge){
             const caption=badge.querySelector('.ss-group-sort-caption'),value=badge.querySelector('.ss-group-sort-number'),box=badge.getBoundingClientRect();
             const ink=node=>{const range=document.createRange();range.selectNodeContents(node);return {box:range.getBoundingClientRect(),lines:[...range.getClientRects()]};};
             const title=ink(caption),number=ink(value),top=Math.min(title.box.top,number.box.top),bottom=Math.max(title.box.bottom,number.box.bottom);
-            result.badge={height:box.height/scale,captionLines:title.lines.length,partial:caption.textContent.endsWith(' *'),
+            const titleLines=ink(caption.querySelector('.ss-group-sort-caption-text')||caption).lines;
+            const icon=caption.querySelector('.ss-sort-partial-icon'),textBox=(caption.querySelector('.ss-group-sort-caption-text')||caption).getBoundingClientRect(),iconBox=icon&&icon.getBoundingClientRect();
+            result.badge={height:box.height/scale,captionLines:titleLines.length,
+              partial:caption.querySelectorAll('.ss-sort-partial-icon').length===1&&!caption.textContent.includes('*'),
+              iconAdjacent:!iconBox||(Math.abs((iconBox.left-textBox.right)/scale-4)<=0.5&&
+                Math.abs((iconBox.top+iconBox.bottom-textBox.top-textBox.bottom)/2)<=scale&&iconBox.right<=box.right+scale),
               captionHeight:caption.getBoundingClientRect().height/scale,valueHeight:value.getBoundingClientRect().height/scale,
               centered:Math.abs((top+bottom)/2-(box.top+box.bottom)/2)<=1.5*scale,
               separate:title.box.bottom<=number.box.top+scale,
@@ -70,16 +104,25 @@ module.exports=async({browser,nativeHost,check})=>{
           }
           return result;
         },scale);
-        if(!baseline)baseline=geometry;
-        check('Statistic choices retain the same card and headline height '+metric+'/'+statistic+'/'+scale,
-          Math.abs(geometry.header-baseline.header)<=0.5&&Math.abs(geometry.card-baseline.card)<=0.5);
+        check('The headline reserves only its actual content height '+metric+'/'+statistic+'/'+scale,
+          geometry.header>=geometry.content&&geometry.header<=geometry.content+3);
+        check('The identity does not reserve an empty half-card beside its text '+metric+'/'+statistic+'/'+scale,
+          geometry.identityWidth<=geometry.identityUsed+24);
+        check('KPI labels and figures use natural text height instead of blank fixed rows '+metric+'/'+statistic+'/'+scale,await naturalKPIBoxes(page));
         if(geometry.badge){
           const b=geometry.badge;
-          check('Statistic caption and value form one centered, unclipped 64px block '+metric+'/'+statistic+'/'+scale+': '+JSON.stringify(b),
-            Math.abs(b.height-64)<=0.5&&b.centered&&b.separate&&b.fits&&b.valueHeight<=20&&b.captionHeight<=b.captionLines*13+1);
+          check('The statistic frame fits its centered caption and value with small padding '+metric+'/'+statistic+'/'+scale+': '+JSON.stringify(b),
+            b.height>=b.captionHeight+b.valueHeight+5&&b.height<=b.captionHeight+b.valueHeight+7&&
+            b.centered&&b.separate&&b.fits&&b.iconAdjacent&&b.valueHeight<=20);
           if(metric==='credits_costs')check('A short statistic caption uses one centered line at '+scale,b.captionLines===1);
-          if(metric==='credits_income_received')check('A longer statistic caption remains centered on two lines at '+scale,b.captionLines===2);
+          if(metric==='credits_income_received')check('A longer statistic caption uses the available width without clipping at '+scale,b.captionLines>=1&&b.captionLines<=2);
           if(options.partial)check('A partial statistic keeps its marker inside the centered block at '+scale,b.partial);
+        }
+        if(metric==='credits_costs'&&scale===1){
+          const obsolete=await page.addStyleTag({content:'.ss-aggregate .ss-kpi-label { height:26px !important; min-height:26px !important; } .ss-aggregate .ss-kpi-value { height:38px !important; min-height:38px !important; }'});
+          check('The natural-height guard rejects the old empty KPI label/value slots',!await naturalKPIBoxes(page));
+          await obsolete.evaluate(node=>node.remove());
+          check('Removing old fixed slots restores the compact KPI height',await naturalKPIBoxes(page));
         }
       }
       await publish('credits_net_received','max',{large:true});
@@ -87,12 +130,15 @@ module.exports=async({browser,nativeHost,check})=>{
         const box=badge.getBoundingClientRect(),caption=badge.querySelector('.ss-group-sort-caption'),value=badge.querySelector('.ss-group-sort-number');
         const ink=node=>{const range=document.createRange();range.selectNodeContents(node);return [...range.getClientRects()];};
         const title=ink(caption),number=ink(value),text=title.concat(number),top=Math.min(...text.map(r=>r.top)),bottom=Math.max(...text.map(r=>r.bottom));
-        return {captionLines:title.length,valueLines:number.length,partial:caption.textContent.endsWith(' *'),height:box.height/scale,
+        return {captionLines:ink(caption.querySelector('.ss-group-sort-caption-text')||caption).length,valueLines:number.length,
+          partial:caption.querySelectorAll('.ss-sort-partial-icon').length===1&&!caption.textContent.includes('*'),height:box.height/scale,
+          captionHeight:caption.getBoundingClientRect().height/scale,valueHeight:value.getBoundingClientRect().height/scale,
           value:value.textContent.replace(/\s/g,''),centered:Math.abs((top+bottom)/2-(box.top+box.bottom)/2)<=1.5*scale,
           fits:text.every(rect=>rect.left>=box.left-scale&&rect.right<=box.right+scale&&rect.top>=box.top-scale&&rect.bottom<=box.bottom+scale)};
       },scale);
-      check('A signed ten-digit value and partial two-line caption remain fully visible in the 64px badge at '+scale+': '+JSON.stringify(large),
-        large.captionLines===2&&large.valueLines===2&&large.partial&&large.value==='-1234567890'&&Math.abs(large.height-64)<=0.5&&large.centered&&large.fits);
+      check('A signed ten-digit value and partial warning remain fully visible in a content-sized badge at '+scale+': '+JSON.stringify(large),
+        large.captionLines>=1&&large.valueLines>=1&&large.partial&&large.value==='-1234567890'&&
+        large.height>=large.captionHeight+large.valueHeight+5&&large.height<=large.captionHeight+large.valueHeight+7&&large.centered&&large.fits);
       await publish('credits_costs','max');
       const table=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
         const performance=card.querySelector('.ss-performance'),economy=card.querySelector('.ss-economy'),
@@ -107,16 +153,78 @@ module.exports=async({browser,nativeHost,check})=>{
       check('Performance rows distribute their available space evenly at '+scale,
         table.distributed&&table.gaps.every(gap=>gap>=0)&&Math.max(...table.gaps)-Math.min(...table.gaps)<=1.5&&
         Math.abs(table.top-table.bottom)<=1.5&&Math.abs(table.gaps[1]-(table.top+table.bottom))<=1.5);
+      const rules=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
+        const rows=[...card.querySelectorAll('.ss-metric-row,.ss-money-row')],
+          cells=[...card.querySelectorAll('.ss-metric-head > .ss-metric-number,.ss-metric-row > .ss-metric-number,.ss-money-head > .ss-money-value,.ss-money-row > .ss-money-value')],
+          labels=[...card.querySelectorAll('.ss-metric-name,.ss-money-label')];
+        const horizontal=rows.map(node=>getComputedStyle(node)),vertical=cells.map(node=>getComputedStyle(node));
+        return {rows:rows.length,cells:cells.length,
+          horizontal:horizontal.every(css=>Math.abs(parseFloat(css.borderTopWidth)/scale-1)<=0.1&&css.borderTopStyle==='solid'),
+          vertical:vertical.every(css=>Math.abs(parseFloat(css.borderLeftWidth)/scale-1)<=0.1&&css.borderLeftStyle==='solid'),
+          sameColor:horizontal.concat(vertical).every(css=>(css.borderTopWidth!=='0px'?css.borderTopColor:css.borderLeftColor)==='rgb(60, 68, 52)'),
+          unframed:labels.every(node=>parseFloat(getComputedStyle(node).borderLeftWidth)===0)&&
+            cells.every(node=>parseFloat(getComputedStyle(node).borderRightWidth)===0)};
+      },scale);
+      check('Performance and finance tables use matching thin cell rules without outer frames at '+scale+': '+JSON.stringify(rules),
+        rules.rows===6&&rules.cells===24&&rules.horizontal&&rules.vertical&&rules.sameColor&&rules.unframed);
+      const actions=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
+        const performance=[...card.querySelectorAll('.ss-metric-row .ss-extreme-cell')],
+          finance=[...card.querySelectorAll('.ss-credit-extreme-actions')];
+        return {performance:performance.length,finance:finance.length,
+          arrows:performance.every(cell=>{
+            const button=cell.querySelector('.ss-metric-battle-link'),cue=button.querySelector('.ss-extreme-link-cue'),
+              figure=[...cell.childNodes].find(node=>node!==button),range=document.createRange();range.selectNode(figure);
+            const ink=range.getBoundingClientRect(),box=cue.getBoundingClientRect();
+            return Math.abs((box.left-ink.right)/scale-3)<=0.5&&Math.abs(box.width/scale-16)<=0.5&&
+              Math.abs(box.height/scale-18)<=0.5&&figure.parentNode===cell&&!button.contains(figure);
+          }),
+          pairs:finance.every(host=>{
+            const buttons=[...host.querySelectorAll('.ss-metric-battle-link')],box=host.getBoundingClientRect(),
+              first=buttons[0].getBoundingClientRect(),last=buttons[1].getBoundingClientRect();
+            return buttons.length===2&&Math.abs((last.left-first.right)/scale-3)<=0.5&&
+              Math.abs((first.left-box.left)-(box.right-last.right))<=scale;
+          })};
+      },scale);
+      check('Source arrows follow original figures by3px and financial Min/Max stay adjacent at '+scale+': '+JSON.stringify(actions),
+        actions.performance===6&&actions.finance===5&&actions.arrows&&actions.pairs);
       check('Metric coverage adds no repeated visible rows or counters at '+scale,table.coverage===0);
       await publish('credits_costs','max',{pending:true});
-      check('One upper-left partial-results badge does not increase the card height at '+scale,
-        await page.locator('#ss-groups .ss-group').evaluate((card,{height,scale})=>
-          card.querySelectorAll('.ss-group-coverage').length===1&&Math.abs(card.getBoundingClientRect().height/scale-height)<=0.5&&
-          card.querySelectorAll('.ss-cell-coverage,.ss-count-coverage,.ss-wn8-coverage').length===0,{height:table.height,scale}));
+      check('One partial-results badge stays with the identity without repeated metric counters at '+scale,
+        await page.locator('#ss-groups .ss-group').evaluate(card=>
+          card.querySelectorAll('.ss-group-heading .ss-group-coverage').length===1&&
+          card.querySelectorAll('.ss-cell-coverage,.ss-count-coverage,.ss-wn8-coverage').length===0));
       await publish('credits_costs','max',{noSources:true});
       check('Missing financial source references leave no empty extrema action slots at '+scale,
         await page.locator('#ss-groups .ss-group').evaluate(card=>card.querySelectorAll('.ss-credit-extreme-actions').length===0&&
           [...card.querySelectorAll('.ss-credit-cell')].every(cell=>cell.children.length===1&&cell.firstElementChild.classList.contains('ss-cell-value'))));
+      for(const profile of [
+        {name:'Long synthetic vehicle designation with complete metadata',width:590,count:1234567890123456},
+        {name:'Long synthetic pending vehicle designation',width:590,empty:true},
+      ]){
+        await publish('credits_costs','max',profile);
+        const result=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
+          const box=node=>node.getBoundingClientRect(),header=box(card.querySelector('.ss-group-header')),stats=box(card.querySelector('.ss-group-stats')),
+            identity=box(card.querySelector('.ss-group-name'));
+          const kpis=[...card.querySelectorAll('.ss-group-kpi')].map(node=>{
+            const owner=box(node),label=box(node.querySelector('.ss-kpi-label')),value=node.querySelector('.ss-kpi-value'),figure=box(value),range=document.createRange();range.selectNodeContents(value);
+            return {labelTop:label.top,bottom:figure.bottom,text:value.textContent,
+              lines:[...range.getClientRects()].filter(rect=>rect.width>0&&rect.height>0).length,
+              fits:figure.left>=owner.left-scale&&figure.right<=owner.right+scale&&
+                [...range.getClientRects()].every(rect=>rect.left>=figure.left-scale&&rect.right<=figure.right+scale)};
+          });
+          return {kpis,statsTop:stats.top,statsBottom:stats.bottom,headerHeight:header.height/scale,
+            identityHeight:identity.height/scale,statsHeight:stats.height/scale,
+            contained:identity.left>=header.left-scale&&stats.right<=header.right+scale&&
+              identity.top>=header.top-scale&&identity.bottom<=header.bottom+scale};
+        },scale);
+        check('Wrapped identities and multi-line figures retain top labels and aligned bottoms at '+scale+': '+JSON.stringify(result),
+          result.contained&&result.kpis.length===3&&result.kpis.every(kpi=>kpi.fits&&Math.abs(kpi.labelTop-result.statsTop)<=scale&&Math.abs(kpi.bottom-result.statsBottom)<=scale)&&
+          result.headerHeight<=Math.max(result.identityHeight,result.statsHeight)+3);
+        if(profile.empty)check('A zero-results group retains its full recorded count and unknown values at '+scale,
+          result.kpis[0].text==='137'&&result.kpis[1].text==='—'&&result.kpis[2].text==='—');
+        else check('An actually wrapped count keeps every digit without a fixed reserved row at '+scale+': '+JSON.stringify(result),
+          result.kpis[0].lines>1&&result.kpis[0].text.replace(/\s/g,'')===String(profile.count));
+      }
     }finally{await page.close();}
   }
 };

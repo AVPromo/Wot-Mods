@@ -3,6 +3,8 @@ const assert=require('assert'),fs=require('fs'),path=require('path'),{spawnSync}
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 module.exports=async({browser,nativeHost,check})=>{
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
+  const warningColor=JSON.parse(fs.readFileSync(path.join(__dirname,'../grz.sessionstats.json'),'utf8')).colors.sort_warning_text;
+  const defaultWarningRGB='rgb('+warningColor.slice(1).match(/../g).map(n=>parseInt(n,16)).join(', ')+')';
   const metrics=['xp_base','xp_received','credits_income_base','credits_income_received','credits_net_base','credits_net_received','credits_costs','battle_wn8'];
   const page=await nativeHost(browser,{initialViewport:{width:1800,height:1300},viewport:{width:1800,height:1300,scale:1}});
   let serial=0;
@@ -10,7 +12,9 @@ module.exports=async({browser,nativeHost,check})=>{
   async function publish(options={}){
     await page.evaluate(({options,serial,metrics,languages})=>{
       const payload=JSON.parse(JSON.stringify(__warningFixture)),scope=payload.scopes.launch;
-      delete payload.appearance;payload.account_key='DEMO:field-completeness';payload.window_size=[1200,1050];
+      delete payload.appearance;const width=options.width||1200,scale=options.scale||1;
+      payload.account_key='DEMO:field-completeness-'+width+'-'+scale;payload.window_size=[width,1050];
+      if(options.scale)payload.viewport={width:options.gameWidth,height:2600,scale};
       payload.generated_at+=serial;payload.loading=!!options.globalLoading;payload.load_error=options.globalError?'Synthetic global read error':'';
       payload.localization={language:options.language||'en',messages:languages[options.language||'en']};
       scope.loading=!!options.loading;scope.load_error=options.error?'Synthetic range read error':'';
@@ -39,7 +43,8 @@ module.exports=async({browser,nativeHost,check})=>{
   }
   async function warning(){return page.locator('#ss-sort-data-warning').evaluate(node=>({
     visible:getComputedStyle(node).display!=='none',text:node.textContent,title:node.getAttribute('title'),
-    hidden:node.getAttribute('aria-hidden'),color:getComputedStyle(node).color,
+    message:node.querySelector('.ss-warning-message')?.textContent,icons:node.querySelectorAll('.ss-warning-icon').length,
+    hidden:node.getAttribute('aria-hidden'),color:getComputedStyle(node.querySelector('.ss-warning-message')||node).color,
     role:node.getAttribute('role'),live:node.getAttribute('aria-live')}));}
   try{
     for(const metric of metrics){
@@ -66,7 +71,22 @@ module.exports=async({browser,nativeHost,check})=>{
     });
     const active=await warning();
     check('The warning is a readable orange-red live status below the unchanged controls row',
-      structural&&active.color==='rgb(230, 115, 69)'&&active.role==='status'&&active.live==='polite');
+      structural&&active.color===defaultWarningRGB&&active.role==='status'&&active.live==='polite'&&
+      active.message===languages.en['sort.incomplete']&&active.icons===1);
+    check('The framed warning ends with one verified native triangle after the complete localized message',
+      await page.locator('#ss-sort-data-warning').evaluate(node=>{
+        const icon=node.querySelector('.ss-warning-icon'),message=node.querySelector('.ss-warning-message'),client=node.querySelector('.ss-client-warning'),
+          style=getComputedStyle(client),visual=getComputedStyle(icon),frame=client.getBoundingClientRect(),outer=node.getBoundingClientRect(),
+          picture=icon.getBoundingClientRect(),text=message.getBoundingClientRect();
+        const color=style.borderTopColor.match(/[\d.]+/g).slice(0,3).map(Number);
+        return getComputedStyle(node).display==='flex'&&style.display==='flex'&&client.parentNode===node&&
+          frame.left>=outer.left&&frame.right<=outer.right&&['Top','Right','Bottom','Left'].every(edge=>parseFloat(style['border'+edge+'Width'])>=1)&&
+          color[0]>color[1]&&color[1]>color[2]&&style.backgroundColor!=='rgba(0, 0, 0, 0)'&&
+          visual.backgroundImage==='url("img://gui/maps/icons/library/alertIcon.png")'&&visual.backgroundSize==='contain'&&
+          Math.abs(picture.width-16)<=0.5&&Math.abs(picture.height-16)<=0.5&&icon.getAttribute('aria-hidden')==='true'&&icon.textContent===''&&
+          text.right<=picture.left+1&&picture.left>=frame.left&&picture.top>=frame.top&&picture.bottom<=frame.bottom&&
+          text.right<=frame.right&&text.top>=frame.top&&text.bottom<=frame.bottom;
+      }));
     const controls=()=>page.locator('#ss-list-controls').evaluate(node=>{const r=node.getBoundingClientRect();return [r.left,r.top,r.width,r.height];});
     const before=await controls();await publish({metric:'xp_base',count:4});const after=await controls();
     check('Showing a field warning does not resize or reposition the sorting controls',before.every((v,i)=>Math.abs(v-after[i])<=0.5));
@@ -99,6 +119,22 @@ module.exports=async({browser,nativeHost,check})=>{
       check('Warning and field coverage follow the selected '+language+' interface language',
         result.text===messages['sort.incomplete']&&result.title.includes(messages['sort.field_coverage'].replace('{0}',3).replace('{1}',4)));
     }
+    for(const [language,width,scale,wrapped]of [['en',550,1,false],['de',320,1,true],['fr',320,1,true],['pl',550,2,false]]){
+      const gameWidth=width*scale+20*scale;
+      await page.setViewportSize({width:gameWidth,height:2600});
+      await publish({metric:'xp_base',count:3,language,width,scale,gameWidth});
+      const result=await page.locator('#ss-sort-data-warning').evaluate((node,scale)=>{
+        const client=node.querySelector('.ss-client-warning'),icon=node.querySelector('.ss-warning-icon'),message=node.querySelector('.ss-warning-message'),
+          frame=client.getBoundingClientRect(),picture=icon.getBoundingClientRect(),text=message.getBoundingClientRect(),range=document.createRange();
+        range.selectNodeContents(message);const lines=[...range.getClientRects()];
+        return {lines:lines.length,after:message.nextElementSibling===icon&&text.right<=picture.left+scale,
+          size:Math.abs(picture.width/scale-16)<=0.5&&Math.abs(picture.height/scale-16)<=0.5,
+          fits:[picture,...lines].every(box=>box.left>=frame.left-scale&&box.right<=frame.right+scale&&box.top>=frame.top-scale&&box.bottom<=frame.bottom+scale)};
+      },scale);
+      check('The native triangle follows the readable message at '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(result),
+        result.after&&result.size&&result.fits&&(wrapped?result.lines>=2:result.lines===1));
+    }
+    await page.setViewportSize({width:1800,height:1300});
     const python=spawnSync(process.env.GRZ_PYTHON3||'python3',['-c',
       "import json;from grz_session_stats.appearance import default_config,build_presentation;c=default_config();c['colors']['sort_warning_text']='#df602e';c['window'].update(restored_width=1200,restored_height=1050);print(json.dumps(build_presentation(c)))"],
       {encoding:'utf8',env:{...process.env,PYTHONPATH:path.join(__dirname,'../src')}});

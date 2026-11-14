@@ -1,4 +1,4 @@
-# Appearance and scrolling configuration — 0.9.12
+# Appearance and scrolling configuration — 0.9.13
 
 ## File placement and applying changes
 
@@ -27,11 +27,19 @@ are logged as `CONFIG_SETUP` without stopping collection or modifying source fil
 Configuration loads at startup, when opening the panel and after **Refresh**.
 Save the file, then reopen or refresh the panel. There is no per-frame polling.
 
-The full supplied JSON contains **the current appearance as defaults**: 149 colors,
-16 corner radii, five opacity settings, a scrolling multiplier, two card-width
+The full supplied JSON contains **the current appearance as defaults**: 151 colors,
+17 corner radii, five opacity settings, a scrolling multiplier, two card-width
 presets and persistent window preferences. An unavailable file,
 empty object `{}` and omitted fields use the built-in defaults. Partial nested
 sections are supported; include only the fields you want to override.
+
+The incomplete-data warning reuses the game's native 16×16 `alertIcon.png`
+resource and orange warning primitives. Its border and inner shadows adapt the
+native Gameface input-alert treatment to this panel; `radii.sort_warning` controls
+this panel's corner radius. The partial-value indicator uses the same triangle
+and retains the coverage tooltip. These are Gameface components, not a pixel
+copy of the separate Scaleform login warning. Pinned asset and style sources are
+listed in [the 0.9.13 display notes](UI_REFINEMENTS_0.9.13.md#native-warning-sources).
 
 ## Optional installation session
 
@@ -55,7 +63,7 @@ scopes remain independent. [Persistence and identity rules](ACCOUNT_SESSIONS.md)
 | `colors.table_header_background_end` | `"#222719"` | Table-header gradient end |
 | `colors.table_row_background` | `"#181d11"` | First table-row background |
 | `colors.table_row_following_background` | `"#1a1f13"` | Subsequent table-row background |
-| `colors.table_row_following_border_top` | `"#2e3522"` | Subtle row separator |
+| `colors.table_row_following_border_top` | `"#3c4434"` | Thin horizontal and vertical rules inside performance and finance tables |
 | `colors.table_row_hover_background` | `"#252d1b"` | Hovered row background |
 | `colors.metric_value_text` | `"#ebe7d4"` | Performance-table numbers |
 | `colors.extreme_link_background` | `"#303726"` | Rounded source-arrow cue background |
@@ -63,7 +71,10 @@ scopes remain independent. [Persistence and identity rules](ACCOUNT_SESSIONS.md)
 | `colors.extreme_link_text` | `"#c4c7ac"` | Source-arrow strokes |
 | `radii.extreme_link` | `4` | Source-arrow cue corner radius |
 | `colors.sort_active_background` | `"#252a23"` | Neutral fill behind the active sorting value; the orange outline remains separate |
-| `colors.sort_warning_text` | `"#e67345"` | Warning when received results lack the selected sorting metric |
+| `colors.sort_warning_text` | `"#ee7000"` | Native orange text and frame of the incomplete-data warning |
+| `colors.sort_warning_inner_shadow` | `"#000"` | Warning frame's native inner shadow |
+| `colors.sort_warning_glow` | `"#8d0d03"` | Warning frame's native dark-red glow |
+| `radii.sort_warning` | `4` | Warning frame corner radius |
 | `colors.loading_scrim_background` | `"rgba(17,19,9,0.45)"` | Panel-wide loading scrim; retained results also use a slight blur where supported |
 | `colors.positive_text` | `"#c0d889"` | Positive balance |
 | `colors.negative_text` | `"#e4ad84"` | Negative balance |

@@ -64,7 +64,7 @@
     "table_header_background_end": "#222719",
     "table_header_text": "#c4c1a7",
     "table_row_background": "#181d11",
-    "table_row_following_border_top": "#2e3522",
+    "table_row_following_border_top": "#3c4434",
     "table_row_following_background": "#1a1f13",
     "table_row_hover_background": "#252d1b",
     "metric_label_text": "#d4ccb0",
@@ -156,7 +156,9 @@
     "extreme_link_background": "#303726",
     "extreme_link_hover_background": "#50583b",
     "extreme_link_text": "#c4c7ac",
-    "sort_warning_text": "#e67345"
+    "sort_warning_text": "#ee7000",
+    "sort_warning_inner_shadow": "#000",
+    "sort_warning_glow": "#8d0d03"
   },
   "radii": {
     "window": 8,
@@ -174,7 +176,8 @@
     "panel_footer": 7,
     "confirmation": 8,
     "garage_spinner": 8,
-    "extreme_link": 4
+    "extreme_link": 4,
+    "sort_warning": 4
   },
   "opacity": {
     "window": 1.0,

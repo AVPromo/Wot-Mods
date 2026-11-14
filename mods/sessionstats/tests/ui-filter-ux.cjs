@@ -5,11 +5,18 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
     const end=source.slice(start,line).endsWith('}')?line:source.indexOf('\n    }\n',start)+7;
     assert(start>=0&&end>start,'Exercise actual shipped '+name);return source.slice(start,end);};
   class Node{
-    constructor(){this.style={};this.attributes={};this.disabled=false;this.textContent='';this.label=null;const names=new Set();
+    constructor(){this.style={};this.attributes={};this.disabled=false;this.ownText='';this.label=null;this.className='';this.children=[];const names=new Set();
       this.classList={add:name=>names.add(name),remove:name=>names.delete(name),contains:name=>names.has(name)};}
     setAttribute(name,value){this.attributes[name]=String(value);}getAttribute(name){return this.attributes[name]||null;}
     removeAttribute(name){delete this.attributes[name];}
-    querySelector(selector){if(selector==='.ss-control-label')return this.label||(this.label=new Node());return null;}
+    appendChild(node){this.children.push(node);node.parentNode=this;return node;}
+    removeChild(node){this.children.splice(this.children.indexOf(node),1);node.parentNode=null;return node;}
+    get firstChild(){return this.children[0]||null;}
+    get textContent(){return this.ownText+this.children.map(node=>node.textContent).join('');}
+    set textContent(value){this.ownText=String(value);this.children=[];}
+    querySelector(selector){if(selector==='.ss-control-label')return this.label||(this.label=new Node());
+      for(const node of this.children){if(node.className.split(/\s+/).includes(selector.slice(1)))return node;
+        const nested=node.querySelector(selector);if(nested)return nested;}return null;}
   }
   const controls={'ss-sort-off':new Node(),'ss-filter-loading':new Node(),'ss-sorting':new Node()},statistic=new Node();
   const scope={period_id:'synthetic-filter-period',loading:false,load_error:'',pagination:{},ordering:{
@@ -19,7 +26,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   const state={payload:{account_key:'synthetic-filter-account',loading:false,load_error:'',scopes:{launch:scope,instance:scope}},
     scope:'launch',group:'vehicles',nativeSession:true,orders:{},orderIntent:null,wideFilters:true,feed:null};
   const commands=[],selects={},context={state,selects,root:new Node(),Object,String,JSON,
-    document:{getElementById:id=>controls[id]||(controls[id]=new Node()),querySelector:selector=>selector==='.ss-sort-statistic'?statistic:null},
+    document:{createElement:()=>new Node(),getElementById:id=>controls[id]||(controls[id]=new Node()),querySelector:selector=>selector==='.ss-sort-statistic'?statistic:null},
     t:key=>key,currentScope:()=>scope,scopeName:()=>state.scope,
     viewContext:()=>({account_key:state.payload.account_key,scope:state.scope,period_id:scope.period_id}),
     sameContext:owner=>owner.account_key===state.payload.account_key&&owner.scope===state.scope&&owner.period_id===scope.period_id,
@@ -31,9 +38,14 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   for(const field of ['chronology','statistic','metric','direction']){
     selects[field]={trigger:new Node(),label:new Node(),menu:new Node(),options:context.selectOptions[field].map(()=>new Node())};
   }
-  for(const name of ['orderKey','canonicalMetric','creditMetric','metricSeries','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning'])
+  for(const name of ['element','append','clear','appendClientWarning','orderKey','canonicalMetric','creditMetric','metricSeries','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning'])
     vm.runInContext(actual(name),context);
   context.hasNumber=value=>typeof value==='number'&&Number.isFinite(value);
+  const warningOwner=new Node(),warningIcon=context.appendClientWarning(warningOwner,'ss-sort-partial-icon');
+  assert.strictEqual(warningOwner.firstChild,warningIcon,'The shipped warning factory appends its owned icon');
+  assert.strictEqual(warningIcon.className,'ss-warning-icon ss-sort-partial-icon');
+  assert.strictEqual(warningIcon.getAttribute('aria-hidden'),'true','The shared icon is decorative beside its localized explanation');
+  assert.strictEqual(warningIcon.textContent,'','A native warning image never depends on a Unicode font glyph');
   const render=()=>context.renderSelects(scope),ack=()=>{const command=commands[commands.length-1];scope.ordering[state.group]={metric:command.metric,statistic:command.statistic,direction:command.direction,chronology:command.chronology};state.orderIntent=null;render();};
   state.group='tiers';render();
   assert.strictEqual(context.getOrder(scope).chronology,'tier_desc','An unconfigured Tiers tab defaults to highest tier first');

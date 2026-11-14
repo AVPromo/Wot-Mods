@@ -180,7 +180,8 @@ module.exports=async({browser,nativeHost,check})=>{
               parseFloat(getComputedStyle(cue).borderWidth)===0&&getComputedStyle(cue).outlineStyle==='none'&&
               getComputedStyle(cue).backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(getComputedStyle(cue).borderRadius)>0&&
               Math.abs(corner.width-16)<=0.5&&Math.abs(corner.height-18)<=0.5&&
-              corner.left>=box.left&&corner.right<=ink.left-1&&Math.abs((corner.top+corner.bottom)-(box.top+box.bottom))<=1&&
+              corner.left>=ink.right+2&&corner.left<=ink.right+4&&corner.right<=box.right-1&&
+              Math.abs((corner.top+corner.bottom)-(box.top+box.bottom))<=1&&
               (row.getAttribute('data-ss-metric')!=='battle_wn8'||statistic!=='min'||
                 original[0].classList.contains('ss-wn8-low-ink')&&getComputedStyle(cell).color==='rgb(0, 0, 0)');
           });
@@ -188,8 +189,10 @@ module.exports=async({browser,nativeHost,check})=>{
         const captions=Array.from(document.querySelectorAll('.ss-credit-extreme-actions .ss-metric-battle-link'));
         const spaces=Array.from(document.querySelectorAll('.ss-credit-extreme-actions')).every(actions=>{
           const spacers=Array.from(actions.querySelectorAll(':scope > .ss-credit-extreme-spacer'));
-          const widths=spacers.map(node=>node.getBoundingClientRect().width);
-          return spacers.length===3&&Math.max(...widths)-Math.min(...widths)<=0.5&&widths.every(width=>width>=0);
+          const buttons=Array.from(actions.querySelectorAll(':scope > .ss-metric-battle-link')),
+            host=actions.getBoundingClientRect(),first=buttons[0].getBoundingClientRect(),last=buttons[1].getBoundingClientRect();
+          return spacers.length===0&&buttons.length===2&&Math.abs(last.left-first.right-3)<=0.5&&
+            Math.abs((first.left-host.left)-(host.right-last.right))<=1&&first.left>=host.left&&last.right<=host.right;
         });
         return values&&spaces&&captions.length===20&&captions.every(button=>{
           const label=button.querySelector('.ss-control-label.ss-metric-action-label'),style=getComputedStyle(label),box=label.getBoundingClientRect();
@@ -204,7 +207,7 @@ module.exports=async({browser,nativeHost,check})=>{
             ink.top>=box.top-0.5&&ink.bottom<=box.bottom+0.5&&action.borderStyle==='solid'&&action.backgroundImage!=='none';
         });
       },{maximum,messages,width});
-      check('Native-safe original figures and explicit credit actions remain painted '+language+'/'+width+'/'+maximum+'/'+group,painted);
+      check('Native-safe original figures have adjacent right arrows and compact paired credit actions '+language+'/'+width+'/'+maximum+'/'+group,painted);
     }
     await page.evaluate(()=>{Node.prototype.appendChild=__extremeOriginalAppend;delete window.__extremeOriginalAppend;});await collapse.evaluate(node=>node.remove());
     // Timeline history can contain old received-only records and a few newer
@@ -238,13 +241,35 @@ module.exports=async({browser,nativeHost,check})=>{
           const badge=card.querySelector('.ss-group-sort-value');
           return {number:badge.querySelector('.ss-group-sort-number').textContent.replace(/\s/g,''),
             caption:badge.querySelector('.ss-group-sort-caption').textContent,
+            triangle:badge.querySelectorAll('.ss-group-sort-caption > .ss-warning-icon.ss-sort-partial-icon').length,
+            nativeIcon:badge.querySelector('.ss-sort-partial-icon')?getComputedStyle(badge.querySelector('.ss-sort-partial-icon')).backgroundImage:'',
+            directHelp:badge.getAttribute('data-ss-help')||'',hoverHelp:badge.classList.contains('ss-hover-help'),
             accessible:badge.getAttribute('aria-label'),help:card.querySelector('.ss-info-button').getAttribute('data-ss-help')||'',
             income:card.querySelector('[data-ss-metric="credits_income_base"] > .ss-cell-value')?.textContent};
         });
         check('Timeline '+statistic+' reads its current series instead of stale sort_value with '+count+' samples',result.number===expected);
         check('Partial timeline '+statistic+' explains its actual sample size without repeating a visible ratio',
-          result.caption.endsWith(' *')&&result.accessible.includes('Data available for '+count+' of 27 recorded battles.')&&
+          !result.caption.includes('*')&&result.triangle===1&&result.nativeIcon==='url("img://gui/maps/icons/library/alertIcon.png")'&&
+          result.hoverHelp&&result.directHelp.includes('Data available for '+count+' of 27 recorded battles.')&&
+          result.accessible.includes('Data available for '+count+' of 27 recorded battles.')&&
           result.help.includes('Data available for '+count+' of 27 recorded battles.')&&!/\d+\/\d+/.test(result.caption));
+        if(count===3&&statistic==='max'){
+          const icon=page.locator('#ss-groups .ss-sort-partial-icon');
+          check('The partial statistic uses the same decorative native warning triangle at 14px',await icon.evaluate(node=>{
+            const box=node.getBoundingClientRect();return node.getAttribute('aria-hidden')==='true'&&node.textContent===''&&
+              Math.abs(box.width-14)<=0.5&&Math.abs(box.height-14)<=0.5&&getComputedStyle(node).backgroundSize==='contain';
+          }));
+          await icon.hover();
+          await page.evaluate(()=>{
+            for(const [id,timer]of __grzTimers)if(timer.delay===1000&&String(timer.callback).includes('helpPending')){
+              __grzTimers.delete(id);timer.callback();
+            }
+          });
+          check('Hovering the native partial-data triangle opens its retained sample-size explanation',
+            await page.locator('#ss-help-tooltip').isVisible()&&await page.locator('#ss-help-tooltip').textContent().then(text=>
+              text.includes('Data available for 3 of 27 recorded battles.')));
+          await page.mouse.move(20,20);
+        }
         if(count>0)check('Partial base income is not displayed as a complete 27-battle total',result.income==='—');
       }
       await page.locator('#ss-scope-launch').click();
