@@ -77,9 +77,40 @@ module.exports=async({browser,nativeHost,check})=>{
       await page.locator('#ss-group-maps').click();await frames(page);let baseline;
       for(const metric of ['off','credits_income_base','credits_net_base','xp_received','credits_income_received']){
         await page.evaluate(metric=>{const payload=JSON.parse(model.payload);payload.scopes.launch.ordering.maps={metric,statistic:'max',direction:'desc',chronology:'newest'};payload.generated_at+=1;model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();},metric);await frames(page);
-        const result=await page.locator('#ss-groups .ss-group').first().evaluate(card=>({height:card.getBoundingClientRect().height,base:!!card.querySelector('.ss-money-value[data-ss-metric="credits_net_base"]'),received:card.querySelector('.ss-money-value[data-ss-metric="credits_income_received"] > .ss-cell-value').textContent,selected:card.querySelector('.ss-group-sort-number')?.textContent}));
+        const result=await page.locator('#ss-groups .ss-group').first().evaluate(card=>{
+          const bounds=card.getBoundingClientRect(),tables=[...card.querySelectorAll('.ss-performance,.ss-economy')];
+          const geometry=tables.map(table=>{
+            const box=table.getBoundingClientRect();
+            const rows=[...table.querySelectorAll('.ss-metric-head,.ss-metric-row,.ss-money-head,.ss-money-row')].map(row=>{
+              const rect=row.getBoundingClientRect();return [rect.left-box.left,rect.top-box.top,rect.width,rect.height];
+            });
+            return [box.width,box.height,rows];
+          });
+          const labels=[...card.querySelectorAll('.ss-metric-name .ss-cell-value,.ss-money-label')];
+          const readable=labels.every(label=>{
+            const owner=label.closest('.ss-metric-name,.ss-money-label').getBoundingClientRect(),range=document.createRange();
+            range.selectNodeContents(label);const lines=[...range.getClientRects()].filter(rect=>rect.width>0&&rect.height>0);
+            return lines.length>0&&lines.every(rect=>rect.left>=owner.left-1&&rect.right<=owner.right+1&&rect.top>=owner.top-1&&rect.bottom<=owner.bottom+1);
+          });
+          const contained=tables.every(table=>{
+            const box=table.getBoundingClientRect();return box.left>=bounds.left-1&&box.right<=bounds.right+1&&box.top>=bounds.top-1&&box.bottom<=bounds.bottom+1&&
+              [...table.querySelectorAll('.ss-metric-head,.ss-metric-row,.ss-money-head,.ss-money-row')].every(row=>{
+                const rect=row.getBoundingClientRect();return rect.left>=box.left-1&&rect.right<=box.right+1&&rect.top>=box.top-1&&rect.bottom<=box.bottom+1;
+              });
+          });
+          return {height:bounds.height,base:!!card.querySelector('.ss-money-value[data-ss-metric="credits_net_base"]'),
+            received:card.querySelector('.ss-money-value[data-ss-metric="credits_income_received"] > .ss-cell-value').textContent,
+            selected:card.querySelector('.ss-group-sort-number')?.textContent,geometry,readable,contained,
+            finance:[...card.querySelectorAll('.ss-money-row')].map(row=>row.textContent)};
+        });
         if(!baseline)baseline=result;
-        check('Base comparison visibility and card height are independent of sort '+scenario+'/'+metric,result.base===baseline.base&&Math.abs(result.height-baseline.height)<0.1&&result.received===baseline.received);
+        // The compact header now fits its selected caption and amount. Its
+        // natural height can change while the historical tables stay intact.
+        const same=(left,right)=>Array.isArray(left)?Array.isArray(right)&&left.length===right.length&&left.every((value,index)=>same(value,right[index])):Math.abs(left-right)<0.1;
+        check('Base comparison and received values remain independent of sort '+scenario+'/'+metric,
+          result.base===baseline.base&&result.received===baseline.received&&result.finance.join('|')===baseline.finance.join('|'));
+        check('Natural sorting headers preserve historical table geometry and readable contained labels '+scenario+'/'+metric+': '+JSON.stringify({height:result.height,baselineHeight:baseline.height,readable:result.readable,contained:result.contained}),
+          same(result.geometry,baseline.geometry)&&result.readable&&result.contained);
         if(scenario==='legacy-0.9.8'&&metric==='credits_income_base')check('Selecting an unavailable base metric leaves its result unknown without hiding received amounts',result.selected==='—'&&!result.base);
       }
     }
