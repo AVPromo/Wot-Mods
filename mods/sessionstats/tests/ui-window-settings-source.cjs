@@ -11,7 +11,8 @@ function assertAccountWindowSource(source=shipped()) {
   const root={style:{},classList:{add(){},remove(){}},getBoundingClientRect:()=>({width:1780,height:1180})};
   const node=()=>({style:{},attributes:{},setAttribute(key,value){this.attributes[key]=String(value);}});
   const nodes={maximize:node(),'window-background':node(),'background-transparency':node()};
-  const state={bound:true,destroyed:false,nativeScale:1,logicalSize:{width:1780,height:1180},
+  const state={bound:true,destroyed:false,nativeScale:1,scope:'launch',battleReturn:null,battleReturnTimer:null,
+    logicalSize:{width:1780,height:1180},
     windowPrefs:{background_transparency:30,maximized:true,restored_width:700,restored_height:620},
     windowPending:{id:'previous-account-maximize'},windowChanges:{maximized:true},groupCards:[],targetSequence:0,
     resizeQueued:false,resizeMeasureToken:0,resizeTimer:null,payload:{account_key:'previous-account',
@@ -20,12 +21,19 @@ function assertAccountWindowSource(source=shipped()) {
     hasNumber:value=>typeof value==='number' && Number.isFinite(value),t:key=>key,
     closeSelect(){},historyOnlyUpdate(){return false;},showReset(){},cancelWindowCommit(){},finishBackgroundDrag(){},
     cancelUITimer(){},invalidateCardFlow(){},retireFeed(){},resetViewScroll(){},cancelBattleNavigation(){},applyLanguage(){},
+    setActionError(message){throw Error('Unexpected snapshot error: '+message);},
     setStatus(message){throw Error(message);},windowSaveFailed(){throw Error('Unexpected rejected window save');},
     render(){context.queueResize();},applyAppearance(appearance){context.applyWindowSettings(appearance.window_settings,appearance.window_settings_result);}};
   vm.createContext(context);
   const names=['unwrap','windowDefaults','copyWindowSettings','mergeWindowSettings','showWindowSettings','resetWindowSettings',
-    'applyWindowSettings','clearBattleTarget','windowSizeBounds','resizePanelDimensions','queueResize','update'];
+    'applyWindowSettings','clearBattleTarget','windowSizeBounds','resizePanelDimensions','queueResize',
+    'scopeName','currentScope','consumeBattleReturn','update'];
   vm.runInContext(names.map(name=>sourceFunction(source,name)).join('\n'),context);
+  const consume=context.consumeBattleReturn;let returnChecks=0;
+  context.consumeBattleReturn=function(scope){
+    assert.strictEqual(scope,state.payload.scopes.launch,'The return helper receives the updated account scope');
+    returnChecks++;return consume(scope);
+  };
   const payload={account_key:'new-account',viewport:{width:1800,height:1200,scale:1},window_size:[840,680],
     appearance:{window_settings:settings},scopes:{launch:{},manual:{}}};
   assert.strictEqual(context.update(payload),true);
@@ -38,6 +46,9 @@ function assertAccountWindowSource(source=shipped()) {
   payload.appearance.window_settings_result={request_id:'previous-account-maximize',saved:true};
   assert.strictEqual(context.update(payload),true);
   assert.strictEqual(root.style.width,'840rem');assert.strictEqual(root.style.height,'730rem');
+  assert.strictEqual(returnChecks,2,'Both valid snapshots exercise the real inactive return helper');
+  assert.strictEqual(state.battleReturn,null);
+  assert.strictEqual(state.battleReturnTimer,null);
 }
 module.exports=assertAccountWindowSource;
 if(require.main===module) {assertAccountWindowSource();process.stdout.write('Actual-source account window-size reset regression passed.\n');}
