@@ -2,8 +2,7 @@
 const fs=require('fs'),path=require('path');
 const frames=page=>page.evaluate(()=>new Promise(resolve=>{let left=10;function next(){if(--left)requestAnimationFrame(next);else resolve();}requestAnimationFrame(next);}));
 const commands=(page,action)=>page.evaluate(action=>__grzCommands.filter(item=>item.action===action),action);
-module.exports=async ({browser,nativeHost,check})=>{
-  await require('./ui-vehicle-metadata.cjs')({browser,nativeHost,check});
+async function vehicleNavigation({browser,nativeHost,check}){
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   const page=await nativeHost(browser,{initialViewport:{width:3840,height:2560},viewport:{width:3840,height:2560,scale:1},realTimers:true});
   try {
@@ -140,4 +139,13 @@ module.exports=async ({browser,nativeHost,check})=>{
         await page.locator('.ss-battle-target').count()===0 && await page.locator('.ss-battle-target-outline').count()===0);
     }
   } finally {await page.close();}
+}
+module.exports=async options=>{
+  const components=[
+    ()=>require('./ui-vehicle-metadata.cjs')(options),
+    ()=>vehicleNavigation(options)
+  ];
+  const settled=await Promise.allSettled(components.map(run=>Promise.resolve().then(run)));
+  const rejected=settled.find(result=>result.status==='rejected');
+  if(rejected)throw rejected.reason;
 };

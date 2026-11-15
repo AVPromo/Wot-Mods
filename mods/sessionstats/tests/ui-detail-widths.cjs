@@ -1,7 +1,7 @@
 /* Wider battle cards give missions space without stretching the bonus matrix. */
 const fs=require('fs'),path=require('path');
 const frames=page=>page.evaluate(()=>new Promise(resolve=>{let left=10;function next(){if(--left)requestAnimationFrame(next);else resolve();}requestAnimationFrame(next);}));
-module.exports=async({browser,nativeHost,check})=>{
+async function detailWidths({browser,nativeHost,check}){
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   const page=await nativeHost(browser,{initialViewport:{width:5000,height:2600},viewport:{width:5000,height:2600,scale:1}});
   try{
@@ -83,6 +83,14 @@ module.exports=async({browser,nativeHost,check})=>{
         percentage.value==='100%' && percentage.font>=14 && percentage.fits);
     }
   }finally{await page.close();}
-  await require('./ui-more-spacing.cjs')({browser,nativeHost,check});
-  await require('./ui-mission-columns.cjs')({browser,nativeHost,check});
+}
+module.exports=async options=>{
+  const components=[
+    ()=>detailWidths(options),
+    ()=>require('./ui-more-spacing.cjs')(options),
+    ()=>require('./ui-mission-columns.cjs')(options)
+  ];
+  const settled=await Promise.allSettled(components.map(run=>Promise.resolve().then(run)));
+  const rejected=settled.find(result=>result.status==='rejected');
+  if(rejected)throw rejected.reason;
 };

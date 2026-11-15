@@ -31,9 +31,11 @@ async function emit(page,index,request,reverse=false){
     model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
   },{index,request,reverse});await frames(page);
 }
-module.exports=async({browser,nativeHost,check})=>{
+async function navigationComponent({browser,nativeHost,check}){
   require('./ui-page-jump.cjs').assertPageJumpSource();check('Actual-source page navigation waits for stable native geometry and yields to newer intent',true);
   await require('./ui-page-navigation.cjs')({browser,nativeHost,check});
+}
+async function paginationComponent({browser,nativeHost,check}){
   assertPageBoundarySource();check('Actual-source page dividers show only known localized first-battle dates',true);
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   const page=await nativeHost(browser,{initialViewport:{width:3840,height:2560},viewport:{width:3840,height:2560,scale:1}});
@@ -139,6 +141,14 @@ module.exports=async({browser,nativeHost,check})=>{
       const scroll=document.getElementById('ss-scroll');scroll.scrollTop=scroll.scrollHeight;scroll.dispatchEvent(new Event('scroll'));});
     check('Retained feed controls and scroll listeners cannot fetch after cleanup',(await requests(page)).length===before);
   }finally{await page.close();}
+}
+module.exports=async({browser,nativeHost,check})=>{
+  const components=await Promise.allSettled([
+    navigationComponent({browser,nativeHost,check}),
+    paginationComponent({browser,nativeHost,check})
+  ]);
+  const rejectedComponent=components.find(result=>result.status==='rejected');
+  if(rejectedComponent)throw rejectedComponent.reason;
 };
 module.exports.assertPageBoundarySource=assertPageBoundarySource;
 if(require.main===module){assertPageBoundarySource();console.log('Actual-source page divider timestamp regressions passed.');}

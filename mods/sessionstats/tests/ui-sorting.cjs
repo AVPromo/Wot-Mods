@@ -1,10 +1,11 @@
 /* Gameface-compatible select menus, native sorting protocol and narrow layouts. */
 const fs=require('fs'),path=require('path');
 module.exports=async ({browser,nativeHost,check})=>{
-  await require('./ui-sort-totals.cjs')({browser,nativeHost,check});
+  async function chronologyAndControls(){
   await require('./ui-chronology.cjs')({browser,nativeHost,check});
   require('./ui-chronology-source.cjs')();check('Actual-source first/last battle ordering supports both directions independently',true);
   const page=await nativeHost(browser,{});
+  try{
   await page.locator('#ss-group-tiers').click();
   await page.evaluate(()=>{const s=JSON.parse(model.payload);s.localization={language:'en',messages:{'groups.tiers.count':'Legacy count · newest first'}};
     delete s.scopes.launch.ordering.tiers;model.payload=JSON.stringify(s);GRZSessionStats.update(s);});
@@ -124,6 +125,24 @@ module.exports=async ({browser,nativeHost,check})=>{
   await page.keyboard.press('ArrowDown');await page.keyboard.press('Home');await page.keyboard.press('Enter');
   check('Keyboard selection emits a sorting command',await page.evaluate(()=>__grzCommands.filter(c=>c.action==='sort').pop().metric==='off'));
   check('The native document contains no unsupported select elements',await page.locator('select').count()===0);
-  await page.close();
-  await require('./ui-sort-extrema.cjs')({browser,nativeHost,check});
+  }finally{await page.close();}
+  }
+  // Each branch owns its existing pages; preserve every transition inside them.
+  const branches=[
+    ['totals',()=>require('./ui-sort-totals.cjs')({browser,nativeHost,check})],
+    ['chronology and controls',chronologyAndControls],
+    ['extrema',()=>require('./ui-sort-extrema.cjs')({browser,nativeHost,check})]
+  ];
+  const results=await Promise.allSettled(branches.map(async([name,run])=>{
+    const started=Date.now();
+    try{
+      await run();
+      console.log('Sorting branch passed: '+name+' ('+(Date.now()-started)+' ms)');
+    }catch(error){
+      console.error('Sorting branch failed: '+name+' ('+(Date.now()-started)+' ms)');
+      throw error;
+    }
+  }));
+  const rejected=results.find(result=>result.status==='rejected');
+  if(rejected)throw rejected.reason;
 };

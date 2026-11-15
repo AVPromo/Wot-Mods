@@ -18,7 +18,8 @@ async function resize(page,width){
   await page.evaluate(width=>__filterStableResize([width]),width);
 }
 module.exports=async({browser,nativeHost,check})=>{
-  for(const scale of [1,2]){
+  const scaleResults=await Promise.allSettled([1,2].map(async scale=>{
+    let geometry;
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2400},
       viewport:{width:3840,height:2400,scale},realTimers:true});
     const label=' at '+scale+'x';
@@ -153,5 +154,7 @@ module.exports=async({browser,nativeHost,check})=>{
         !retired.bound&&retired.mode==='wrapped'&&retired.modes.length===0);
       await deferred.evaluate(()=>__deferredFilterObserver.disconnect());
     }finally{await deferred.close();}
-  }
+  }));
+  const rejectedScale=scaleResults.find(result=>result.status==='rejected');
+  if(rejectedScale)throw rejectedScale.reason;
 };

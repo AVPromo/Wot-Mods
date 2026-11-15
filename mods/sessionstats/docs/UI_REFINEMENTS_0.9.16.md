@@ -40,3 +40,8 @@ Regression fixtures are synthetic. Validation covers summary navigation,
 stale native offsets, exact selected-cell decoration, missing and zero base
 values, shared costs, source ownership and narrow/wide layouts. Actual native
 renderer behavior still needs an in-game check.
+
+Browser application tests overlap only independent page-owning scenarios.
+Each page retains its complete action, frame-wait and assertion sequence;
+all active branches finish their cleanup before a failure propagates. The
+pinned CI browser runtime, suite selection and 900-second budget are unchanged.
