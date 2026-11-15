@@ -22,7 +22,8 @@ const geometry=page=>page.evaluate(()=>{
 });
 module.exports=async({browser,nativeHost,check})=>{
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
-  for(const {width,scale} of [{width:550,scale:1},{width:960,scale:1},{width:550,scale:2},{width:960,scale:2}]){
+  for(const scale of [1,2]){
+    const widthResults=await Promise.allSettled([550,960].map(async width=>{
     const game={width:3840,height:2400,scale},page=await nativeHost(browser,{initialViewport:game,viewport:game,realTimers:true});
     try{
       for(const [language,messages] of Object.entries(languages)){
@@ -73,5 +74,8 @@ module.exports=async({browser,nativeHost,check})=>{
         await page.keyboard.press('Escape');
       }
     }finally{await page.close();}
+    }));
+    const rejectedWidth=widthResults.find(result=>result.status==='rejected');
+    if(rejectedWidth)throw rejectedWidth.reason;
   }
 };

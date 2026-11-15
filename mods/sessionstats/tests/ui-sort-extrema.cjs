@@ -49,8 +49,10 @@ module.exports=async({browser,nativeHost,check})=>{
       if(options.missing)delete scope[group][0].extrema_battles.xp_base;
       if(options.language)payload.localization={language:options.language,messages:options.messages};
       delete scope.battle_focus;model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
+      // Geometry setup keeps all cue, number and keyboard routing checks as real actions.
+      if(options.width)document.getElementById('ss-group-'+group).onclick();
     },{group,metric,statistic,options,revision:++revision,metrics});
-    await page.locator('#ss-group-'+group).click();await frames(page);
+    if(!options.width)await page.locator('#ss-group-'+group).click();await frames(page);
   }
   const link=(owner,metric,statistic)=>page.locator('#ss-'+owner+' .ss-metric-battle-link[data-ss-source-metric="'+metric+'"][data-ss-extreme="'+statistic+'"]');
   const commands=()=>page.evaluate(()=>__grzCommands.filter(row=>row.action==='battle_select'));

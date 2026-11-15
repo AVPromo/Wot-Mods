@@ -102,7 +102,12 @@ module.exports=async({browser,nativeHost,check})=>{
       check('Verified role '+key+' uses its '+language+' catalog tooltip and ignores cached native paragraphs',
         typeof messages['vehicle.role.'+key+'.name']==='string'&&typeof messages['vehicle.role.'+key+'.description']==='string'&&
         await target.getAttribute('data-ss-help').then(text=>text.endsWith(expected)&&!text.includes('klienta'))&&
-        await target.getAttribute('title').then(text=>text.endsWith(expected)));
+        await target.evaluate(node=>{
+          const owner=document.getElementById(node.getAttribute('aria-controls'));
+          return node.classList.contains('ss-hover-help')&&node.tabIndex===0&&
+            !!node.getAttribute('aria-label')&&node.getAttribute('aria-expanded')==='false'&&
+            node.getAttribute('title')===null&&owner&&owner.id==='ss-help-tooltip'&&owner.getAttribute('role')==='tooltip';
+        }));
       if(key==='role_SPG')check('SPG role text does not invent a role icon in '+language,await page.locator('.ss-group .ss-vehicle-role-icon').count()===0);
     }
     for(const language of ['pl','en','de','en']){

@@ -12,7 +12,7 @@ const frames=page=>page.evaluate(()=>new Promise((resolve,reject)=>{let left=6;
 module.exports=async({browser,nativeHost,check})=>{
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   const metrics=[['battles','avg'],['win_rate','avg'],['battle_wn8','min'],['battle_wn8','max'],['xp_received','avg'],['credits_net_received','avg'],['credits_costs','max'],['xp_received','sum'],['off','avg']];
-  for(const scale of [1,2]){
+  const scaleResults=await Promise.allSettled([1,2].map(async scale=>{
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2400},viewport:{width:3840,height:2400,scale}});
     try{
       for(const [language,messages]of Object.entries(languages))for(const width of [550,1200,1800]){
@@ -133,5 +133,7 @@ module.exports=async({browser,nativeHost,check})=>{
       }
 
     }finally{await page.close();}
-  }
+  }));
+  const rejectedScale=scaleResults.find(result=>result.status==='rejected');
+  if(rejectedScale)throw rejectedScale.reason;
 };

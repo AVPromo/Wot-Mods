@@ -859,8 +859,15 @@ async function runFeatureSuite(file,browser) {
           const box=control.getBoundingClientRect(), label=control.querySelector('.ss-control-label');
           if(!box.width || !box.height || !label)return true;
           const text=label.getBoundingClientRect();
+          const helpOwner=document.getElementById(control.getAttribute('aria-controls'));
+          const ownedHelp=control.classList.contains('ss-hover-help') &&
+            (control.getAttribute('data-ss-help') || '').trim().length>0 &&
+            (control.getAttribute('aria-label') || '').trim().length>0 &&
+            helpOwner && helpOwner.getAttribute('role')==='tooltip' &&
+            ['true','false'].includes(control.getAttribute('aria-expanded'));
           return text.left>=box.left-1 && text.right<=box.right+1 &&
-            text.top>=box.top-1 && text.bottom<=box.bottom+1 && control.title.length>0;
+            text.top>=box.top-1 && text.bottom<=box.bottom+1 &&
+            (control.title.trim().length>0 || ownedHelp);
         })));
     }
     await localized.evaluate(()=>GRZSessionStats.update('invalid JSON'));
