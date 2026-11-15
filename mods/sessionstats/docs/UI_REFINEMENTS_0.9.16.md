@@ -30,6 +30,12 @@ independent availability and source references. The layout uses explicit
 normal-flow flex boxes supported by Gameface, with a compact arrangement for
 small finance tables and no duplicated numeric values.
 
+Repeated row measurements subtract their owned alignment margin in computed
+pixels before converting the result to logical units. This keeps compact
+rows stable at elevated DPI and allows them to shrink when a caption wraps
+onto fewer lines. The finance regression also bounds the row height by the
+actual caption, amount and action content, rather than its assigned height.
+
 Regression fixtures are synthetic. Validation covers summary navigation,
 stale native offsets, exact selected-cell decoration, missing and zero base
 values, shared costs, source ownership and narrow/wide layouts. Actual native

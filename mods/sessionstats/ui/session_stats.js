@@ -812,7 +812,7 @@
                         if (child.classList.contains('ss-cell-value')) {
                             amount = child;
                             // A prior alignment margin is not intrinsic content.
-                            childHeight -= parseFloat(child.style.marginTop) || 0;
+                            if (child.style.marginTop) { childHeight -= parseFloat(childStyle.marginTop) || 0; }
                         }
                         if (child.classList.contains('ss-credit-inline-label')) { caption = childHeight; }
                         content += childHeight;

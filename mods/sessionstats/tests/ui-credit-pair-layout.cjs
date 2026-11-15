@@ -29,6 +29,18 @@ function inspectCreditPairs({messages,scale,group}){
       const amountInk=cell=>{const range=document.createRange();range.selectNodeContents(cell.querySelector(':scope > .ss-cell-value'));return range.getBoundingClientRect();};
       const incomeInk=amountInk(income),netInk=amountInk(net);
       if(!near(incomeInk.top,netInk.top)||!near(incomeInk.bottom,netInk.bottom))issue('flow','amount-line:'+basis);
+      const verticalInsets=node=>{const css=getComputedStyle(node);return ['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(css[key])||0),0);};
+      const inlineHeight=cell=>{const caption=cell.querySelector('.ss-credit-inline-label');if(!caption||!visible(caption))return 0;const css=getComputedStyle(caption);return caption.getBoundingClientRect().height+(parseFloat(css.marginTop)||0)+(parseFloat(css.marginBottom)||0);};
+      const amountBlockHeight=cell=>{
+        const children=[...cell.children].filter(child=>(child.classList.contains('ss-cell-value')||child.classList.contains('ss-credit-extreme-actions'))&&visible(child)),parts=children.map(child=>child.getBoundingClientRect()),amount=children[0];
+        const unownedTop=amount.style.marginTop?0:(parseFloat(getComputedStyle(amount).marginTop)||0),bottom=parseFloat(getComputedStyle(children[children.length-1]).marginBottom)||0;
+        return Math.max(...parts.map(box=>box.bottom))-Math.min(...parts.map(box=>box.top))+unownedTop+bottom;
+      };
+      const captionHeight=Math.max(inlineHeight(income),inlineHeight(net));
+      const amountHeight=Math.max(...[income,net].map(cell=>captionHeight+amountBlockHeight(cell)+verticalInsets(cell)));
+      const labelText=label.querySelector('.ss-credit-label-text'),labelHeight=labelText&&visible(labelText)?labelText.getBoundingClientRect().height+verticalInsets(label):0;
+      const naturalHeight=Math.max(amountHeight,labelHeight)/scale;
+      if(a.height/scale>Math.ceil(naturalHeight)+1||b.height/scale>Math.ceil(naturalHeight)+1)issue('flow','unused-row-height:'+basis+':'+JSON.stringify({actual:[a.height/scale,b.height/scale],required:naturalHeight}));
       if(visible(label)){const box=label.getBoundingClientRect();if(!near(a.top,box.top)||!near(a.bottom,box.bottom))issue('flow','label-boundary:'+basis);}
       const caption=income.querySelector('.ss-credit-inline-label');
       if(visible(label)===visible(caption)||caption.textContent!==messages['finance.credits_'+basis])issue('semantics','visible-caption:'+basis);
