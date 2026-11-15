@@ -695,12 +695,12 @@ button:disabled { opacity:0.45; }
 .ss-money-row.ss-credit-pair { display:flex; flex-wrap:nowrap; align-items:stretch; }
 .ss-credit-label-column, .ss-credit-column { display:flex; flex-direction:column; min-width:0; }
 .ss-credit-label-column { flex:0 0 24.5%; width:24.5%; }
-.ss-credit-column { flex:1 1 0rem; width:0; border-left:1rem solid #3c4434; }
+.ss-credit-column { flex:1 1 0rem; width:0; }
 .ss-credit-pair .ss-credit-row-label { display:flex; flex:0 0 auto; align-items:center; width:100%; min-width:0; }
 .ss-credit-label-text { display:block; width:100%; min-width:0; }
-.ss-credit-pair .ss-credit-column > .ss-money-value { display:flex; flex:0 0 auto; flex-direction:column; justify-content:flex-start; width:100%; min-width:0; font-size:13rem; }
+.ss-credit-pair .ss-credit-column > .ss-money-value { display:flex; flex:0 0 auto; flex-direction:column; justify-content:flex-start; width:100%; min-width:0; border-left:1rem solid #3c4434; font-size:13rem; }
 .ss-credit-column > .ss-money-value + .ss-money-value, .ss-credit-row-label + .ss-credit-row-label { border-top:1rem solid #3c4434; }
-.ss-credit-pair > .ss-money-value.ss-credit-shared-cost { display:flex; flex:1 1 0rem; flex-direction:column; align-items:center; justify-content:center; width:0; min-width:0; padding-left:1rem; padding-right:1rem; text-align:center; font-size:13rem; }
+.ss-credit-pair > .ss-money-value.ss-credit-shared-cost { display:flex; flex:1 1 0rem; flex-direction:column; align-items:center; justify-content:center; width:0; min-width:0; padding-left:0; padding-right:0; text-align:center; font-size:13rem; }
 .ss-credit-pair .ss-cell-value { flex-shrink:0; max-width:100%; white-space:nowrap; overflow-wrap:normal; }
 .ss-credit-pair .ss-credit-extreme-actions { flex-shrink:0; }
 .ss-credit-inline-label { display:none; flex-shrink:0; width:100%; color:#d4ccb0; font-size:12rem; line-height:16rem; text-align:left; white-space:normal; overflow-wrap:normal; }
@@ -708,7 +708,7 @@ button:disabled { opacity:0.45; }
 .ss-summary-details .ss-credit-label-column { flex-basis:23%; width:23%; }
 .ss-summary-details .ss-credit-pair .ss-money-value { font-size:14rem; }
 .ss-economy.ss-credit-compact .ss-credit-label-column { display:none; }
-.ss-economy.ss-credit-compact .ss-credit-income-column { border-left:0; }
+.ss-economy.ss-credit-compact .ss-credit-income-column > .ss-money-value { border-left:0; }
 .ss-economy.ss-credit-compact .ss-credit-inline-label { display:block; }
 .ss-economy.ss-credit-compact > .ss-money-head, .ss-economy.ss-credit-compact > .ss-money-row:not(.ss-credit-pair) { flex-wrap:wrap; }
 .ss-economy.ss-credit-compact > .ss-money-head > .ss-money-label { display:none; }

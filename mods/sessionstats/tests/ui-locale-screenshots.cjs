@@ -270,7 +270,11 @@ module.exports=async function ({browser,nativeHost,check}) {
     {name:'configured-480',width:1200,cardWidth:480,scale:1,gameWidth:2400,gameHeight:1300,capture:false,columns:2,stress:true},
   ];
   try {
-    for(const language of languages) for(const mode of modes) {
+    const profiles=[];
+    for(const language of languages) for(const mode of modes) profiles.push({language,mode});
+    for(let start=0;start<profiles.length;start+=2) {
+      const profileResults=await Promise.allSettled(profiles.slice(start,start+2).map(async({language,mode})=>{
+      const screenshots=[],audits=[];
       const page=await nativeHost(browser,{
         initialViewport:{width:mode.gameWidth,height:mode.gameHeight},
         viewport:{width:mode.gameWidth,height:mode.gameHeight,scale:mode.scale},
@@ -381,6 +385,14 @@ module.exports=async function ({browser,nativeHost,check}) {
           }
         }
       } finally { await page.close(); }
+      return {screenshots,audits};
+      }));
+      const rejectedProfile=profileResults.find(result=>result.status==='rejected');
+      if(rejectedProfile)throw rejectedProfile.reason;
+      profileResults.forEach(result=>{
+        Array.prototype.push.apply(screenshots,result.value.screenshots);
+        Array.prototype.push.apply(audits,result.value.audits);
+      });
     }
     const metadata={schema_version:1,synthetic:true,renderer:'Chromium; native WoT APIs are test doubles',
       screenshot_count:screenshots.length,screenshot_bytes:screenshots.reduce((sum,file)=>sum+file.bytes,0),

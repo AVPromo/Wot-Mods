@@ -12,8 +12,8 @@ const detailStates=buttons=>buttons.evaluateAll(nodes=>nodes.map(node=>{
 const matchesDetail=(state,owner,expanded,messages)=>!!state&&!!owner&&state.id===owner.id&&state.index===owner.index&&
   state.expanded===String(expanded)&&state.text===messages[expanded?'more.less':'more.button']&&state.panelVisible===expanded;
 async function boundedPageCases(cases,run){
-  for(let start=0;start<cases.length;start+=3){
-    const settled=await Promise.allSettled(cases.slice(start,start+3).map(run));
+  for(let start=0;start<cases.length;start+=5){
+    const settled=await Promise.allSettled(cases.slice(start,start+5).map(run));
     const rejected=settled.find(result=>result.status==='rejected');
     if(rejected)throw rejected.reason;
   }

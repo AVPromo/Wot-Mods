@@ -66,11 +66,13 @@ module.exports=async({browser,nativeHost,check})=>{
             const info=title.querySelector('.ss-info-button'),infoBox=info?.getBoundingClientRect();
             const hit=infoBox&&document.elementFromPoint((infoBox.left+infoBox.right)/2,(infoBox.top+infoBox.bottom)/2);
             const headingColumns=[...header.querySelectorAll('.ss-metric-number,.ss-money-value')].map(node=>node.getBoundingClientRect()),
-              bodyColumns=[...body.querySelectorAll('.ss-metric-number,.ss-money-value')].map(node=>node.getBoundingClientRect());
+              bodyRows=body.classList.contains('ss-credit-pair') ? ['base','received'].map(basis=>
+                ['credits_income_'+basis,'credits_costs','credits_net_'+basis].map(metric=>body.querySelector('.ss-money-value[data-ss-metric="'+metric+'"]').getBoundingClientRect())) :
+                [[...body.querySelectorAll('.ss-metric-number,.ss-money-value')].map(node=>node.getBoundingClientRect())];
             return {valid:true,text:text.textContent,coverage:header.querySelectorAll('.ss-cell-coverage').length,
               outside:[...section.children].filter(node=>node.classList.contains('ss-detail-title')).length,
               fits:fits&&infoBox&&infoBox.left>=box.left-1&&infoBox.right<=box.right+1&&infoBox.right<=limit+0.5&&headerBox.bottom<=body.getBoundingClientRect().top+1,
-              aligned:headingColumns.length===bodyColumns.length&&headingColumns.every((column,index)=>Math.abs(column.left-bodyColumns[index].left)<=scale&&Math.abs(column.width-bodyColumns[index].width)<=scale),
+              aligned:bodyRows.every(columns=>headingColumns.length===columns.length&&headingColumns.every((column,index)=>Math.abs(column.left-columns[index].left)<=scale&&Math.abs(column.width-columns[index].width)<=scale)),
               reachable:info&&hit&&(hit===info||info.contains(hit)),help:info?.getAttribute('data-ss-help')};
           });
           return {totals,tables,height:wrapper.height/scale,rootBottom:root.bottom/scale,

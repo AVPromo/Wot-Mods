@@ -159,7 +159,7 @@ module.exports=async({browser,nativeHost,check})=>{
           cells=[...card.querySelectorAll('.ss-metric-head > .ss-metric-number,.ss-metric-row > .ss-metric-number,.ss-money-head > .ss-money-value,.ss-money-row .ss-money-value')],
           labels=[...card.querySelectorAll('.ss-metric-name,.ss-money-label')];
         const rowDividers=[...card.querySelectorAll('.ss-credit-column > .ss-money-value + .ss-money-value,.ss-credit-row-label + .ss-credit-row-label')],
-          borderOwners=[...card.querySelectorAll('.ss-metric-head > .ss-metric-number,.ss-metric-row > .ss-metric-number,.ss-money-head > .ss-money-value,.ss-money-row > .ss-money-value,.ss-credit-column')];
+          borderOwners=cells;
         const horizontal=rows.concat(rowDividers).map(node=>getComputedStyle(node)),vertical=borderOwners.map(node=>getComputedStyle(node));
         return {rows:rows.length,logicalRows:rows.reduce((count,row)=>count+(row.classList.contains('ss-credit-pair')?2:1),0),cells:cells.length,verticalOwners:vertical.length,
           horizontal:horizontal.every(css=>Math.abs(parseFloat(css.borderTopWidth)/scale-1)<=0.1&&css.borderTopStyle==='solid'),
@@ -169,7 +169,7 @@ module.exports=async({browser,nativeHost,check})=>{
             cells.every(node=>parseFloat(getComputedStyle(node).borderRightWidth)===0)};
       },scale);
       check('Performance and finance tables use matching thin cell rules without outer frames at '+scale+': '+JSON.stringify(rules),
-        rules.rows===5&&rules.logicalRows===6&&rules.cells===23&&rules.verticalOwners===21&&rules.horizontal&&rules.vertical&&rules.sameColor&&rules.unframed);
+        rules.rows===5&&rules.logicalRows===6&&rules.cells===23&&rules.verticalOwners===23&&rules.horizontal&&rules.vertical&&rules.sameColor&&rules.unframed);
       const actions=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
         const performance=[...card.querySelectorAll('.ss-metric-row .ss-extreme-cell')],
           finance=[...card.querySelectorAll('.ss-credit-extreme-actions')];

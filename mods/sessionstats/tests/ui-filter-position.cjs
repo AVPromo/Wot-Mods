@@ -9,7 +9,7 @@ module.exports=async({browser,nativeHost,check})=>{
   require('./ui-pinned-filters.cjs').assertPinnedFilterSource();
   check('Actual-source pinning survives mixed scroll frames without learning a translated origin',true);
   const catalogs=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
-  for(const scale of [1,2]){
+  const scaleResults=await Promise.allSettled([1,2].map(async scale=>{
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2400},viewport:{width:3840,height:2400,scale}});
     try{
       for(const [language,messages]of Object.entries(catalogs))for(const width of [550,700,920])
@@ -70,5 +70,7 @@ module.exports=async({browser,nativeHost,check})=>{
       check('A late native scroll getter settles at the top without another input or rebuilding cards at '+scale+'x: '+JSON.stringify(pinned),
         Math.abs(pinned.delta)<=scale&&Math.abs(pinned.top-1200*scale)<=scale&&pinned.sameCards);
     }finally{await page.close();}
-  }
+  }));
+  const rejectedScale=scaleResults.find(result=>result.status==='rejected');
+  if(rejectedScale)throw rejectedScale.reason;
 };

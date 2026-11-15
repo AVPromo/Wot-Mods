@@ -244,7 +244,7 @@ module.exports=async({browser,nativeHost,check})=>{
   assertFilterStateSource();check('Actual-source Off memory, readiness, context ownership and loading-state regressions pass',true);
   await retainedPromotion(browser,nativeHost,check);
   await require('./ui-filter-completeness.cjs')({browser,nativeHost,check});
-  for(const scale of [1,2]){
+  const scaleResults=await Promise.allSettled([1,2].map(async scale=>{
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2400},viewport:{width:3840,height:2400,scale}});
     const caption=' at '+(scale*100)+'%',count=()=>page.evaluate(()=>__grzCommands.filter(command=>command.action==='sort').length);
     const acknowledge=async()=>{await page.evaluate(()=>{const command=__grzCommands.filter(item=>item.action==='sort').pop();
@@ -372,7 +372,9 @@ module.exports=async({browser,nativeHost,check})=>{
       await acknowledge();check('The matching native sort acknowledgement clears its spinner'+caption,!await page.locator('#ss-filter-loading').isVisible());
       await require('./ui-loading-overlay.cjs')({page,check,caption,scale,width,acknowledge,frames});
     }finally{await page.close();}
-  }
+  }));
+  const rejectedScale=scaleResults.find(result=>result.status==='rejected');
+  if(rejectedScale)throw rejectedScale.reason;
 };
 module.exports.assertFilterStateSource=assertFilterStateSource;
 module.exports.retainedPromotion=retainedPromotion;

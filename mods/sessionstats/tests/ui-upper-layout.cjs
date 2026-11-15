@@ -1,6 +1,13 @@
 /* Exercise the MOD window width independently of the full game's viewport.
    Viewport-only media queries cannot fix a small floating native window. */
 const fs=require('fs'),path=require('path');
+async function boundedPageCases(cases,run){
+  for(let start=0;start<cases.length;start+=2){
+    const settled=await Promise.allSettled(cases.slice(start,start+2).map(run));
+    const rejected=settled.find(result=>result.status==='rejected');
+    if(rejected)throw rejected.reason;
+  }
+}
 module.exports=async function ({browser,nativeHost,check}) {
   const cases=[
     {width:1200,scale:1,gameWidth:2000,mode:'wide'},
@@ -13,7 +20,7 @@ module.exports=async function ({browser,nativeHost,check}) {
     {width:1200,scale:2,gameWidth:3840,mode:'wide'},
     {width:480,scale:2,gameWidth:3840,mode:'narrow'},
   ];
-  for(const testCase of cases) {
+  await boundedPageCases(cases,async testCase=>{
     const {width,scale,gameWidth,mode}=testCase;
     const gameHeight=scale===2 ? 2160 : 1300;
     const page=await nativeHost(browser,{
@@ -158,11 +165,11 @@ module.exports=async function ({browser,nativeHost,check}) {
       check('Positive finance totals retain their full signed amount: '+caption,
         await page.locator('#ss-summary .ss-money-value[data-ss-metric="credits_net_received"] > .ss-cell-value').textContent().then(text=>text.replace(/\s/g,'')==='+12345678'));
     } finally { await page.close(); }
-  }
+  });
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   const transitionCases=[{width:470,scale:1},{width:700,scale:1},{width:1000,scale:1},
     {width:1200,scale:1},{width:700,scale:2}];
-  for(const {width,scale} of transitionCases) {
+  await boundedPageCases(transitionCases,async({width,scale})=>{
     const page=await nativeHost(browser,{initialViewport:{width:3000,height:2200},
       viewport:{width:3000,height:2200,scale}});
     try {
@@ -242,5 +249,5 @@ module.exports=async function ({browser,nativeHost,check}) {
             Math.abs(box.left-empty.panels[index].left)<=1 && Math.abs(box.width-empty.panels[index].width)<=1));
       }
     } finally { await page.close(); }
-  }
+  });
 };
