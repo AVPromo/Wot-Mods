@@ -748,7 +748,6 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-metric-extreme-action .ss-metric-action-label { display:block; width:100%; min-width:0; height:16rem; font-size:11rem; line-height:16rem; text-align:center; }
 .ss-metric-row .ss-metric-number.ss-extreme-cell { display:flex; position:relative; flex-wrap:nowrap; align-items:center; justify-content:flex-end; min-width:0; padding-left:0; padding-right:2rem; cursor:pointer; }
 .ss-extreme-number { display:block; flex:0 0 auto; min-width:0; white-space:nowrap; text-align:right; }
-.ss-group .ss-extreme-cell.ss-sort-active-value { background:none; box-shadow:none; }
 .ss-extreme-cell > .ss-metric-battle-link,
 .ss-extreme-cell > .ss-metric-battle-link:hover,
 .ss-extreme-cell > .ss-metric-battle-link:focus { display:block; position:relative; flex:0 0 16rem; align-self:center; width:16rem; min-width:16rem; max-width:16rem; height:18rem; min-height:18rem; margin:0 0 0 3rem; padding:0; background:none; border:0; outline:none; box-shadow:none; }
@@ -902,6 +901,32 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-narrow-cards .ss-group .ss-metric-head .ss-metric-count, .ss-narrow-cards .ss-group .ss-money-head .ss-money-count { display:block; width:100%; padding:0 4rem; }
 .ss-narrow-cards .ss-group .ss-metric-row .ss-metric-name, .ss-narrow-cards .ss-group .ss-money-row .ss-money-label { width:100%; padding-bottom:0; }
 .ss-narrow-cards .ss-group .ss-metric-number, .ss-narrow-cards .ss-group .ss-money-value { width:33.333%; }
+/* Base and received earnings are two logical rows around one settled cost.
+   Explicit flex columns keep the shared value in normal native flow. */
+.ss-money-row.ss-credit-pair { display:flex; flex-wrap:nowrap; align-items:stretch; }
+.ss-credit-label-column, .ss-credit-column { display:flex; flex-direction:column; min-width:0; }
+.ss-credit-label-column { flex:0 0 24.5%; width:24.5%; }
+.ss-credit-column { flex:1 1 0rem; width:0; border-left:1rem solid {{colors.table_row_following_border_top}}; }
+.ss-credit-pair .ss-credit-row-label { display:flex; flex:0 0 auto; align-items:center; width:100%; min-width:0; }
+.ss-credit-label-text { display:block; width:100%; min-width:0; }
+.ss-credit-pair .ss-credit-column > .ss-money-value { display:flex; flex:0 0 auto; flex-direction:column; justify-content:flex-start; width:100%; min-width:0; font-size:13rem; }
+.ss-credit-column > .ss-money-value + .ss-money-value, .ss-credit-row-label + .ss-credit-row-label { border-top:1rem solid {{colors.table_row_following_border_top}}; }
+.ss-credit-pair > .ss-money-value.ss-credit-shared-cost { display:flex; flex:1 1 0rem; flex-direction:column; align-items:center; justify-content:center; width:0; min-width:0; padding-left:1rem; padding-right:1rem; text-align:center; font-size:13rem; }
+.ss-credit-pair .ss-cell-value { flex-shrink:0; max-width:100%; white-space:nowrap; overflow-wrap:normal; }
+.ss-credit-pair .ss-credit-extreme-actions { flex-shrink:0; }
+.ss-credit-inline-label { display:none; flex-shrink:0; width:100%; color:{{colors.money_label_text}}; font-size:12rem; line-height:16rem; text-align:left; white-space:normal; overflow-wrap:normal; }
+.ss-money-head > .ss-money-cost-heading { text-align:center; }
+.ss-summary-details .ss-credit-label-column { flex-basis:23%; width:23%; }
+.ss-summary-details .ss-credit-pair .ss-money-value { font-size:14rem; }
+.ss-economy.ss-credit-compact .ss-credit-label-column { display:none; }
+.ss-economy.ss-credit-compact .ss-credit-income-column { border-left:0; }
+.ss-economy.ss-credit-compact .ss-credit-inline-label { display:block; }
+.ss-economy.ss-credit-compact > .ss-money-head, .ss-economy.ss-credit-compact > .ss-money-row:not(.ss-credit-pair) { flex-wrap:wrap; }
+.ss-economy.ss-credit-compact > .ss-money-head > .ss-money-label { display:none; }
+.ss-economy.ss-credit-compact > .ss-money-head > .ss-money-label.ss-summary-table-heading { display:block; width:100%; margin-right:0; }
+.ss-economy.ss-credit-compact > .ss-money-head .ss-summary-table-title { width:100%; height:26rem; }
+.ss-economy.ss-credit-compact > .ss-money-row:not(.ss-credit-pair) > .ss-money-label { width:100%; padding-bottom:0; }
+.ss-economy.ss-credit-compact > .ss-money-head > .ss-money-value, .ss-economy.ss-credit-compact > .ss-money-row:not(.ss-credit-pair) > .ss-money-value { width:33.333%; }
 /* Fixed-width cards stay in native column flow. Expanded battle heights are
    sampled after layout to choose chronological lanes, never absolute offsets. */
 .ss-card-layout { display:flex; align-items:flex-start; justify-content:center; width:100%; }

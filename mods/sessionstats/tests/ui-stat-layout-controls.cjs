@@ -156,10 +156,12 @@ module.exports=async({browser,nativeHost,check})=>{
         Math.abs(table.top-table.bottom)<=1.5&&Math.abs(table.gaps[1]-(table.top+table.bottom))<=1.5);
       const rules=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
         const rows=[...card.querySelectorAll('.ss-metric-row,.ss-money-row')],
-          cells=[...card.querySelectorAll('.ss-metric-head > .ss-metric-number,.ss-metric-row > .ss-metric-number,.ss-money-head > .ss-money-value,.ss-money-row > .ss-money-value')],
+          cells=[...card.querySelectorAll('.ss-metric-head > .ss-metric-number,.ss-metric-row > .ss-metric-number,.ss-money-head > .ss-money-value,.ss-money-row .ss-money-value')],
           labels=[...card.querySelectorAll('.ss-metric-name,.ss-money-label')];
-        const horizontal=rows.map(node=>getComputedStyle(node)),vertical=cells.map(node=>getComputedStyle(node));
-        return {rows:rows.length,cells:cells.length,
+        const rowDividers=[...card.querySelectorAll('.ss-credit-column > .ss-money-value + .ss-money-value,.ss-credit-row-label + .ss-credit-row-label')],
+          borderOwners=[...card.querySelectorAll('.ss-metric-head > .ss-metric-number,.ss-metric-row > .ss-metric-number,.ss-money-head > .ss-money-value,.ss-money-row > .ss-money-value,.ss-credit-column')];
+        const horizontal=rows.concat(rowDividers).map(node=>getComputedStyle(node)),vertical=borderOwners.map(node=>getComputedStyle(node));
+        return {rows:rows.length,logicalRows:rows.reduce((count,row)=>count+(row.classList.contains('ss-credit-pair')?2:1),0),cells:cells.length,verticalOwners:vertical.length,
           horizontal:horizontal.every(css=>Math.abs(parseFloat(css.borderTopWidth)/scale-1)<=0.1&&css.borderTopStyle==='solid'),
           vertical:vertical.every(css=>Math.abs(parseFloat(css.borderLeftWidth)/scale-1)<=0.1&&css.borderLeftStyle==='solid'),
           sameColor:horizontal.concat(vertical).every(css=>(css.borderTopWidth!=='0px'?css.borderTopColor:css.borderLeftColor)==='rgb(60, 68, 52)'),
@@ -167,7 +169,7 @@ module.exports=async({browser,nativeHost,check})=>{
             cells.every(node=>parseFloat(getComputedStyle(node).borderRightWidth)===0)};
       },scale);
       check('Performance and finance tables use matching thin cell rules without outer frames at '+scale+': '+JSON.stringify(rules),
-        rules.rows===6&&rules.cells===24&&rules.horizontal&&rules.vertical&&rules.sameColor&&rules.unframed);
+        rules.rows===5&&rules.logicalRows===6&&rules.cells===23&&rules.verticalOwners===21&&rules.horizontal&&rules.vertical&&rules.sameColor&&rules.unframed);
       const actions=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
         const performance=[...card.querySelectorAll('.ss-metric-row .ss-extreme-cell')],
           finance=[...card.querySelectorAll('.ss-credit-extreme-actions')];
@@ -199,7 +201,11 @@ module.exports=async({browser,nativeHost,check})=>{
       await publish('credits_costs','max',{noSources:true});
       check('Missing financial source references leave no empty extrema action slots at '+scale,
         await page.locator('#ss-groups .ss-group').evaluate(card=>card.querySelectorAll('.ss-credit-extreme-actions').length===0&&
-          [...card.querySelectorAll('.ss-credit-cell')].every(cell=>cell.children.length===1&&cell.firstElementChild.classList.contains('ss-cell-value'))));
+          [...card.querySelectorAll('.ss-credit-cell')].every(cell=>{
+            const content=[...cell.children].filter(child=>!child.classList.contains('ss-credit-inline-label'));
+            return content.length===1&&content[0].classList.contains('ss-cell-value')&&
+              [...cell.querySelectorAll('.ss-credit-inline-label')].every(label=>label.getAttribute('aria-hidden')==='true');
+          })));
       for(const profile of [
         {name:'Long synthetic vehicle designation with complete metadata',width:590,count:1234567890123456},
         {name:'Long synthetic pending vehicle designation',width:590,empty:true},
@@ -229,6 +235,7 @@ module.exports=async({browser,nativeHost,check})=>{
         else check('An actually wrapped count keeps every digit without a fixed reserved row at '+scale+': '+JSON.stringify(result),
           result.kpis[0].lines>1&&result.kpis[0].text.replace(/\s/g,'')===String(profile.count));
       }
+      await require('./ui-sort-selected-cell.cjs')({page,scale,check});
     }finally{await page.close();}
   }
   await require('./ui-aggregate-responsive.cjs')({browser,nativeHost,check});

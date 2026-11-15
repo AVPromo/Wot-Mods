@@ -11,10 +11,17 @@ const detailStates=buttons=>buttons.evaluateAll(nodes=>nodes.map(node=>{
 }));
 const matchesDetail=(state,owner,expanded,messages)=>!!state&&!!owner&&state.id===owner.id&&state.index===owner.index&&
   state.expanded===String(expanded)&&state.text===messages[expanded?'more.less':'more.button']&&state.panelVisible===expanded;
+async function boundedPageCases(cases,run){
+  for(let start=0;start<cases.length;start+=3){
+    const settled=await Promise.allSettled(cases.slice(start,start+3).map(run));
+    const rejected=settled.find(result=>result.status==='rejected');
+    if(rejected)throw rejected.reason;
+  }
+}
 module.exports=async ({browser,nativeHost,check})=>{
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
-  for(const {width,scale,wide} of [{width:1200,scale:1,wide:true},{width:1600,scale:1,wide:true},
-    {width:1200,scale:2,wide:true},{width:700,scale:1},{width:470,scale:1}]) {
+  await boundedPageCases([{width:1200,scale:1,wide:true},{width:1600,scale:1,wide:true},
+    {width:1200,scale:2,wide:true},{width:700,scale:1},{width:470,scale:1}],async({width,scale,wide})=>{
     const game={width:3400,height:2200,scale};
     const page=await nativeHost(browser,{initialViewport:{width:game.width,height:game.height},viewport:game});
     try {
@@ -164,5 +171,5 @@ module.exports=async ({browser,nativeHost,check})=>{
         }
       }
     } finally {await page.close();}
-  }
+  });
 };

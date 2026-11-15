@@ -49,7 +49,7 @@ async function audit(page,mode,group) {
     const selectors=[
       '.ss-control-label','.ss-group-title','.ss-group-subtitle','.ss-more-mission-name strong','.ss-more-mission-description','.ss-more-caption',
       '.ss-more-mission-status','.ss-more-label','.ss-bonus-number','.ss-bonus-label','.ss-more-amount',
-      '.ss-money-label','.ss-metric-row .ss-metric-number','.ss-money-value .ss-cell-value','.ss-cell-coverage','.ss-battle-value','.ss-group-kpi .ss-kpi-value',
+      '.ss-money-label','.ss-credit-inline-label','.ss-metric-row .ss-metric-number','.ss-money-value .ss-cell-value','.ss-cell-coverage','.ss-battle-value','.ss-group-kpi .ss-kpi-value',
     ];
     for(const label of panel.querySelectorAll('.ss-more-pass .ss-more-label,.ss-bonus-head .ss-bonus-number')) {
       const walker=document.createTreeWalker(label,NodeFilter.SHOW_TEXT);
@@ -175,39 +175,42 @@ async function audit(page,mode,group) {
           ![...matrix.querySelectorAll('.ss-bonus-number')].some(cell=>normalize(cell.textContent)==='+110000')) issues.push({kind:'missing-reported-shape-values'});
       }
     }
-    const credits=first.querySelector('.ss-money-value[data-ss-metric="credits_income_received"]').closest('.ss-money-row');
-    const values=[...credits.querySelectorAll('.ss-cell-value')].map(node=>normalize(node.textContent));
+    const creditCells=(card,basis)=>['credits_income_'+basis,'credits_costs','credits_net_'+basis].map(metric=>
+      card.querySelector('.ss-money-value[data-ss-metric="'+metric+'"]'));
+    const receivedCells=creditCells(first,'received');
+    const values=receivedCells.map(cell=>normalize(cell.querySelector(':scope > .ss-cell-value').textContent));
     const messages=JSON.parse(model.payload).localization.messages;
     const availability=(count,total,label)=>label+' '+messages['coverage.value'].replace('{0}',count).replace('{1}',total);
     const financeLabels=[messages['finance.income'],messages['finance.costs'],messages['finance.net']];
-    const counts=[...credits.querySelectorAll('.ss-money-value')].map(node=>node.getAttribute('aria-label'));
+    const counts=receivedCells.map(node=>node.getAttribute('aria-label'));
     if(values.join('|')!==[sample.income,-sample.costs,'+'+sample.net].join('|')) issues.push({kind:'incomplete-finance-values',values});
     if(first.querySelectorAll('.ss-cell-coverage,.ss-count-coverage,.ss-wn8-coverage').length) {
       issues.push({kind:'repeated-visible-metric-coverage'});
     }
     if(group!=='battles' && !counts.every((value,index)=>value===availability(stress ? index+1 : 123,stress ? 4 : 137,
-      messages['finance.credits_received']+' '+financeLabels[index]))) {
+      messages[index===1?'finance.credits':'finance.credits_received']+' '+financeLabels[index]))) {
       issues.push({kind:'missing-finance-availability',counts});
     }
     const badge=first.querySelector('.ss-group-coverage');
     if(group!=='battles' && (stress ? !!badge : !badge || normalize(badge.textContent)!=='123/137' ||
       badge.parentNode!==first.querySelector('.ss-group-heading'))) issues.push({kind:'incorrect-card-coverage-badge'});
-    const base=first.querySelector('.ss-money-value[data-ss-metric="credits_income_base"]').closest('.ss-money-row');
-    const baseValues=[...base.querySelectorAll('.ss-cell-value')].map(node=>normalize(node.textContent)),
+    const baseCells=creditCells(first,'base');
+    const baseValues=baseCells.map(cell=>normalize(cell.querySelector(':scope > .ss-cell-value').textContent)),
       baseIncome=sample.income-Math.floor(sample.income/4),baseNet=baseIncome-sample.costs;
     const expectedBase=group==='battles' ? [baseIncome,-sample.costs,(baseNet>=0?'+':'')+baseNet] : ['—',-sample.costs,'—'];
     if(baseValues.join('|')!==expectedBase.join('|')) {
       issues.push({kind:'incomplete-base-finance-values',values:baseValues});
     }
-    const baseCounts=[...base.querySelectorAll('.ss-money-value')].map(node=>node.getAttribute('aria-label'));
+    const baseCounts=baseCells.map(node=>node.getAttribute('aria-label'));
     if(group!=='battles' && !baseCounts.every((value,index)=>value===availability(
-      (stress ? [1,2,1] : [122,123,122])[index],stress ? 4 : 137,messages['finance.credits_base']+' '+financeLabels[index]))) {
+      (stress ? [1,2,1] : [122,123,122])[index],stress ? 4 : 137,messages[index===1?'finance.credits':'finance.credits_base']+' '+financeLabels[index]))) {
       issues.push({kind:'missing-base-finance-availability',counts:baseCounts});
     }
-    const historical=panel.querySelector('[data-list-index="1"]'),historicalReceived=historical.querySelector('.ss-money-value[data-ss-metric="credits_income_received"]').closest('.ss-money-row'),
-      historicalValues=[...historicalReceived.querySelectorAll('.ss-cell-value')].map(node=>normalize(node.textContent)),
+    const historical=panel.querySelector('[data-list-index="1"]'),
+      historicalValues=creditCells(historical,'received').map(cell=>normalize(cell.querySelector(':scope > .ss-cell-value').textContent)),
+      historicalBase=creditCells(historical,'base').map(cell=>normalize(cell.querySelector(':scope > .ss-cell-value').textContent)),
       historicalExpected=group==='battles'?(stress?[12345678,-24691356,-12345678]:[74321,-87654,-13333]):[sample.income,-sample.costs,'+'+sample.net];
-    if(historical.querySelector('[data-ss-metric="credits_income_base"],[data-ss-metric="credits_net_base"]') ||
+    if(historicalBase.join('|')!==['—',historicalExpected[1],'—'].join('|') ||
       historicalValues.join('|')!==historicalExpected.join('|') ||
       historical.querySelectorAll('.ss-money-value[data-ss-metric="credits_costs"]').length!==1) issues.push({kind:'lost-historical-received-finance',values:historicalValues});
     if(group!=='battles' && first.querySelectorAll('.ss-metric-battle-link').length!==16) issues.push({kind:'missing-permanent-extrema-actions'});

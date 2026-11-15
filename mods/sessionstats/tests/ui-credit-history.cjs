@@ -1,4 +1,4 @@
-/* Historical received credits remain visible while unavailable base comparisons stay hidden. */
+/* Both credit rows remain visible; unavailable base amounts stay unknown. */
 const fs=require('fs'),path=require('path'),assert=require('assert'),vm=require('vm');
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 function actualAvailability(){
@@ -9,19 +9,19 @@ function actualAvailability(){
   assert(context.hasBaseCredits({net_base:0,net_base_count:1}),'A recorded zero net is available');
   assert(!context.hasBaseCredits({income_base:0,income_base_count:0,net_base:0,net_base_count:0}),'An empty zero sum is not an amount');
   assert(!context.hasBaseCredits({income_base:500,net_base:200}),'Amounts without availability do not invent a base comparison');
-  assert(context.hasBaseCredits({income_base:null,income_base_count:1,net_base:null,net_base_count:1}),'Known partial samples retain their row even when the whole-period totals are unavailable');
+  assert(context.hasBaseCredits({income_base:null,income_base_count:1,net_base:null,net_base_count:1}),'Known partial samples report availability even when whole-period totals are unavailable');
 }
 module.exports=async({browser,nativeHost,check})=>{
   actualAvailability();check('Actual source distinguishes recorded base zero from absent or unavailable base amounts',true);
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   const scenarios=[
-    {name:'legacy-0.9.8',visible:false},
-    {name:'empty-zero-series',income:0,incomeCount:0,net:0,netCount:0,visible:false},
-    {name:'known-zero',income:0,incomeCount:1,net:-41385,netCount:1,visible:true},
-    {name:'complete-zero',income:0,incomeCount:1,net:-41385,netCount:1,visible:true,complete:true},
-    {name:'partial-masked',income:null,incomeCount:1,net:null,netCount:1,visible:true},
-    {name:'income-only',income:42000,incomeCount:2,net:null,netCount:0,visible:true},
-    {name:'net-only',income:null,incomeCount:0,net:500,netCount:1,visible:true},
+    {name:'legacy-0.9.8',available:false},
+    {name:'empty-zero-series',income:0,incomeCount:0,net:0,netCount:0,available:false},
+    {name:'known-zero',income:0,incomeCount:1,net:-41385,netCount:1,available:true},
+    {name:'complete-zero',income:0,incomeCount:1,net:-41385,netCount:1,available:true,complete:true},
+    {name:'partial-masked',income:null,incomeCount:1,net:null,netCount:1,available:true},
+    {name:'income-only',income:42000,incomeCount:2,net:null,netCount:0,available:true},
+    {name:'net-only',income:null,incomeCount:0,net:500,netCount:1,available:true},
   ];
   const page=await nativeHost(browser,{initialViewport:{width:1920,height:1400},viewport:{width:1920,height:1400,scale:1}});
   const snapshots={};
@@ -55,17 +55,18 @@ module.exports=async({browser,nativeHost,check})=>{
       },{original,language,messages,scenario});await frames(page);
       for(const group of ['vehicles','maps','tiers','battles']){
         await page.locator('#ss-group-'+group).click();await frames(page);
-        const result=await page.evaluate(({messages,visible})=>{
+        const result=await page.evaluate(({messages,available})=>{
           function inspect(panel){
-            const economy=panel.querySelector('.ss-economy'),rows=[...economy.querySelectorAll('.ss-money-row')],find=label=>rows.find(row=>[...row.querySelector('.ss-money-label').childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('')===label),values=row=>[...row.querySelectorAll(':scope > .ss-money-value > .ss-cell-value')].map(n=>n.textContent.replace(/\s/g,''));
-            const base=find(messages['finance.credits_base']),received=find(messages['finance.credits_received']),bonds=find(messages['finance.bonds']),gold=find(messages['finance.gold']),help=(economy.querySelector('.ss-info-button')||panel.querySelector('.ss-group-heading .ss-info-button')).getAttribute('data-ss-help')||'';
-            return {base:!!base,baseValues:base?values(base):[],received:received?values(received):[],bonds:bonds?values(bonds):[],gold:gold?values(gold):[],costOwners:economy.querySelectorAll('.ss-money-value[data-ss-metric="credits_costs"]').length,help:help.includes(messages['help.credits.base_received']),availability:visible||help.includes(messages['sort.credits_income_base']+': '+messages['coverage.value'].replace('{0}','0').replace('{1}','3'))};
+            const economy=panel.querySelector('.ss-economy'),pair=economy.querySelector('.ss-credit-pair'),rows=[...economy.querySelectorAll('.ss-money-row:not(.ss-credit-pair)')],find=label=>rows.find(row=>[...row.querySelector('.ss-money-label').childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('')===label),values=row=>[...row.querySelectorAll(':scope > .ss-money-value > .ss-cell-value')].map(n=>n.textContent.replace(/\s/g,''));
+            const creditValues=basis=>['credits_income_'+basis,'credits_costs','credits_net_'+basis].map(metric=>pair.querySelector('.ss-money-value[data-ss-metric="'+metric+'"] > .ss-cell-value').textContent.replace(/\s/g,''));
+            const base=pair.querySelector('.ss-credit-label-column [data-ss-credit-row="base"]'),received=pair.querySelector('.ss-credit-label-column [data-ss-credit-row="received"]'),bonds=find(messages['finance.bonds']),gold=find(messages['finance.gold']),help=(economy.querySelector('.ss-info-button')||panel.querySelector('.ss-group-heading .ss-info-button')).getAttribute('data-ss-help')||'';
+            return {base:base.textContent===messages['finance.credits_base'],baseValues:creditValues('base'),received:received.textContent===messages['finance.credits_received']?creditValues('received'):[],bonds:bonds?values(bonds):[],gold:gold?values(gold):[],costOwners:economy.querySelectorAll('.ss-money-value[data-ss-metric="credits_costs"]').length,help:help.includes(messages['help.credits.base_received']),availability:available||help.includes(messages['sort.credits_income_base']+': '+messages['coverage.value'].replace('{0}','0').replace('{1}','3'))};
           }
           return {summary:inspect(document.querySelector('#ss-summary')),card:inspect(document.querySelector('#ss-groups .ss-group'))};
-        },{messages,visible:scenario.visible});
-        check('Base comparison follows real availability and received profits/currencies survive '+language+'/'+scenario.name+'/'+group,
-          [result.summary,result.card].every(x=>x.base===scenario.visible&&x.received.join('|')==='78935|-41385|+37550'&&x.bonds.join('|')==='14|-6|+8'&&x.gold.join('|')==='501|0|+501'&&x.costOwners===1&&x.help&&x.availability));
-        if(scenario.visible&&!scenario.complete)check('Partial base samples never pretend to be complete period totals '+language+'/'+scenario.name+'/'+group,
+        },{messages,available:scenario.available});
+        check('Both credit rows remain visible while received profits/currencies survive '+language+'/'+scenario.name+'/'+group,
+          [result.summary,result.card].every(x=>x.base&&x.received.join('|')==='78935|-41385|+37550'&&x.bonds.join('|')==='14|-6|+8'&&x.gold.join('|')==='501|0|+501'&&x.costOwners===1&&x.help&&x.availability));
+        if(!scenario.complete)check('Missing or partial base samples never pretend to be complete period totals '+language+'/'+scenario.name+'/'+group,
           [result.summary,result.card].every(x=>x.baseValues.join('|')==='—|-41385|—'));
         if(scenario.name==='complete-zero')check('A complete known-zero base result stays visible '+language+'/'+group,
           [result.summary,result.card].every(x=>x.baseValues.join('|')==='0|-41385|-41385'));
@@ -86,9 +87,11 @@ module.exports=async({browser,nativeHost,check})=>{
             });
             return [box.width,box.height,rows];
           });
-          const labels=[...card.querySelectorAll('.ss-metric-name .ss-cell-value,.ss-money-label')];
+          const labels=[...card.querySelectorAll('.ss-metric-name .ss-cell-value,.ss-money-label,.ss-credit-inline-label')].filter(label=>{
+            const box=label.getBoundingClientRect();return box.width>0&&box.height>0;
+          });
           const readable=labels.every(label=>{
-            const owner=label.closest('.ss-metric-name,.ss-money-label').getBoundingClientRect(),range=document.createRange();
+            const owner=(label.closest('.ss-metric-name,.ss-money-label')||label).getBoundingClientRect(),range=document.createRange();
             range.selectNodeContents(label);const lines=[...range.getClientRects()].filter(rect=>rect.width>0&&rect.height>0);
             return lines.length>0&&lines.every(rect=>rect.left>=owner.left-1&&rect.right<=owner.right+1&&rect.top>=owner.top-1&&rect.bottom<=owner.bottom+1);
           });
@@ -98,7 +101,7 @@ module.exports=async({browser,nativeHost,check})=>{
                 const rect=row.getBoundingClientRect();return rect.left>=box.left-1&&rect.right<=box.right+1&&rect.top>=box.top-1&&rect.bottom<=box.bottom+1;
               });
           });
-          return {height:bounds.height,base:!!card.querySelector('.ss-money-value[data-ss-metric="credits_net_base"]'),
+          return {height:bounds.height,base:!!card.querySelector('.ss-money-value[data-ss-metric="credits_net_base"]'),baseNet:card.querySelector('.ss-money-value[data-ss-metric="credits_net_base"] > .ss-cell-value').textContent,
             received:card.querySelector('.ss-money-value[data-ss-metric="credits_income_received"] > .ss-cell-value').textContent,
             selected:card.querySelector('.ss-group-sort-number')?.textContent,geometry,readable,contained,
             finance:[...card.querySelectorAll('.ss-money-row')].map(row=>row.textContent)};
@@ -111,8 +114,9 @@ module.exports=async({browser,nativeHost,check})=>{
           result.base===baseline.base&&result.received===baseline.received&&result.finance.join('|')===baseline.finance.join('|'));
         check('Natural sorting headers preserve historical table geometry and readable contained labels '+scenario+'/'+metric+': '+JSON.stringify({height:result.height,baselineHeight:baseline.height,readable:result.readable,contained:result.contained}),
           same(result.geometry,baseline.geometry)&&result.readable&&result.contained);
-        if(scenario==='legacy-0.9.8'&&metric==='credits_income_base')check('Selecting an unavailable base metric leaves its result unknown without hiding received amounts',result.selected==='—'&&!result.base);
+        if(scenario==='legacy-0.9.8'&&metric==='credits_income_base')check('Selecting an unavailable base metric keeps its row and unknown result without hiding received amounts',result.selected==='—'&&result.base&&result.baseNet==='—');
       }
     }
   }finally{await page.close();}
+  await require('./ui-credit-pair-layout.cjs')({browser,nativeHost,check});
 };

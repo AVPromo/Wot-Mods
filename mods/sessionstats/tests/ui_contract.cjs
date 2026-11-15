@@ -69,10 +69,15 @@ async function battleCards(page) {
     aggregateRows:group.querySelectorAll('.ss-metric-head,.ss-metric-row').length,
     aggregateKPIs:group.querySelectorAll('.ss-group-kpi').length,
     outcome:group.querySelector('.ss-battle-outcome') && group.querySelector('.ss-battle-outcome').textContent,
-    money:Array.from(group.querySelectorAll('.ss-money-row')).map(row=>({
-      label:row.querySelector('.ss-money-label').textContent,
-      values:Array.from(row.querySelectorAll('.ss-cell-value')).map(value=>value.textContent)
-    }))
+    money:Array.from(group.querySelectorAll('.ss-money-row')).flatMap(row=>
+      row.classList.contains('ss-credit-pair') ? ['base','received'].map(basis=>({
+        label:row.querySelector('.ss-credit-label-column [data-ss-credit-row="'+basis+'"]').textContent,
+        values:['credits_income_'+basis,'credits_costs','credits_net_'+basis].map(metric=>
+          row.querySelector('.ss-money-value[data-ss-metric="'+metric+'"] > .ss-cell-value').textContent)
+      })) : [{
+        label:row.querySelector('.ss-money-label').textContent,
+        values:Array.from(row.querySelectorAll('.ss-cell-value')).map(value=>value.textContent)
+      }])
   })));
 }
 

@@ -1,4 +1,4 @@
-GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.15 (persistent data schema unchanged)
+GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.16 (persistent data schema unchanged)
 Release date: 2026-11-14.
 
 Target: World of Tanks PC Wargaming EU 2.4.1.1, Python 2.7 runtime.
@@ -82,7 +82,7 @@ to current launch just because received now. Use returned battle start time in a
 
 SNAPSHOT -> Window ViewModel string property `payload`
 {
- version: '0.9.15', account_key: string, generated_at: unix seconds,
+ version: '0.9.16', account_key: string, generated_at: unix seconds,
  expected: {version: string, ...}, warnings: [string],
  appearance: {panel_css:string, footer_css:string, scroll_speed:number},
  recovery: {pending:int, in_flight:int, states:{status_label:int}},
@@ -115,6 +115,10 @@ received income is the existing settled result after verified sharing deductions
 Base net subtracts the same actual costs. This is not a counterfactual account
 without premium. Historical missing base income remains unknown, never zero or
 received income divided by a premium factor. Existing received values stay intact.
+Both credit rows remain visible with unavailable amounts as dashes. A single
+physical costs cell spans the base/received pair; its credits_costs series and
+coverage are independent of either income field. Credit bonuses never create
+separate base/received expense records in the supported client contract.
 Partial sums are sums of confirmed known values. Metric-specific availability
 remains in existing help/ARIA. Visible received/recorded coverage appears only
 in the global result headline and one generic badge beside a partial aggregate

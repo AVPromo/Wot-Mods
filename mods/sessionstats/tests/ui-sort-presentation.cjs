@@ -45,11 +45,21 @@ function run(){
   let f=fixture();context.highlightCardSort(f.card,f.meta,item,options,false);
   assert.strictEqual(f.kpis[2].getAttribute('data-ss-sort-active'),'battle_wn8');
   assert.strictEqual(f.rows[2].children[3].getAttribute('data-ss-sort-active'),'battle_wn8');
-  assert.strictEqual(f.head.children[3].getAttribute('data-ss-sort-active'),'battle_wn8');
+  assert(f.head.children.every(node=>!node.getAttribute('data-ss-sort-active')),'Generic statistic headings must not stand in for the selected result');
   assert.strictEqual(f.rows[2].children[2].getAttribute('data-ss-sort-active'),null,'Unselected average remains ordinary');
   assert.strictEqual(f.meta.children.length,0,'WN8 reuses the headline and distribution instead of repeating metadata');
   f=fixture();context.highlightCardSort(f.card,f.meta,item,{metric:'xp_received',statistic:'min'},false);
   assert.strictEqual(f.rows[1].children[1].getAttribute('data-ss-sort-active'),'xp_received');assert.strictEqual(f.meta.children.length,0);
+  for(const [metric,index]of ['xp_base','xp_received','battle_wn8'].map((metric,index)=>[metric,index]))
+    for(const [statistic,column]of [['min',1],['avg',2],['max',3]])for(const value of [13289,0,-24,null]){
+      f=fixture();context.highlightCardSort(f.card,f.meta,statItem(metric,value),{metric,statistic},false);
+      const selected=f.rows[index].children[column];
+      assert.strictEqual(selected.getAttribute('data-ss-sort-active'),metric,'The exact '+metric+'/'+statistic+' cell owns sorting even for '+value);
+      assert(f.rows.every((row,rowIndex)=>row.children.every((node,cellIndex)=>
+        node===selected||!node.getAttribute('data-ss-sort-active'))),'Other metric/statistic cells stay neutral');
+      assert(f.head.children.every(node=>!node.getAttribute('data-ss-sort-active')),'No generic column heading is selected');
+      assert.strictEqual(f.meta.children.length,0,'An existing distribution figure needs no duplicate badge');
+    }
   f=fixture();context.highlightCardSort(f.card,f.meta,item,{metric:'battles'},false);
   assert.strictEqual(f.kpis[0].getAttribute('data-ss-sort-active'),'battles');assert.strictEqual(f.meta.children.length,0);
   for(const battle of [false,true]){

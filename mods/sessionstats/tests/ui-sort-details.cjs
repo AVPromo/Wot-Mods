@@ -73,7 +73,8 @@ module.exports=async ({browser,nativeHost,check})=>{
       check('Other sort metrics remove the net-credit caption: '+caption,await page.locator('.ss-group-sort-value').count()===0);
       check('XP sorting selects the matching existing XP series and marks its selected cell: '+caption,
         await page.locator('.ss-group .ss-performance [data-ss-metric="xp_received"]').first().locator('.ss-metric-name').textContent()===messages['xp.received']&&
-        await page.locator('.ss-group [data-ss-sort-active="xp_received"]').count()===8);
+        await page.locator('.ss-group .ss-metric-row[data-ss-metric="xp_received"] > [data-ss-sort-active="xp_received"]').count()===4&&
+        await page.locator('.ss-group .ss-metric-head [data-ss-sort-active]').count()===0);
       const combined=await page.locator('.ss-group-wn8-kpi').evaluateAll(nodes=>nodes.map(node=>({
         label:node.querySelector('.ss-kpi-label').textContent,kind:node.getAttribute('data-wn8-kind'),hint:node.title
       })));
@@ -111,9 +112,9 @@ module.exports=async ({browser,nativeHost,check})=>{
             });model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();},statistic);await frames(page);
           check('Changing WN8 '+statistic+' marks the existing selected distribution cell',
             await page.locator('.ss-group').first().locator('[data-ss-metric="battle_wn8"]').locator('[data-ss-sort-active="battle_wn8"]').evaluate(node=>
-              !node.classList.contains('ss-extreme-cell')||getComputedStyle(node).boxShadow==='none'&&
-              node.querySelectorAll('.ss-extreme-link-cue').length===1&&
-              !['transparent','rgba(0, 0, 0, 0)'].includes(getComputedStyle(node.querySelector('.ss-extreme-link-cue')).backgroundColor)));
+              getComputedStyle(node).boxShadow.includes('rgb(231, 162, 59)')&&
+              (!node.classList.contains('ss-extreme-cell')||node.querySelectorAll('.ss-extreme-link-cue').length===1&&
+              !['transparent','rgba(0, 0, 0, 0)'].includes(getComputedStyle(node.querySelector('.ss-extreme-link-cue')).backgroundColor))));
           const expectedLabel=messages['sort.metric_stat'].replace(/\{([0-9])\}/g,(_,index)=>[messages['metric.'+statistic],messages['metric.wn8']][index]);
           check('Selected '+statistic+' is visible without a duplicate WN8 caption',
             await page.locator('.ss-group-wn8-kpi .ss-kpi-label').first().textContent()===expectedLabel&&

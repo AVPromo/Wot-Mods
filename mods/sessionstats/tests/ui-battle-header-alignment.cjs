@@ -52,12 +52,13 @@ module.exports=async({browser,nativeHost,check})=>{
         }
         const received=card.querySelector('.ss-battle-measure[data-ss-metric="xp_received"]');
         const addedMetricHeight=received?(received.getBoundingClientRect().height+parseFloat(getComputedStyle(received).marginTop))/scale:0;
-        const baseCredits=card.querySelector('.ss-money-value[data-ss-metric="credits_income_base"]').closest('.ss-money-row'),
-          receivedCredits=card.querySelector('.ss-money-value[data-ss-metric="credits_income_received"]').closest('.ss-money-row');
+        const baseCredits=card.querySelector('.ss-credit-income-column .ss-money-value[data-ss-credit-row="base"]'),
+          receivedCredits=card.querySelector('.ss-credit-income-column .ss-money-value[data-ss-credit-row="received"]');
         const addedBaseCreditHeight=baseCredits.getBoundingClientRect().height/scale,
           receivedCreditWrapHeight=Math.max(0,receivedCredits.getBoundingClientRect().height/scale-30);
-        for(const row of card.querySelectorAll('.ss-money-row')){
-          if(row.getBoundingClientRect().height/scale>(row===baseCredits||row===receivedCredits?48:30))failures.push('row-height');
+        for(const row of card.querySelectorAll('.ss-money-row:not(.ss-credit-pair),.ss-credit-income-column > .ss-money-value')){
+          const inlineCaptionHeight=row.querySelector('.ss-credit-inline-label')?.getBoundingClientRect().height||0;
+          if((row.getBoundingClientRect().height-inlineCaptionHeight)/scale>(row===baseCredits||row===receivedCredits?48:30))failures.push('row-height');
         }
         // Preserve the original 165px budget after the additional XP/Base
         // credit rows and the Received credit label's extra text line.

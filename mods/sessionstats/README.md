@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.15 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.16 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -86,7 +86,8 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.12 bonus amounts, localized hints and source navigation](docs/UI_REFINEMENTS_0.9.12.md), and
 [0.9.13 adjacent source actions and native warnings](docs/UI_REFINEMENTS_0.9.13.md), and
 [0.9.14 native arrow flow and compact responsive headers](docs/UI_REFINEMENTS_0.9.14.md), and
-[0.9.15 native single-row actions, help timing and returned sources](docs/UI_REFINEMENTS_0.9.15.md).
+[0.9.15 native single-row actions, help timing and returned sources](docs/UI_REFINEMENTS_0.9.15.md), and
+[0.9.16 summary return, selected cells and shared costs](docs/UI_REFINEMENTS_0.9.16.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
 already selected, including in a full-history Timeline range. **Back**, beside
@@ -113,6 +114,10 @@ reported result. Personal missions show the operation name and completion with
 honors when the additional objective is confirmed. The card also shows Battle
 Pass points and the available bonus breakdown. The finance tables include
 vehicle and account-level bonds reported for each recorded Random Battle.
+Base and received credit rows stay visible even when original earnings are
+missing; unknown amounts appear as dashes. Actual credit costs occupy one
+centered cell shared by both rows, with one Min/Max pair. Sorting marks the
+matching metric/statistic cell rather than its general column heading.
 Premium account bonuses show absolute added credits, XP, Free XP and crew XP
 when their original amounts are known. Missing original amounts remain unknown;
 the mod never estimates a premium contribution from an already received total.

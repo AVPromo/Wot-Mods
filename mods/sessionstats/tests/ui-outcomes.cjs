@@ -80,11 +80,12 @@ module.exports = async ({browser,nativeHost,check}) => {
     const groups=Array.from(document.querySelectorAll('#ss-groups .ss-group')).map(group=>{
       const free=group.querySelector('.ss-free-xp'), details=group.querySelector('.ss-details'),
         received=group.querySelector('.ss-battle-measure[data-ss-metric="xp_received"]'),
-        baseCredits=group.querySelector('.ss-money-value[data-ss-metric="credits_income_base"]').closest('.ss-money-row'),
-        receivedCredits=group.querySelector('.ss-money-value[data-ss-metric="credits_income_received"]').closest('.ss-money-row');
+        baseCredits=group.querySelector('.ss-credit-income-column .ss-money-value[data-ss-credit-row="base"]'),
+        receivedCredits=group.querySelector('.ss-credit-income-column .ss-money-value[data-ss-credit-row="received"]');
       const box=node=>{const r=node.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
-      const rows=Array.from(group.querySelectorAll('.ss-battle-measure,.ss-money-row')).map(row=>({
-        ...box(row),credit:row===baseCredits||row===receivedCredits}));
+      const rows=Array.from(group.querySelectorAll('.ss-battle-measure,.ss-money-row:not(.ss-credit-pair),.ss-credit-income-column > .ss-money-value')).map(row=>({
+        ...box(row),credit:row===baseCredits||row===receivedCredits,
+        inlineCaptionHeight:row.querySelector('.ss-credit-inline-label')?.getBoundingClientRect().height||0}));
       const geometry={name:group.querySelector('.ss-group-title').textContent,card:box(group),
         header:box(group.querySelector('.ss-group-header')),identity:box(group.querySelector('.ss-group-name')),
         outcome:box(group.querySelector('.ss-battle-outcome')),map:box(group.querySelector('.ss-battle-map-thumb')),
@@ -100,7 +101,7 @@ module.exports = async ({browser,nativeHost,check}) => {
       // Only those two credit rows may exceed the old 30px row budget.
       geometry.passed=geometry.header.height<=64 && geometry.free.bottom<=geometry.details.top+1 &&
         geometry.rows.filter(row=>row.credit).length===2 &&
-        geometry.rows.every(row=>row.height<=(row.credit?48:30)) && geometry.xpRows===3 &&
+        geometry.rows.every(row=>row.height-row.inlineCaptionHeight<=(row.credit?48:30)) && geometry.xpRows===3 &&
         geometry.card.height-geometry.addedMetricHeight-geometry.addedBaseCreditHeight-geometry.receivedCreditWrapHeight<=165;
       return geometry;
     });
@@ -179,12 +180,13 @@ module.exports = async ({browser,nativeHost,check}) => {
       }
       const received=card.querySelector('.ss-battle-measure[data-ss-metric="xp_received"]');
       const addedMetricHeight=received?(box(received).height+parseFloat(getComputedStyle(received).marginTop))/scale:0;
-      const baseCredits=card.querySelector('.ss-money-value[data-ss-metric="credits_income_base"]').closest('.ss-money-row'),
-        receivedCredits=card.querySelector('.ss-money-value[data-ss-metric="credits_income_received"]').closest('.ss-money-row');
+      const baseCredits=card.querySelector('.ss-credit-income-column .ss-money-value[data-ss-credit-row="base"]'),
+        receivedCredits=card.querySelector('.ss-credit-income-column .ss-money-value[data-ss-credit-row="received"]');
       const addedBaseCreditHeight=box(baseCredits).height/scale,
         receivedCreditWrapHeight=Math.max(0,box(receivedCredits).height/scale-30);
-      for(const row of card.querySelectorAll('.ss-money-row')){
-        if(box(row).height/scale>(row===baseCredits||row===receivedCredits?48:30))issues.push('row-height');
+      for(const row of card.querySelectorAll('.ss-money-row:not(.ss-credit-pair),.ss-credit-income-column > .ss-money-value')){
+        const inlineCaptionHeight=row.querySelector('.ss-credit-inline-label')?.getBoundingClientRect().height||0;
+        if((box(row).height-inlineCaptionHeight)/scale>(row===baseCredits||row===receivedCredits?48:30))issues.push('row-height');
       }
       if(!received||card.querySelectorAll('.ss-battle-measure').length!==3||
         Math.abs(r.width/scale-cardWidth)>1||h.height/scale>64||

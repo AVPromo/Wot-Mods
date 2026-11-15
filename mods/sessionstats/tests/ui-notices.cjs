@@ -220,24 +220,31 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
       note.getBoundingClientRect().left>=title.left && freeBox.bottom<=group.querySelector('.ss-details').getBoundingClientRect().top+1;
   }));
   check('Shared financial availability stays accessible without header or row ratios',await page.locator('#ss-groups .ss-group').first().locator('.ss-economy').evaluate(table=>
-    table.querySelectorAll('.ss-cell-coverage').length===0 && table.querySelectorAll('.ss-money-row').length===3 &&
+    table.querySelectorAll('.ss-cell-coverage').length===0 && table.querySelectorAll('.ss-money-row').length===2 &&
+    table.querySelectorAll('.ss-credit-label-column [data-ss-credit-row]').length===2 &&
     Array.from(table.querySelectorAll('.ss-money-row .ss-money-value')).every(cell=>(cell.getAttribute('aria-label') || '').endsWith('Data available for 3 of 4 recorded battles.')) &&
     table.querySelector('.ss-info-button')===null &&
-    Array.from(table.querySelectorAll('.ss-money-row')).every(row=>row.getBoundingClientRect().height<=(row.querySelector('.ss-credit-cell')?48:30))));
+    Array.from(table.querySelectorAll('.ss-money-row')).every(row=>row.classList.contains('ss-credit-pair') ?
+      Array.from(row.querySelectorAll('.ss-credit-income-column > .ss-money-value')).every(cell=>
+        cell.getBoundingClientRect().height-(cell.querySelector('.ss-credit-inline-label')?.getBoundingClientRect().height||0)<=48) : row.getBoundingClientRect().height<=30)));
   for(const field of ['income','costs','net']) partial.currencies.bonds[field+'_count']=2;
   await render(payload);
   check('Currencies with different availability keep independent semantic counts without visible ratios',
     await page.locator('#ss-groups .ss-group').first().locator('.ss-economy').evaluate(table=>
       table.querySelectorAll('.ss-cell-coverage').length===0 &&
-      Array.from(table.querySelectorAll('.ss-money-row')).every((row,index)=>Array.from(row.querySelectorAll('.ss-money-value')).every(cell=>
+      Array.from(table.querySelectorAll('.ss-money-row')).flatMap(row=>row.classList.contains('ss-credit-pair') ?
+        ['base','received'].map(basis=>['credits_income_'+basis,'credits_costs','credits_net_'+basis].map(metric=>row.querySelector('[data-ss-metric="'+metric+'"]'))) :
+        [Array.from(row.querySelectorAll('.ss-money-value'))]).every((cells,index)=>cells.every(cell=>
         (cell.getAttribute('aria-label') || '').endsWith('Data available for '+[3,3,2][index]+' of 4 recorded battles.')))));
   for(const field of ['income','costs','net']) partial.currencies.bonds[field+'_count']=3;
   partial.currencies.gold={income:1,costs:0,net:1,income_count:2,costs_count:2,net_count:2};
   await render(payload);
   check('Visible gold preserves its independent semantic availability without another badge',
     await page.locator('#ss-groups .ss-group').first().locator('.ss-economy').evaluate(table=>
-      table.querySelectorAll('.ss-cell-coverage').length===0 && table.querySelectorAll('.ss-money-row').length===4 &&
-      Array.from(table.querySelectorAll('.ss-money-row')).every((row,index)=>Array.from(row.querySelectorAll('.ss-money-value')).every(cell=>
+      table.querySelectorAll('.ss-cell-coverage').length===0 && table.querySelectorAll('.ss-money-row').length===3 &&
+      Array.from(table.querySelectorAll('.ss-money-row')).flatMap(row=>row.classList.contains('ss-credit-pair') ?
+        ['base','received'].map(basis=>['credits_income_'+basis,'credits_costs','credits_net_'+basis].map(metric=>row.querySelector('[data-ss-metric="'+metric+'"]'))) :
+        [Array.from(row.querySelectorAll('.ss-money-value'))]).every((cells,index)=>cells.every(cell=>
         (cell.getAttribute('aria-label') || '').endsWith('Data available for '+[3,3,3,2][index]+' of 4 recorded battles.')))));
   partial.currencies.gold={income:0,costs:0,net:0,income_count:1,costs_count:1,net_count:1};
   await render(payload);
@@ -257,7 +264,7 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
   check('Base XP, Received XP and WN8 retain independent availability only in ARIA',await page.locator('#ss-groups .ss-group').first().locator('.ss-metric-row').evaluateAll(rows=>rows.every((row,index)=>
     row.getAttribute('aria-label')===row.querySelector('.ss-metric-name').textContent+' Data available for '+[3,1,2][index]+' of 4 recorded battles.' && !row.textContent.includes('/'))));
   partial.currencies.credits.net_count=2;await render(payload);
-  check('Different financial availability retains the independent count for each semantic value',await page.locator('#ss-groups .ss-group').first().locator('.ss-money-row').filter({has:page.locator('.ss-money-value[data-ss-metric="credits_income_received"]')}).locator('.ss-money-value').evaluateAll(cells=>cells.every((cell,index)=>
+  check('Different financial availability retains the independent count for each semantic value',await page.locator('#ss-groups .ss-group').first().locator('.ss-credit-pair').evaluate(pair=>['credits_income_received','credits_costs','credits_net_received'].map(metric=>pair.querySelector('[data-ss-metric="'+metric+'"]')).every((cell,index)=>
     (cell.getAttribute('aria-label') || '').endsWith('Data available for '+[3,3,2][index]+' of 4 recorded battles.') && !cell.textContent.includes('/'))));
   await page.locator('#ss-close').focus();
   const cleanupIcon=page.locator('#ss-summary .ss-performance .ss-info-button');
