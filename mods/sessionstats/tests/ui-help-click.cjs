@@ -13,13 +13,13 @@ module.exports=async ({browser,nativeHost,check})=>{
     check('One pointer click opens help without leaving the icon keyboard-focused',await tooltip.isVisible() &&
       await info.evaluate(node=>document.activeElement!==node) && await info.getAttribute('aria-expanded')==='true');
     await info.click({position:{x:4,y:5}});
-    await page.waitForTimeout(1100);
+    await page.waitForTimeout(600);
     check('A second stationary click closes help and retires the previous hover timer',await tooltip.isHidden() &&
       await info.evaluate(node=>document.activeElement!==node) && await info.getAttribute('aria-expanded')==='false');
     await page.locator('#ss-close').hover();await info.hover({position:{x:4,y:5}});
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(250);
     check('Hover after pointer dismissal begins a fresh full delay',await tooltip.isHidden());
-    await page.waitForTimeout(650);
+    await page.waitForTimeout(300);
     check('A fresh stationary hover can open help after pointer dismissal',await tooltip.isVisible());
     await page.keyboard.press('Escape');await page.locator('#ss-close').focus();await info.focus();
     check('Keyboard focus still exposes help immediately',await tooltip.isVisible() && await info.evaluate(node=>document.activeElement===node));
@@ -28,4 +28,5 @@ module.exports=async ({browser,nativeHost,check})=>{
     await info.press('Space');
     check('Keyboard activation can reopen the focused explanation',await tooltip.isVisible() && await info.evaluate(node=>document.activeElement===node));
   } finally {await page.close();}
+  await require('./ui-tooltip-delay.cjs')({browser,nativeHost,check});
 };

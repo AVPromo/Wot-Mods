@@ -44,13 +44,19 @@ with tempfile.TemporaryDirectory(prefix='grz-return-navigation-') as directory:
                 row = copy.deepcopy(service._state['battles']['return-row-060'])
                 row.update(damage=row.get('damage', 1000) + 1, reconcile=True)
                 assert service.record_result(row)
-            elif action in ('page', 'sort', 'battle_select'):
+            elif action == 'revise_summary':
+                row = copy.deepcopy(service._state['battles']['return-row-124'])
+                row.update(xp_received=54321, reconcile=True)
+                assert service.record_result(row)
+            elif action in ('page', 'sort', 'battle_select', 'vehicle_battles'):
                 accepted = command.get('account_key') == service.account_key
                 if accepted and action == 'page':
                     accepted = service.set_page(command['scope'], command['group'], int(command['page']), command['period_id'], command.get('request_id'))
                 elif accepted and action == 'sort':
                     options = dict((key, command[key]) for key in ('metric', 'statistic', 'direction', 'chronology'))
                     accepted = service.set_order(command['scope'], command['group'], options, command['period_id'])
+                elif accepted and action == 'vehicle_battles':
+                    accepted = service.set_vehicle_battles(command['scope'], command['vehicle_id'], int(command['page']), command['period_id'], command.get('chronology'))
                 elif accepted:
                     accepted = service.select_battle(command['scope'], command['id'], command['period_id'], command['request_id'])
             elif action != 'snapshot':
@@ -70,6 +76,7 @@ with tempfile.TemporaryDirectory(prefix='grz-return-navigation-') as directory:
     pending.set(id,{resolve,reject,timer});child.stdin.write(JSON.stringify({sequence:id,command})+'\n');});},close(){lines.close();child.stdin.end();child.kill();rejectAll(new Error('Synthetic native driver closed'));}};
 }
 module.exports=async({browser,nativeHost,check})=>{
+  require('./ui-returned-source.cjs')();check('Returned-source ownership and expiry use the actual shipped marker functions',true);
   const driver=nativeDriver(),page=await nativeHost(browser,{initialViewport:{width:1800,height:1400},viewport:{width:1800,height:1400,scale:1},realTimers:true});
   const sourceCard='return-map-045',mapSource='#ss-groups [data-group-id="'+sourceCard+'"] .ss-metric-battle-link[data-ss-source-metric="xp_received"][data-ss-extreme="max"]';
   const summarySource='#ss-summary .ss-metric-battle-link[data-ss-source-metric="xp_received"][data-ss-extreme="max"]';
@@ -78,7 +85,7 @@ module.exports=async({browser,nativeHost,check})=>{
     await page.evaluate(()=>{
       window.__returnBridgeErrors=[];window.__returnBridgePending=0;
       const previous=model.onAction;
-      model.onAction=function(command){previous.call(this,command);if(!['battle_select','page','sort'].includes(command.action)||window.__returnBridgeFrozen)return;
+      model.onAction=function(command){previous.call(this,command);if(!['battle_select','page','sort','vehicle_battles'].includes(command.action)||window.__returnBridgeFrozen)return;
         __returnBridgePending++;
         __returnNativeCommand(command).then(payload=>{
           if(window.__returnHoldPrefix&&command.action==='page'&&command.group==='maps'&&command.page==='0'){window.__returnHeldPrefix={command,payload};return;}
@@ -92,6 +99,12 @@ module.exports=async({browser,nativeHost,check})=>{
     async function stopAutomaticNavigation(){const box=await page.locator('#ss-scroll').boundingBox();await page.mouse.move(box.x+20,box.y+Math.min(100,box.height/2));await page.mouse.wheel(0,1);await frames(page,10);}
     async function opened(){await page.locator('#ss-groups .ss-battle-target .ss-battle-return').waitFor({state:'visible',timeout:5000});await frames(page);}
     async function ready(group){await page.waitForFunction(group=>document.getElementById('ss-group-'+group).getAttribute('aria-pressed')==='true'&&__returnBridgePending===0&&document.getElementById('ss-groups').getAttribute('aria-busy')!=='true',group,{timeout:5000});await frames(page,12);}
+    async function sourceMarker(selector,caption){
+      await page.locator(selector+'.ss-source-returned').waitFor({state:'visible',timeout:3000});
+      const result=await page.locator(selector).evaluate(node=>{const cue=node.querySelector('.ss-extreme-link-cue'),paint=cue||node,style=getComputedStyle(paint);return{count:document.querySelectorAll('.ss-source-returned').length,focus:document.activeElement===node,color:style.outlineColor,width:parseFloat(style.outlineWidth),shadow:style.boxShadow,buttonOutline:getComputedStyle(node).outlineStyle,small:!cue||cue.getBoundingClientRect().width<=18};});
+      check('Back marks only the exact source action with a visible orange frame '+caption,result.count===1&&result.focus&&result.color==='rgb(231, 162, 59)'&&result.width===2&&result.shadow!=='none'&&result.small);
+      if(selector.includes('ss-metric-battle-link')&&!selector.includes('ss-credit-extreme-actions'))check('A numeric return frame belongs only to its small cue '+caption,result.buttonOutline==='none');
+    }
     async function geometry(identifier){return page.evaluate(identifier=>{const card=[...document.querySelectorAll('#ss-groups .ss-group')].find(node=>node.getAttribute('data-group-id')===identifier),scroll=document.getElementById('ss-scroll'),box=scroll.getBoundingClientRect();const edge=Math.max(box.top,document.getElementById('ss-filter-panel').getBoundingClientRect().bottom),visible=[...document.querySelectorAll('.ss-continuous-page')].find(section=>{const r=section.getBoundingClientRect();return r.bottom>edge&&r.top<box.bottom;});return {offset:card?card.getBoundingClientRect().top-box.top:null,scroll:scroll.scrollTop,visiblePage:visible?Number(visible.getAttribute('data-page-index')):null,pageLabel:document.getElementById('ss-page-label').textContent,group:document.querySelector('.ss-group-tab[aria-pressed="true"]').id,pages:[...document.querySelectorAll('.ss-continuous-page')].map(node=>Number(node.getAttribute('data-page-index'))),payload:(scope=>({period_id:scope.period_id,data_revision:scope.data_revision,from_point:scope.from_point,to_point:scope.to_point,ordering:scope.ordering,pagination:scope.pagination}))(JSON.parse(model.payload).scopes.timeline)};},identifier);}
     // A fresh snapshot may stage a new feed while the old rendered pages
     // remain visible. The summary is fresh and can still open a source result.
@@ -118,6 +131,7 @@ module.exports=async({browser,nativeHost,check})=>{
     check('Back from a staged revision refetches current values instead of reviving the old rendered cache',
       stagedAfter.payload.data_revision===stagedScope.data_revision&&Number((await page.locator('#ss-groups [data-group-id="return-map-060"] .ss-group-wn8-kpi .ss-kpi-value').textContent()).replace(/\s/g,''))===Math.round(stagedRating));
     check('Back from a staged summary source restores that exact action focus',await page.locator(summarySource).evaluate(node=>document.activeElement===node));
+    await sourceMarker(summarySource,'staged summary');
     await configure('maps');
     for(const scenario of [{name:'pointer',keyboard:false},{name:'keyboard',keyboard:true},{name:'revised',keyboard:false,revise:true}]){
       const keyboard=scenario.keyboard;
@@ -142,6 +156,7 @@ module.exports=async({browser,nativeHost,check})=>{
       check('Back restores the exact Timeline map order, native page and loaded page window '+scenario.name,after.payload.period_id===before.payload.period_id&&after.payload.from_point===before.payload.from_point&&after.payload.to_point===before.payload.to_point&&JSON.stringify(after.payload.ordering.maps)===JSON.stringify(before.payload.ordering.maps)&&after.payload.pagination.maps.page===before.payload.pagination.maps.page&&after.pages.join(',')===before.pages.join(','));
       check('Back restores the source card anchor instead of resetting the viewport '+scenario.name,before.scroll>100&&Math.abs(after.offset-before.offset)<=3);
       check('Back restores focus to the exact source action '+scenario.name,await page.locator(mapSource).evaluate(node=>document.activeElement===node));
+      await sourceMarker(mapSource,scenario.name);
       if(scenario.revise)check('A revised return reloads fresh result values instead of reviving stale source cache',Number((await page.locator('#ss-groups [data-group-id="return-map-060"] .ss-group-wn8-kpi .ss-kpi-value').textContent()).replace(/\s/g,''))===Math.round(revisedRating));
     }
     for(const reordered of [false,true]){
@@ -163,10 +178,15 @@ module.exports=async({browser,nativeHost,check})=>{
       const summaryRestored=summaryAfter.payload.pagination.battles.page===summaryBefore.visiblePage&&summaryAfter.visiblePage===summaryBefore.visiblePage&&summaryAfter.pageLabel===summaryBefore.pageLabel&&summaryAfter.pages.join(',')===summaryBefore.pages.join(',')&&Math.abs(summaryAfter.scroll-summaryBefore.scroll)<=3&&JSON.stringify(summaryAfter.payload.ordering.battles)===JSON.stringify(summaryBefore.payload.ordering.battles);
       check('Back from an already-open Battles summary restores its visible page, cached window, order and scroll '+reordered+(summaryRestored?'':': '+JSON.stringify({before:summaryBefore,after:summaryAfter,state:await page.evaluate(()=>GRZSessionStats.getState())})),summaryRestored);
       check('Summary return restores the exact summary source focus '+reordered,await page.locator(summarySource).evaluate(node=>document.activeElement===node));
+      await sourceMarker(summarySource,'Battles summary '+reordered);
       if(reordered){const commands=await page.evaluate(start=>__grzCommands.slice(start).filter(command=>['sort','page'].includes(command.action)),commandStart);
         check('Back restores the native origin order before requesting its page',commands.length>=2&&commands[0].action==='sort'&&commands[0].metric==='off'&&commands[0].statistic==='avg'&&commands[0].chronology==='newest'&&commands[1].action==='page'&&commands[1].group==='battles'&&Number(commands[1].page)===summaryBefore.visiblePage);
       }
     }
+    await configure('battles');const oldExtreme=await page.locator(summarySource).getAttribute('data-battle-id');
+    await page.locator(summarySource).click();await opened();const newExtreme=await driver.request({action:'revise_summary'});await publish(newExtreme.payload);await opened();
+    await page.locator('.ss-battle-return').click();await ready('battles');await frames(page,35);
+    check('A changed extremum uses fallback focus without marking a replacement result or group tab',await page.evaluate(({selector,oldExtreme})=>document.activeElement===document.getElementById('ss-group-battles')&&document.querySelector(selector).getAttribute('data-battle-id')!==oldExtreme&&document.querySelectorAll('.ss-source-returned').length===0,{selector:summarySource,oldExtreme}));
     for(const changed of ['account','range']){
       await configure('battles');await page.locator(summarySource).click();await opened();
       const retired=await page.evaluate(changed=>{const callback=document.querySelector('.ss-battle-return').onclick,payload=JSON.parse(model.payload),owner={account:payload.account_key,period:payload.scopes.timeline.period_id};
@@ -177,6 +197,21 @@ module.exports=async({browser,nativeHost,check})=>{
         model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);const start=__grzCommands.length;callback();return {start,owner};},changed);await frames(page);
       check('A retired Back callback cannot restore an earlier '+changed,await page.evaluate(({start,owner})=>!__grzCommands.slice(start).some(command=>['page','sort','battle_select'].includes(command.action)&&command.account_key===owner.account&&command.period_id===owner.period),retired));
     }
+    await page.evaluate(()=>{window.__returnBridgeFrozen=false;});const vehicleSetup=await driver.request({action:'configure'});await publish(vehicleSetup.payload);
+    await page.locator('#ss-scope-manual').click();await page.locator('#ss-group-vehicles').click();await ready('vehicles');
+    const vehicleId=await page.locator('#ss-groups .ss-group').first().getAttribute('data-group-id');
+    await page.locator('#ss-groups .ss-group').first().locator('.ss-vehicle-more-button').click();
+    const historySource='#ss-groups [data-group-id="'+vehicleId+'"] .ss-map-battle-open';
+    await page.locator(historySource).first().waitFor({state:'visible',timeout:5000});await ready('vehicles');
+    const historyBattle=await page.locator(historySource).first().getAttribute('data-battle-id'),historySelector=historySource+'[data-battle-id="'+historyBattle+'"]';
+    await page.locator(historySelector).click();await opened();await page.locator('.ss-battle-return').click();await ready('vehicles');
+    await sourceMarker(historySelector,'vehicle history pointer');
+    check('Back keeps the vehicle history expanded around its marked Show battle action',await page.locator('#ss-groups .ss-group').first().locator('.ss-vehicle-more-button').getAttribute('aria-expanded')==='true');
+    const financial='#ss-groups [data-group-id="'+vehicleId+'"] .ss-credit-extreme-actions .ss-metric-battle-link[data-ss-source-metric="credits_income_received"][data-ss-extreme="max"]';
+    await page.locator(financial).click();await opened();check('Opening another source retires the previous returned marker',await page.locator('.ss-source-returned').count()===0);
+    await page.locator('.ss-battle-return').click();await ready('vehicles');await sourceMarker(financial,'financial Max');
     check('Real native return bridge accepts every owned command without errors',await page.evaluate(()=>__returnBridgeErrors.length===0));
+    await page.evaluate(()=>GRZSessionStats.destroy());
+    check('Destroying the panel removes the returned-source marker immediately',await page.locator('.ss-source-returned').count()===0);
   }finally{await page.close();driver.close();}
 };

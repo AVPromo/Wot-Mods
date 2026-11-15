@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.14 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.15 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -39,8 +39,9 @@ the selected period lack the selected metric, the filter section shows a framed
 warning with the game's native alert triangle. Pending battles alone do not
 trigger it. Min/Max offers a rounded arrow cue immediately after the number,
 with a 3 px gap, to open its source battle across Maps, Vehicles and Tiers.
-The cue takes its own place in the numeric line so native overlay sizing cannot
-place it over a digit.
+The original figure lives in a plain paint block outside the fixed-size arrow
+button. Both occupy one explicit non-wrapping row, including in native clients
+that treat anonymous text and inline decorations as separate lines.
 The whole numeric cell remains clickable; only the small cue changes its
 background on hover or focus. Financial Min/Max buttons fit their captions and
 form centered pairs with a 3 px gap. Thin grey-olive rules separate the small
@@ -53,8 +54,10 @@ known values. Credit income and net sorting separately offer Base (before bonuse
 and Received (settled income). Base totals and Base **All** sorting stay unavailable
 until every recorded battle in the group has the corresponding Base value;
 historical missing Base values remain unknown. Base Min/Average/Max still use the
-known sample, marked with the native alert triangle when incomplete; hover for
-its coverage. One known
+known sample, marked with the native alert triangle when the received reports
+themselves lack the selected field. Pending reports alone use the existing
+received/recorded counters. Range and card warnings use the same rule; coverage
+help remains available for pending-only samples. One known
 battle therefore has equal Min/Average/Max. Both net variants subtract actual
 battle costs. All is not offered for
 WN8, win rate or individual battles. Credit sums mark the existing finance total;
@@ -82,12 +85,18 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.11 source arrows and historical data corrections](docs/UI_REFINEMENTS_0.9.11.md), and
 [0.9.12 bonus amounts, localized hints and source navigation](docs/UI_REFINEMENTS_0.9.12.md), and
 [0.9.13 adjacent source actions and native warnings](docs/UI_REFINEMENTS_0.9.13.md), and
-[0.9.14 native arrow flow and compact responsive headers](docs/UI_REFINEMENTS_0.9.14.md).
+[0.9.14 native arrow flow and compact responsive headers](docs/UI_REFINEMENTS_0.9.14.md), and
+[0.9.15 native single-row actions, help timing and returned sources](docs/UI_REFINEMENTS_0.9.15.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
 already selected, including in a full-history Timeline range. **Back**, beside
 **Selected battle**, returns to the exact source context captured by that opening
-action. Vehicle role names
+action. The restored source button receives a small orange outline for five
+seconds. It follows the owned source through a harmless row refresh and clears
+when its account, range, group, order or data revision changes. Hover help opens
+after 500 ms on the same action; pointer movement within that action does not
+restart the delay. Keyboard help and explicit information-button clicks remain
+immediate. Vehicle role names
 and descriptions follow the selected mod language across the seven supported
 languages, with English fallback for missing translations.
 

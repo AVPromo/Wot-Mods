@@ -38,7 +38,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   for(const field of ['chronology','statistic','metric','direction']){
     selects[field]={trigger:new Node(),label:new Node(),menu:new Node(),options:context.selectOptions[field].map(()=>new Node())};
   }
-  for(const name of ['element','append','clear','appendClientWarning','orderKey','canonicalMetric','creditMetric','metricSeries','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning'])
+  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning'])
     vm.runInContext(actual(name),context);
   context.hasNumber=value=>typeof value==='number'&&Number.isFinite(value);
   const warningOwner=new Node(),warningIcon=context.appendClientWarning(warningOwner,'ss-sort-partial-icon');

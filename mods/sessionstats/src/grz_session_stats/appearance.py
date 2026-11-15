@@ -304,6 +304,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-summary-main { flex:0 1 460rem; width:460rem; max-width:100%; min-width:0; padding:0 6rem; margin:0 0 8rem; }
 .ss-summary-details { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:center; flex:0 1 650rem; width:650rem; max-width:100%; min-width:0; }
 .ss-summary-details > .ss-performance { flex:0 1 300rem; width:300rem; max-width:100%; min-width:0; padding:4rem 4rem 0 0; margin:0 0 8rem; }
+.ss-summary-details.ss-wide-performance { flex-basis:750rem; width:750rem; }
+.ss-summary-details > .ss-performance.ss-wide-metrics { flex-basis:400rem; width:400rem; }
 .ss-summary-details > .ss-economy { flex:0 1 350rem; width:350rem; max-width:100%; min-width:0; padding:4rem 0 0; margin:0 0 8rem; border:0; }
 .ss-summary-wrap .ss-summary-layout { flex-direction:column; align-items:center; }
 .ss-summary-wrap .ss-summary-main, .ss-summary-wrap .ss-summary-details { flex-basis:auto; }
@@ -740,21 +742,22 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group-sort-number { display:block; width:auto; margin:0; color:{{colors.kpi_value_text}}; font-size:16rem; line-height:19rem; white-space:nowrap; }
 .ss-group-sort-host .ss-group-sort-value { display:flex; flex:0 0 auto; flex-direction:column; align-items:center; justify-content:center; width:auto; height:auto; min-height:0; margin:0; padding:3rem 6rem; border:0; text-align:center; }
 .ss-group-sort-host .ss-group-sort-caption, .ss-group-sort-host .ss-group-sort-number { flex:0 0 auto; height:auto; min-height:0; text-align:center; }
-/* Keep numeric text in its native cell; only the transparent hit target overlays it. */
+/* Paint numbers outside the button; explicit nonwrapping flex items reserve its lane. */
 .ss-metric-battle-link { display:block; min-width:0; width:100%; min-height:26rem; margin:0; padding:3rem 0; border:1rem solid {{colors.button_border}}; border-radius:{{radii.control}}rem; background:linear-gradient({{colors.button_background_start}},{{colors.button_background_middle}} 48%,{{colors.button_background_end}}); color:{{colors.button_text}}; font-family:Warhelios, Arial, sans-serif; font-size:14rem; font-weight:normal; line-height:20rem; text-align:center; cursor:pointer; }
 .ss-metric-battle-link:hover, .ss-metric-battle-link:focus { outline:1rem solid {{colors.session_tab_marker_background}}; outline-offset:-1rem; border-color:{{colors.session_tab_marker_background}}; }
 .ss-metric-extreme-action .ss-metric-action-label { display:block; width:100%; min-width:0; height:16rem; font-size:11rem; line-height:16rem; text-align:center; }
-.ss-metric-row .ss-metric-number.ss-extreme-cell { position:relative; padding-left:0; padding-right:2rem; }
+.ss-metric-row .ss-metric-number.ss-extreme-cell { display:flex; position:relative; flex-wrap:nowrap; align-items:center; justify-content:flex-end; min-width:0; padding-left:0; padding-right:2rem; cursor:pointer; }
+.ss-extreme-number { display:block; flex:0 0 auto; min-width:0; white-space:nowrap; text-align:right; }
 .ss-group .ss-extreme-cell.ss-sort-active-value { background:none; box-shadow:none; }
 .ss-extreme-cell > .ss-metric-battle-link,
 .ss-extreme-cell > .ss-metric-battle-link:hover,
-.ss-extreme-cell > .ss-metric-battle-link:focus { position:absolute; left:0; top:0; width:100%; height:100%; min-height:22rem; padding:0; background:none; border:0; outline:none; box-shadow:none; }
-.ss-extreme-link-cue { display:inline-block; position:relative; width:16rem; height:18rem; margin-top:1rem; margin-left:3rem; border:0; outline:none; box-shadow:none; border-radius:{{radii.extreme_link}}rem; background:{{colors.extreme_link_background}}; vertical-align:top; pointer-events:none; }
+.ss-extreme-cell > .ss-metric-battle-link:focus { display:block; position:relative; flex:0 0 16rem; align-self:center; width:16rem; min-width:16rem; max-width:16rem; height:18rem; min-height:18rem; margin:0 0 0 3rem; padding:0; background:none; border:0; outline:none; box-shadow:none; }
+.ss-extreme-link-cue { display:block; position:relative; width:16rem; height:18rem; border:0; outline:none; box-shadow:none; border-radius:{{radii.extreme_link}}rem; background:{{colors.extreme_link_background}}; pointer-events:none; }
 .ss-extreme-link-arrow { display:block; position:relative; width:16rem; height:18rem; pointer-events:none; }
 .ss-extreme-link-arrow:before { content:""; display:block; position:absolute; left:3rem; top:9rem; width:10rem; height:1rem; background:{{colors.extreme_link_text}}; transform:rotate(-45deg); }
 .ss-extreme-link-arrow:after { content:""; display:block; position:absolute; left:7rem; top:4rem; width:5rem; height:5rem; border-top:1rem solid {{colors.extreme_link_text}}; border-right:1rem solid {{colors.extreme_link_text}}; }
-.ss-extreme-cell > .ss-metric-battle-link:hover + .ss-extreme-link-cue,
-.ss-extreme-cell > .ss-metric-battle-link:focus + .ss-extreme-link-cue,
+.ss-extreme-cell > .ss-metric-battle-link:hover .ss-extreme-link-cue,
+.ss-extreme-cell > .ss-metric-battle-link:focus .ss-extreme-link-cue,
 .ss-extreme-cell.ss-sort-active-value .ss-extreme-link-cue { background:{{colors.extreme_link_hover_background}}; }
 .ss-group-stats > .ss-map-more-button { flex:0 0 72rem; align-self:center; width:72rem; min-width:72rem; margin-left:4rem; padding:3rem 4rem; font-size:11rem; line-height:16rem; }
 .ss-group-stats > .ss-map-more-button .ss-control-label { font-size:11rem; line-height:16rem; }
@@ -800,6 +803,10 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-battle-return-arrow { display:block; position:absolute; left:3rem; top:1rem; width:14rem; height:14rem; pointer-events:none; }
 .ss-battle-return-arrow:before { content:""; display:block; position:absolute; left:2rem; top:7rem; width:11rem; height:1rem; background:{{colors.extreme_link_text}}; }
 .ss-battle-return-arrow:after { content:""; display:block; position:absolute; left:2rem; top:4rem; width:6rem; height:6rem; border-left:1rem solid {{colors.extreme_link_text}}; border-bottom:1rem solid {{colors.extreme_link_text}}; transform:rotate(45deg); }
+.ss-control.ss-source-returned { outline:2rem solid {{colors.session_tab_marker_background}}; outline-offset:1rem; box-shadow:0 0 5rem {{colors.session_tab_marker_background}}; }
+.ss-extreme-cell > .ss-metric-battle-link.ss-source-returned { outline:none; box-shadow:none; }
+.ss-extreme-cell > .ss-metric-battle-link.ss-source-returned .ss-extreme-link-cue,
+.ss-extreme-cell > .ss-metric-battle-link.ss-source-returned + .ss-extreme-link-cue { outline:2rem solid {{colors.session_tab_marker_background}}; outline-offset:1rem; box-shadow:0 0 5rem {{colors.session_tab_marker_background}}; }
 .ss-battle-target-outline { display:block; position:absolute; z-index:3; top:-3rem; right:-3rem; bottom:-3rem; left:-3rem; border:3rem solid {{colors.session_tab_marker_background}}; border-radius:{{radii.group_card}}rem; box-shadow:0 0 9rem {{colors.session_tab_marker_background}}, inset 0 0 0 1rem {{colors.session_tab_marker_background}}; pointer-events:none; }
 .ss-target-pulsing .ss-battle-target-outline { animation:ss-battle-target-pulse 1s ease-in-out 5; }
 .ss-target-muted .ss-battle-target-outline { opacity:{{opacity.target_dimmed}}; }
@@ -875,6 +882,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group .ss-details { flex-direction:row; flex-wrap:wrap; }
 .ss-group .ss-performance { display:flex; flex-direction:column; justify-content:space-around; flex:1 1 300rem; min-width:0; width:auto; }
 .ss-group .ss-performance.ss-long-metrics { flex-basis:330rem; }
+.ss-group .ss-performance.ss-wide-metrics { flex-basis:400rem; }
 .ss-group .ss-economy { flex:1 1 296rem; min-width:0; width:auto; }
 .ss-group .ss-economy.ss-long-finance { flex-basis:304rem; }
 .ss-group .ss-metric-name { width:28%; padding-left:1rem; padding-right:0; }

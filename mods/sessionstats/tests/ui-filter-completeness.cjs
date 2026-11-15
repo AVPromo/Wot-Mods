@@ -26,8 +26,9 @@ module.exports=async({browser,nativeHost,check})=>{
       if(options.missing)delete scope.summary[metric];
       if(options.legacy){delete scope.summary[metric];scope.summary[options.legacy]={count,min:0,avg:0,max:0,sum:0};}
       const item=scope.maps[0];scope.maps=[item];
-      item.stats.battles=item.stats.observed_battles=1;
-      for(const metric of metrics)item.stats[metric]={count:options.pageMissing?0:1,min:0,avg:0,max:0,sum:0};
+      item.stats.battles=options.itemReceived===undefined?1:options.itemReceived;
+      item.stats.observed_battles=options.itemObserved===undefined?item.stats.battles:options.itemObserved;
+      for(const metric of metrics)item.stats[metric]={count:options.itemCount===undefined?(options.pageMissing?0:item.stats.battles):options.itemCount,min:0,avg:0,max:0,sum:0};
       scope.ordering.maps={metric,statistic:options.statistic||'avg',direction:'desc',chronology:'newest'};
       scope.pagination.maps={page:options.page||0,pages:3,total:85,page_size:40};scope.data_revision='warning-'+serial;
       if(options.empty){scope.maps=[];scope.pagination.maps={page:0,pages:1,total:0,page_size:40};}
@@ -61,6 +62,16 @@ module.exports=async({browser,nativeHost,check})=>{
     for(const metric of ['off','battles','win_rate']){
       await publish({metric,count:0});
       check('An inapplicable field warning stays hidden for '+metric,!(await warning()).visible);
+    }
+    for(const metric of metrics.filter(metric=>metric.startsWith('credits_')))for(const count of [24,23]){
+      await publish({metric,count,received:24,observed:27,itemReceived:24,itemObserved:27,itemCount:count});
+      const result=await warning(),badge=await page.locator('#ss-groups .ss-group-sort-value').evaluate(node=>({
+        icon:node.querySelectorAll('.ss-sort-partial-icon').length,help:node.getAttribute('data-ss-help')||'',
+        custom:node.classList.contains('ss-hover-help'),title:node.getAttribute('title'),hostTitle:node.parentNode.getAttribute('title')}));
+      check('Range and card warnings share received-field coverage for '+metric+'/'+count,
+        result.visible===(count<24)&&badge.icon===(count<24?1:0)&&badge.custom&&badge.title===null&&badge.hostTitle===null&&
+        badge.help.includes(count+' of 27 recorded battles')&&badge.help.includes(count+' of 24 received results')&&
+        (count<24?badge.help.includes(languages.en['sort.partial']):badge.help.includes('Pending: 3')&&!badge.help.includes(languages.en['sort.partial'])));
     }
     await publish({metric:'xp_base',count:3});
     const structural=await page.locator('#ss-sort-data-warning').evaluate(node=>{

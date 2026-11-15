@@ -62,9 +62,9 @@ module.exports=async({browser,nativeHost,check})=>{
           if(options.large){
             item.stats.observed_battles=6;
             const amount=-1234567890,stats=item.stats;
-            stats.credits_net_received={count:4,min:amount,avg:amount,max:amount,sum:amount*4};
+            stats.credits_net_received={count:3,min:amount,avg:amount,max:amount,sum:amount*3};
             stats.currencies.credits.income=61728440;stats.currencies.credits.costs=5000000000;
-            stats.currencies.credits.net=amount*4;stats.currencies.credits.income_base=40000000;
+            stats.currencies.credits.net=amount*3;stats.currencies.credits.net_count=3;stats.currencies.credits.income_base=40000000;
             stats.currencies.credits.net_base=-4960000000;
             for(const statistic of ['min','max'])item.extrema_battles.credits_net_received[statistic].value=amount;
           }
@@ -174,10 +174,12 @@ module.exports=async({browser,nativeHost,check})=>{
         return {performance:performance.length,finance:finance.length,
           arrows:performance.every(cell=>{
             const button=cell.querySelector('.ss-metric-battle-link'),cue=cell.querySelector('.ss-extreme-link-cue'),
-              figure=[...cell.childNodes].find(node=>node!==button),range=document.createRange();range.selectNode(figure);
+              figure=cell.querySelector('.ss-extreme-number'),range=document.createRange();range.selectNodeContents(figure);
             const ink=range.getBoundingClientRect(),box=cue.getBoundingClientRect();
             return Math.abs((box.left-ink.right)/scale-3)<=0.5&&Math.abs(box.width/scale-16)<=0.5&&
-              Math.abs(box.height/scale-18)<=0.5&&figure.parentNode===cell&&!button.contains(figure);
+              Math.abs(box.height/scale-18)<=0.5&&figure.parentNode===cell&&figure===cell.firstChild&&
+              figure.nextSibling===button&&!button.contains(figure)&&button.contains(cue)&&
+              getComputedStyle(cell).display==='flex'&&getComputedStyle(cell).flexWrap==='nowrap';
           }),
           pairs:finance.every(host=>{
             const buttons=[...host.querySelectorAll('.ss-metric-battle-link')],box=host.getBoundingClientRect(),

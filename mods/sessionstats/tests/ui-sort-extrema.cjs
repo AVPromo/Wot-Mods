@@ -63,7 +63,7 @@ module.exports=async({browser,nativeHost,check})=>{
           await action.count()===1&&await action.evaluate((node,{group,metric,statistic})=>{
             const cell=node.parentNode,text=Array.from(cell.childNodes).filter(child=>child!==node).map(child=>child.textContent).join('').replace(/\s/g,''),box=node.getBoundingClientRect(),style=getComputedStyle(cell);
             return node.getAttribute('data-battle-id')===group+'-'+metric+'-'+statistic&&
-              text===(statistic==='min'?'0':'12345')&&box.height>=22&&box.width>20&&
+              text===(statistic==='min'?'0':'12345')&&Math.abs(box.height-18)<=0.5&&Math.abs(box.width-16)<=0.5&&
               style.textAlign==='right'&&cell.classList.contains('ss-extreme-cell')&&node.textContent===''&&
               node.getAttribute('aria-label').includes('Show battle')&&
               node.getAttribute('data-ss-help').includes('Synthetic off-page map')&&
@@ -105,7 +105,7 @@ module.exports=async({browser,nativeHost,check})=>{
       check('Financial '+metric+'/'+statistic+' highlights its action or All quantity without changing permanent links',
         await active.count()===(statistic==='min'||statistic==='max'?1:0)&&
         (statistic!=='min'&&statistic!=='max'||await active.getAttribute('data-ss-extreme')===statistic)&&
-        (statistic!=='min'&&statistic!=='max'||await active.getAttribute('title').then(text=>
+        (statistic!=='min'&&statistic!=='max'||await active.getAttribute('data-ss-help').then(text=>
           text.includes('Synthetic off-page map')&&text.includes('2026')))&&
         await page.locator('#ss-groups .ss-credit-extreme-actions .ss-metric-battle-link').count()===10);
     }
@@ -132,7 +132,7 @@ module.exports=async({browser,nativeHost,check})=>{
     await page.keyboard.press('Escape');
     const geometry=await page.locator('#ss-groups .ss-metric-row').evaluateAll(rows=>rows.map(row=>{
       const cells=Array.from(row.children).slice(1),numbers=cells.map(cell=>{
-        const button=cell.querySelector('button'),figure=Array.from(cell.childNodes).find(child=>child!==button),range=document.createRange();range.selectNode(figure);
+        const button=cell.querySelector('button'),figure=cell.querySelector('.ss-extreme-number')||cell,range=document.createRange();range.selectNodeContents(figure);
         const box=range.getBoundingClientRect();
         return {box:{top:box.top,bottom:box.bottom,right:box.right},cell:cell.getBoundingClientRect().right,
           font:parseFloat(getComputedStyle(cell).fontSize)};
@@ -160,7 +160,7 @@ module.exports=async({browser,nativeHost,check})=>{
       return box.width===0&&box.height===0;
     });
     check('The native paint failure model reproduces the prior inline-caption blank while retaining its button',model);
-    for(const [language,messages]of Object.entries(catalogs))for(const width of [550,1200])for(const maximum of [12345,123456])for(const group of ['maps','vehicles','tiers']){
+    for(const [language,messages]of Object.entries(catalogs))for(const width of [550,1200])for(const maximum of [12345,123456,12345678])for(const group of ['maps','vehicles','tiers']){
       await publish(group,'off','avg',{language,messages,width,maximum});
       const painted=await page.evaluate(({maximum,messages,width})=>{
         if(Math.abs(document.querySelector('.ss-window').getBoundingClientRect().width-width)>0.5)return false;
@@ -169,16 +169,18 @@ module.exports=async({browser,nativeHost,check})=>{
           const average=row.children[2];
           if(average.querySelector('button')||average.classList.contains('ss-extreme-cell'))return false;
           return [['min',1,'0'],['max',3,maximum.toLocaleString('en-US').replace(/,/g,'')]].every(([statistic,index,expected])=>{
-            const cell=row.children[index],button=cell.querySelector('.ss-metric-battle-link'),original=cell.__originalNativeValue;
-            if(!button||!original||!original.length||original.some(node=>node.parentNode!==cell)||button.textContent!=='')return false;
+            const cell=row.children[index],button=cell.querySelector('.ss-metric-battle-link'),paint=cell.querySelector('.ss-extreme-number'),original=cell.__originalNativeValue;
+            if(!button||!paint||!original||!original.length||original.some(node=>node.parentNode!==paint)||button.textContent!==''||
+              paint.parentNode!==cell||cell.firstChild!==paint||paint.nextSibling!==button||button.contains(paint))return false;
             const actual=original.map(node=>node.textContent).join('').replace(/\s/g,'');
             const range=document.createRange();range.selectNode(original[0]);const ink=range.getBoundingClientRect(),box=cell.getBoundingClientRect(),hit=button.getBoundingClientRect();
             const visual=getComputedStyle(cell),overlay=getComputedStyle(button),cue=cell.querySelector('.ss-extreme-link-cue'),corner=cue.getBoundingClientRect();
             return actual===expected&&ink.width>3&&ink.height>=14&&ink.left>=box.left-1&&ink.right<=box.right+1&&
-              hit.width>=box.width-1&&hit.height>=22&&overlay.backgroundImage==='none'&&overlay.backgroundColor==='rgba(0, 0, 0, 0)'&&
+              Math.abs(hit.width-16)<=0.5&&Math.abs(hit.height-18)<=0.5&&overlay.backgroundImage==='none'&&overlay.backgroundColor==='rgba(0, 0, 0, 0)'&&
               parseFloat(overlay.borderWidth)===0&&overlay.outlineStyle==='none'&&overlay.boxShadow==='none'&&
-              visual.boxShadow==='none'&&getComputedStyle(cue).display==='inline-block'&&
-              cue.parentNode===cell&&cue.previousSibling===button&&getComputedStyle(cue).position==='relative'&&
+              visual.boxShadow==='none'&&visual.display==='flex'&&visual.flexWrap==='nowrap'&&getComputedStyle(cue).display==='block'&&
+              getComputedStyle(paint).display==='block'&&getComputedStyle(paint).whiteSpace==='nowrap'&&
+              cue.parentNode===button&&getComputedStyle(cue).position==='relative'&&overlay.position==='relative'&&overlay.flexShrink==='0'&&
               parseFloat(getComputedStyle(cue).borderWidth)===0&&getComputedStyle(cue).outlineStyle==='none'&&
               getComputedStyle(cue).backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(getComputedStyle(cue).borderRadius)>0&&
               Math.abs(corner.width-16)<=0.5&&Math.abs(corner.height-18)<=0.5&&
@@ -218,42 +220,60 @@ module.exports=async({browser,nativeHost,check})=>{
       }));
       check('Native-safe original figures have adjacent right arrows and compact paired credit actions '+language+'/'+width+'/'+maximum+'/'+group+(failure?': '+JSON.stringify(failure):''),painted);
     }
-    // The live client's percentage-sized absolute button can resolve against
-    // the content box instead of the padding box. Its width must not place
-    // either the original number or the visible arrow. Keep the caption-paint
-    // failure model above active while exercising this independent failure.
+    // The live client promoted mixed anonymous cell text/inline cues onto
+    // separate lines. Model that block cue behavior together with the older
+    // button-caption paint failure: only explicit flex items may own the row.
+    const anonymous=await page.addStyleTag({content:
+      '.ss-metric-number > .ss-extreme-link-cue { display:block !important; }'});
+    check('The anonymous-text native model reproduces the old second-line arrow',await page.evaluate(()=>{
+      const row=document.createElement('div');row.className='ss-metric-row';
+      row.style.cssText='position:fixed;left:0;top:0;width:180px;';
+      const cell=document.createElement('div');cell.className='ss-metric-number ss-extreme-cell';cell.style.cssText='display:block;width:180px;';
+      const original=document.createTextNode('123456');cell.appendChild(original);
+      const cue=document.createElement('span');cue.className='ss-extreme-link-cue';cell.appendChild(cue);row.appendChild(cell);document.body.appendChild(row);
+      const range=document.createRange();range.selectNode(original);const ink=range.getBoundingClientRect(),arrow=cue.getBoundingClientRect();
+      row.remove();return arrow.top>=ink.bottom-1;
+    }));
     await page.setViewportSize({width:3600,height:2600});
-    for(const scale of [1,2])for(const width of [550,860,1600]){
-      await publish('maps','off','avg',{width,scale,maximum:123456});
+    for(const scale of [1,2])for(const width of [550,860,1600])for(const group of ['maps','vehicles','tiers'])for(const maximum of [123456,12345678]){
+      await publish(group,'off','avg',{width,scale,maximum});
       const native=await page.locator('#ss-summary .ss-extreme-cell,#ss-groups .ss-extreme-cell').evaluateAll((cells,scale)=>{
         const failures=[];
         for(const cell of cells){
           const button=cell.querySelector('.ss-metric-battle-link'),cue=cell.querySelector('.ss-extreme-link-cue'),arrow=cue.querySelector('.ss-extreme-link-arrow'),
-            original=cell.__originalNativeValue,range=document.createRange();range.selectNode(original[0]);
-          const before=cue.getBoundingClientRect(),style=getComputedStyle(cell);
-          button.style.width=(cell.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight))+'px';
-          const ink=range.getBoundingClientRect(),after=cue.getBoundingClientRect(),hit=button.getBoundingClientRect(),bounds=cell.getBoundingClientRect();
+            paint=cell.querySelector('.ss-extreme-number'),original=cell.__originalNativeValue,range=document.createRange();range.selectNode(original[0]);
+          const style=getComputedStyle(cell),action=getComputedStyle(button),ink=range.getBoundingClientRect(),after=cue.getBoundingClientRect(),hit=button.getBoundingClientRect(),bounds=cell.getBoundingClientRect();
           const canvas=document.createRange();canvas.selectNodeContents(cue);const painted=canvas.getBoundingClientRect();
-          if(cue.parentNode!==cell||button.contains(cue)||button.textContent!==''||original.some(node=>node.parentNode!==cell)||
-            Math.abs(after.left-before.left)>0.1||Math.abs(after.right-before.right)>0.1||
+          const line=parseFloat(style.lineHeight)+parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
+          if(!paint||paint!==cell.firstChild||paint.nextSibling!==button||cue.parentNode!==button||button.textContent!==''||original.some(node=>node.parentNode!==paint)||
+            style.display!=='flex'||style.flexWrap!=='nowrap'||getComputedStyle(paint).whiteSpace!=='nowrap'||action.position!=='relative'||action.flexShrink!=='0'||
             after.left<ink.right+2*scale||after.left>ink.right+4*scale||after.right>bounds.right-scale||
-            hit.left>ink.left+1||hit.right<after.right-1||!arrow||painted.width<15*scale||painted.height<17*scale||
+            Math.abs((after.top+after.bottom-ink.top-ink.bottom)/scale)>4||bounds.height>line+scale||
+            Math.abs(hit.width-16*scale)>0.5||Math.abs(hit.height-18*scale)>0.5||!arrow||painted.width<15*scale||painted.height<17*scale||
             painted.left<bounds.left-1||painted.right>bounds.right+1)
-            failures.push({value:original.map(node=>node.textContent).join(''),gap:(after.left-ink.right)/scale,hitRight:(hit.right-after.right)/scale});
+            failures.push({value:original.map(node=>node.textContent).join(''),gap:(after.left-ink.right)/scale,height:bounds.height/scale,line:line/scale});
         }
         return {cells:cells.length,failures};
       },scale);
-      check('Native content-box overlays cannot overlap complete figures or relocate their visible arrow at '+width+'/'+scale+': '+JSON.stringify(native),
+      check('Explicit native paint/action flex items keep complete figures and arrows on one compact line '+group+'/'+width+'/'+scale+'/'+maximum+': '+JSON.stringify(native),
         native.cells===12&&native.failures.length===0);
       await page.mouse.move(5,5);await frames(page);
       const before=await commands(),cue=await page.locator('#ss-groups .ss-metric-row[data-ss-metric="xp_base"] .ss-extreme-cell').last().locator('.ss-extreme-link-cue').boundingBox();
       await page.mouse.click(cue.x+cue.width/2,cue.y+cue.height/2);await frames(page);
       const after=await commands();
-      check('The visible normal-flow arrow center dispatches exactly one source action at '+width+'/'+scale,
-        after.length===before.length+1&&after[after.length-1].id==='maps-xp_base-max');
+      check('The visible fixed arrow center dispatches exactly one source action '+group+'/'+width+'/'+scale+'/'+maximum,
+        after.length===before.length+1&&after[after.length-1].id===group+'-xp_base-max');
+      const number=await page.locator('#ss-groups .ss-metric-row[data-ss-metric="xp_base"] .ss-extreme-number').last().boundingBox();
+      await page.mouse.click(number.x+number.width/2,number.y+number.height/2);await frames(page);
+      const numberCommands=await commands();
+      check('Clicking the original numeric paint block dispatches one source action '+group+'/'+width+'/'+scale+'/'+maximum,
+        numberCommands.length===after.length+1&&numberCommands[numberCommands.length-1].id===group+'-xp_base-max');
+      await link('groups','xp_base','max').press('Enter');await frames(page);
+      check('Keyboard action does not double-dispatch through the cell '+group+'/'+width+'/'+scale+'/'+maximum,
+        (await commands()).length===numberCommands.length+1);
     }
     await page.setViewportSize({width:1800,height:1300});
-    await page.evaluate(()=>{Node.prototype.appendChild=__extremeOriginalAppend;delete window.__extremeOriginalAppend;});await collapse.evaluate(node=>node.remove());
+    await page.evaluate(()=>{Node.prototype.appendChild=__extremeOriginalAppend;delete window.__extremeOriginalAppend;});await collapse.evaluate(node=>node.remove());await anonymous.evaluate(node=>node.remove());
     // Timeline history can contain old received-only records and a few newer
     // base results. A retained card's cached sorting scalar must never choose
     // the displayed figure for a newly selected statistic.
@@ -305,7 +325,7 @@ module.exports=async({browser,nativeHost,check})=>{
           }));
           await icon.hover();
           await page.evaluate(()=>{
-            for(const [id,timer]of __grzTimers)if(timer.delay===1000&&String(timer.callback).includes('helpPending')){
+            for(const [id,timer]of __grzTimers)if(timer.delay===500&&String(timer.callback).includes('helpPending')){
               __grzTimers.delete(id);timer.callback();
             }
           });

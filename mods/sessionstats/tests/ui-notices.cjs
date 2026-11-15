@@ -63,18 +63,18 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
   const performance=page.locator('#ss-summary .ss-performance');
   const info=performance.locator('.ss-info-button');
   await performance.hover({position:{x:5,y:5}});
-  await page.waitForTimeout(3100);
+  await page.waitForTimeout(650);
   check('Ordinary section hover has no help target or tooltip',
     await performance.evaluate(section=>!section.hasAttribute('data-ss-help') && !section.hasAttribute('tabindex') &&
       !section.hasAttribute('aria-describedby') && getComputedStyle(section).cursor!=='help') &&
     await page.locator('#ss-help-tooltip').isHidden());
   await info.hover({position:{x:3,y:5}});
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(200);
   check('Info icon hover waits instead of opening immediately',await page.locator('#ss-help-tooltip').isHidden());
   const infoBox=await info.boundingBox();
   await page.mouse.move(infoBox.x+7,infoBox.y+5);
-  await page.waitForTimeout(600);
-  check('Pointer movement restarts the full hover delay',await page.locator('#ss-help-tooltip').isHidden());
+  await page.waitForTimeout(100);
+  check('Pointer movement keeps the original entry delay pending before 500 ms',await page.locator('#ss-help-tooltip').isHidden());
   await page.locator('#ss-help-tooltip').evaluate(tooltip => {
     // A new Gameface tooltip can have no measured size until its next frame.
     // Count production reads, then restore the real method before Playwright
@@ -86,14 +86,14 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
       return {left:0,right:0,top:0,bottom:0,width:0,height:0};
     };
   });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(250);
   const tooltipAudit=await page.locator('#ss-help-tooltip').evaluate(tooltip=>{
     const audit={reads:tooltip.__grzBoundsReads,display:getComputedStyle(tooltip).display};
     tooltip.getBoundingClientRect=tooltip.__grzOriginalBounds;
     delete tooltip.__grzOriginalBounds;delete tooltip.__grzBoundsReads;
     return audit;
   });
-  check('A stationary info icon opens its own explanation after one second',
+  check('An info icon opens its own explanation 500 ms after entry despite pointer movement',
     tooltipAudit.reads===0 && tooltipAudit.display==='block' &&
     await info.getAttribute('aria-describedby')==='ss-help-tooltip' && await info.getAttribute('aria-expanded')==='true' &&
     await page.locator('#ss-help-tooltip').isVisible() &&
@@ -127,12 +127,12 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
   await info.hover({position:{x:3,y:5}});
   await page.waitForTimeout(200);
   await page.locator('#ss-close').hover();
-  await page.waitForTimeout(900);
-  check('Leaving before one second cancels the pending help',await page.locator('#ss-help-tooltip').isHidden());
+  await page.waitForTimeout(600);
+  check('Leaving before 500 ms cancels the pending help',await page.locator('#ss-help-tooltip').isHidden());
   await info.hover({position:{x:3,y:5}});
   await page.waitForTimeout(200);
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(600);
   check('Escape also cancels pending help without closing the panel',
     await page.locator('#ss-help-tooltip').isHidden() &&
     await page.evaluate(()=>__grzCommands.filter(command=>command.action==='close').length)===closeCommands);
@@ -148,10 +148,10 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
     window.setTimeout=function(callback,delay,...args) {
       let id;
       id=audit.originalSet.call(window,function () {
-        if(delay===1000) audit.fired.push(id);
+        if(delay===500) audit.fired.push(id);
         callback.apply(window,args);
       },delay);
-      if(delay===1000) audit.scheduled.push(id);
+      if(delay===500) audit.scheduled.push(id);
       return id;
     };
     window.clearTimeout=function(id) {
@@ -165,12 +165,12 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
     const audit=window.__grzHoverTimerAudit;
     return [...audit.scheduled].reverse().find(id=>!audit.cleared.includes(id) && !audit.fired.includes(id));
   });
-  check('The update scenario starts with a pending one-second info hover',typeof pendingTimer==='number');
+  check('The update scenario starts with a pending 500 ms info hover',typeof pendingTimer==='number');
   await render(payload);
   // Replacing an icon beneath a stationary pointer can legitimately generate
   // a new mouseover. Leave the replacement while checking the previous timer.
   await page.locator('#ss-close').hover();
-  await page.waitForTimeout(1100);
+  await page.waitForTimeout(600);
   const timerAudit=await page.evaluate(()=>{
     const audit=window.__grzHoverTimerAudit;
     window.setTimeout=audit.originalSet;window.clearTimeout=audit.originalClear;
@@ -264,7 +264,7 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
   await cleanupIcon.hover({position:{x:3,y:5}});
   await page.waitForTimeout(100);
   await page.evaluate(()=>GRZSessionStats.destroy());
-  await page.waitForTimeout(1100);
+  await page.waitForTimeout(600);
   await cleanupIcon.focus();
   check('Destroy cancels pending help and removes focus listeners',
     await page.locator('#ss-help-tooltip').isHidden() && await cleanupIcon.getAttribute('aria-expanded')==='false');

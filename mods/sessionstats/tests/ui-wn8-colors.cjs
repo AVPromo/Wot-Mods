@@ -52,6 +52,17 @@ function assertWN8Source(){
     assert.strictEqual(context.wn8Color(2899.5),'#5a3175');
     if(file==='session_stats.js')panel=context;
   }
+  const wrapped=new Node('div','','0');panel.paintWN8(wrapped,0);
+  const originalInk=wrapped.querySelector('.ss-wn8-low-ink'),paint=new Node('span','ss-extreme-number','0'),action=new Node('button','ss-metric-battle-link','');
+  wrapped.removeChild(originalInk);paint.appendChild(originalInk);wrapped.appendChild(paint);wrapped.appendChild(action);
+  for(const value of [299.5,null,0,245,1600]){
+    panel.paintWN8(wrapped,value);
+    assert.strictEqual(wrapped.children.length,2,'Rating corrections retain the separate paint block and source action');
+    assert.strictEqual(wrapped.children[0],paint);assert.strictEqual(wrapped.children[1],action);
+    assert.strictEqual(action.parentNode,wrapped);assert.strictEqual(action.textContent,'');
+    assert.strictEqual(Boolean(paint.querySelector('.ss-wn8-low-ink')),typeof value==='number'&&Math.round(value)<300,
+      'Corrections update only the nested native paint block at '+value);
+  }
   Object.assign(panel,{append:(parent,child)=>parent.appendChild(child),element:(tag,cls,text)=>new Node(tag,cls,text),
     integer:value=>String(Math.round(value)),number:String,coverage:()=>null,explainCoverage(){}});
   vm.runInContext(['headlineStat','measureRow','battleMeasure','paintWN8Card'].map(name=>sourceFunction(read('session_stats.js'),name)).join('\n'),panel);

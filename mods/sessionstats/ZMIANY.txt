@@ -1,5 +1,11 @@
 SESSION STATS — CHANGELOG
 
+0.9.15 • 2026-11-15
+• Keep extrema figures and source arrows in one explicit non-wrapping row, with value painting outside the button.
+• Show custom help after 500 ms from entering the same action, without restarting on pointer movement.
+• Use missing fields in received reports consistently for range and per-card orange warnings; pending-only coverage keeps its own counts.
+• Mark the restored source action with an orange outline after returning from its battle.
+
 0.9.14 • 2026-11-15
 • Reserve arrow space in the native numeric line instead of positioning the cue over digits.
 • Restore compact fixed-width headline statistics and widen only the sorting result.
