@@ -73,11 +73,11 @@ function assertWN8Source(){
 }
 async function sourceArrowAppearance(page){
   return page.locator('#ss-groups [data-ss-metric="battle_wn8"] .ss-extreme-cell').evaluateAll(cells=>cells.length>0&&cells.every(cell=>{
-    const button=cell.querySelector('.ss-metric-battle-link'),cue=button&&button.querySelector('.ss-extreme-link-cue');
+    const button=cell.querySelector('.ss-metric-battle-link'),cue=cell.querySelector('.ss-extreme-link-cue');
     if(!button||!cue)return false;
     const frameless=node=>{const style=getComputedStyle(node);return parseFloat(style.borderWidth)===0&&style.outlineStyle==='none'&&style.boxShadow==='none';};
     const cellStyle=getComputedStyle(cell),buttonStyle=getComputedStyle(button),arrow=getComputedStyle(cue),
-      shaft=getComputedStyle(cue,':before'),head=getComputedStyle(cue,':after');
+      glyph=cue.querySelector('.ss-extreme-link-arrow'),shaft=getComputedStyle(glyph,':before'),head=getComputedStyle(glyph,':after');
     return frameless(cell)&&frameless(button)&&frameless(cue)&&parseFloat(arrow.borderRadius)>0&&
       cellStyle.backgroundColor==='rgba(0, 0, 0, 0)'&&buttonStyle.backgroundColor==='rgba(0, 0, 0, 0)'&&buttonStyle.backgroundImage==='none'&&
       ['rgb(48, 55, 38)','rgb(80, 88, 59)'].includes(arrow.backgroundColor)&&

@@ -14,6 +14,7 @@ module.exports=async({browser,nativeHost,check})=>{
     await page.evaluate(({group,metric,statistic,options,revision,metrics})=>{
       const payload=JSON.parse(JSON.stringify(__extremaBase)),scope=payload.scopes.launch;
       payload.window_size=[options.width||1200,1050];scope.data_revision='permanent-extrema-'+revision;
+      if(options.scale)payload.viewport={width:3600,height:2600,scale:options.scale};
       // Native logical size is account-owned and intentionally survives snapshots.
       // Give each width case a fresh owner so its requested size is actually used.
       if(options.width)payload.account_key='DEMO:extrema-layout-'+revision;
@@ -121,8 +122,8 @@ module.exports=async({browser,nativeHost,check})=>{
       await page.locator('#ss-help-tooltip b').count()===0);
     check('Focused source keeps its small rounded arrow cue without a cell border or outline',
       await link('groups','xp_base','max').evaluate(button=>{
-        const style=getComputedStyle(button),cue=button.querySelector('.ss-extreme-link-cue'),visual=getComputedStyle(cue),
-          shaft=getComputedStyle(cue,':before'),head=getComputedStyle(cue,':after');
+        const style=getComputedStyle(button),cue=button.parentNode.querySelector('.ss-extreme-link-cue'),visual=getComputedStyle(cue),
+          arrow=cue.querySelector('.ss-extreme-link-arrow'),shaft=getComputedStyle(arrow,':before'),head=getComputedStyle(arrow,':after');
         return parseFloat(style.borderWidth)===0&&style.outlineStyle==='none'&&style.boxShadow==='none'&&
           parseFloat(visual.borderRadius)>0&&visual.backgroundColor!=='rgba(0, 0, 0, 0)'&&
           shaft.content!=='none'&&parseFloat(shaft.width)>=8&&parseFloat(shaft.height)===1&&shaft.transform!=='none'&&
@@ -172,16 +173,17 @@ module.exports=async({browser,nativeHost,check})=>{
             if(!button||!original||!original.length||original.some(node=>node.parentNode!==cell)||button.textContent!=='')return false;
             const actual=original.map(node=>node.textContent).join('').replace(/\s/g,'');
             const range=document.createRange();range.selectNode(original[0]);const ink=range.getBoundingClientRect(),box=cell.getBoundingClientRect(),hit=button.getBoundingClientRect();
-            const visual=getComputedStyle(cell),overlay=getComputedStyle(button),cue=button.querySelector('.ss-extreme-link-cue'),corner=cue.getBoundingClientRect();
+            const visual=getComputedStyle(cell),overlay=getComputedStyle(button),cue=cell.querySelector('.ss-extreme-link-cue'),corner=cue.getBoundingClientRect();
             return actual===expected&&ink.width>3&&ink.height>=14&&ink.left>=box.left-1&&ink.right<=box.right+1&&
               hit.width>=box.width-1&&hit.height>=22&&overlay.backgroundImage==='none'&&overlay.backgroundColor==='rgba(0, 0, 0, 0)'&&
               parseFloat(overlay.borderWidth)===0&&overlay.outlineStyle==='none'&&overlay.boxShadow==='none'&&
-              visual.boxShadow==='none'&&getComputedStyle(cue).display==='block'&&
+              visual.boxShadow==='none'&&getComputedStyle(cue).display==='inline-block'&&
+              cue.parentNode===cell&&cue.previousSibling===button&&getComputedStyle(cue).position==='relative'&&
               parseFloat(getComputedStyle(cue).borderWidth)===0&&getComputedStyle(cue).outlineStyle==='none'&&
               getComputedStyle(cue).backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(getComputedStyle(cue).borderRadius)>0&&
               Math.abs(corner.width-16)<=0.5&&Math.abs(corner.height-18)<=0.5&&
               corner.left>=ink.right+2&&corner.left<=ink.right+4&&corner.right<=box.right-1&&
-              Math.abs((corner.top+corner.bottom)-(box.top+box.bottom))<=1&&
+              Math.abs((corner.top+corner.bottom)-(ink.top+ink.bottom))<=2&&
               (row.getAttribute('data-ss-metric')!=='battle_wn8'||statistic!=='min'||
                 original[0].classList.contains('ss-wn8-low-ink')&&getComputedStyle(cell).color==='rgb(0, 0, 0)');
           });
@@ -207,8 +209,50 @@ module.exports=async({browser,nativeHost,check})=>{
             ink.top>=box.top-0.5&&ink.bottom<=box.bottom+0.5&&action.borderStyle==='solid'&&action.backgroundImage!=='none';
         });
       },{maximum,messages,width});
-      check('Native-safe original figures have adjacent right arrows and compact paired credit actions '+language+'/'+width+'/'+maximum+'/'+group,painted);
+      const failure=painted?null:await page.locator('#ss-summary .ss-extreme-cell,#ss-groups .ss-extreme-cell').evaluateAll(cells=>cells.map(cell=>{
+        const button=cell.querySelector('button'),cue=cell.querySelector('.ss-extreme-link-cue'),original=cell.__originalNativeValue,
+          range=document.createRange();range.selectNode(original[0]);const ink=range.getBoundingClientRect(),corner=cue.getBoundingClientRect(),box=cell.getBoundingClientRect();
+        return {text:original.map(n=>n.textContent).join(''),gap:corner.left-ink.right,center:(corner.top+corner.bottom-ink.top-ink.bottom)/2,
+          cueDisplay:getComputedStyle(cue).display,position:getComputedStyle(cue).position,parent:cue.parentNode===cell,sibling:cue.previousSibling===button,
+          width:box.width,hit:button.getBoundingClientRect().width,ink:ink.width,cornerRight:corner.right-box.right};
+      }));
+      check('Native-safe original figures have adjacent right arrows and compact paired credit actions '+language+'/'+width+'/'+maximum+'/'+group+(failure?': '+JSON.stringify(failure):''),painted);
     }
+    // The live client's percentage-sized absolute button can resolve against
+    // the content box instead of the padding box. Its width must not place
+    // either the original number or the visible arrow. Keep the caption-paint
+    // failure model above active while exercising this independent failure.
+    await page.setViewportSize({width:3600,height:2600});
+    for(const scale of [1,2])for(const width of [550,860,1600]){
+      await publish('maps','off','avg',{width,scale,maximum:123456});
+      const native=await page.locator('#ss-summary .ss-extreme-cell,#ss-groups .ss-extreme-cell').evaluateAll((cells,scale)=>{
+        const failures=[];
+        for(const cell of cells){
+          const button=cell.querySelector('.ss-metric-battle-link'),cue=cell.querySelector('.ss-extreme-link-cue'),arrow=cue.querySelector('.ss-extreme-link-arrow'),
+            original=cell.__originalNativeValue,range=document.createRange();range.selectNode(original[0]);
+          const before=cue.getBoundingClientRect(),style=getComputedStyle(cell);
+          button.style.width=(cell.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight))+'px';
+          const ink=range.getBoundingClientRect(),after=cue.getBoundingClientRect(),hit=button.getBoundingClientRect(),bounds=cell.getBoundingClientRect();
+          const canvas=document.createRange();canvas.selectNodeContents(cue);const painted=canvas.getBoundingClientRect();
+          if(cue.parentNode!==cell||button.contains(cue)||button.textContent!==''||original.some(node=>node.parentNode!==cell)||
+            Math.abs(after.left-before.left)>0.1||Math.abs(after.right-before.right)>0.1||
+            after.left<ink.right+2*scale||after.left>ink.right+4*scale||after.right>bounds.right-scale||
+            hit.left>ink.left+1||hit.right<after.right-1||!arrow||painted.width<15*scale||painted.height<17*scale||
+            painted.left<bounds.left-1||painted.right>bounds.right+1)
+            failures.push({value:original.map(node=>node.textContent).join(''),gap:(after.left-ink.right)/scale,hitRight:(hit.right-after.right)/scale});
+        }
+        return {cells:cells.length,failures};
+      },scale);
+      check('Native content-box overlays cannot overlap complete figures or relocate their visible arrow at '+width+'/'+scale+': '+JSON.stringify(native),
+        native.cells===12&&native.failures.length===0);
+      await page.mouse.move(5,5);await frames(page);
+      const before=await commands(),cue=await page.locator('#ss-groups .ss-metric-row[data-ss-metric="xp_base"] .ss-extreme-cell').last().locator('.ss-extreme-link-cue').boundingBox();
+      await page.mouse.click(cue.x+cue.width/2,cue.y+cue.height/2);await frames(page);
+      const after=await commands();
+      check('The visible normal-flow arrow center dispatches exactly one source action at '+width+'/'+scale,
+        after.length===before.length+1&&after[after.length-1].id==='maps-xp_base-max');
+    }
+    await page.setViewportSize({width:1800,height:1300});
     await page.evaluate(()=>{Node.prototype.appendChild=__extremeOriginalAppend;delete window.__extremeOriginalAppend;});await collapse.evaluate(node=>node.remove());
     // Timeline history can contain old received-only records and a few newer
     // base results. A retained card's cached sorting scalar must never choose

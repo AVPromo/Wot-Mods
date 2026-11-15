@@ -1,5 +1,11 @@
 SESSION STATS — CHANGELOG
 
+0.9.14 • 2026-11-15
+• Reserve arrow space in the native numeric line instead of positioning the cue over digits.
+• Restore compact fixed-width headline statistics and widen only the sorting result.
+• Keep sorting captions on one line and use a separate compact statistics row on small cards.
+• Expand default single-column aggregate cards up to the configured wide width and choose table layout by actual card width.
+
 0.9.13 • 2026-11-14
 • Place source arrows immediately after their figures and keep native numeric nodes intact.
 • Center compact financial Min/Max pairs with a 3 px gap and add thin table cell rules.

@@ -1,4 +1,4 @@
-# Appearance and scrolling configuration — 0.9.13
+# Appearance and scrolling configuration — 0.9.14
 
 ## File placement and applying changes
 
@@ -104,7 +104,7 @@ scopes remain independent. [Persistence and identity rules](ACCOUNT_SESSIONS.md)
 | `cards.vehicles` | `560` | Vehicle card width in logical pixels |
 | `cards.maps` | `560` | Map card width in logical pixels |
 | `cards.tiers` | `520` | Tier card width in logical pixels |
-| `wide_cards.battles` / `vehicles` / `maps` / `tiers` | `720` each | Wider fixed size, still two columns |
+| `wide_cards.battles` / `vehicles` / `maps` / `tiers` | `720` each | Wider two-column preset; also the single-column aggregate width limit |
 | `window.background_transparency` | `0` | Background-only transparency, integer 0–100 percent |
 | `window.maximized` | `false` | Open maximized; strict boolean |
 | `window.restored_width` | `700` | Restored logical width, integer 1–32768 |
@@ -163,10 +163,17 @@ and `0` is invisible. Do not use percentages or numeric strings: `0.8` is valid,
 
 ### Card widths
 
-The `wide_cards` preset accepts 480–1200 logical pixels per tab. It activates
-only when two cards of that width and the 64-pixel central gap fit. There are
-always at most two columns. A wide value below the ordinary width uses the
-ordinary width. All cards in the selected tab change size together.
+The `wide_cards` preset accepts 480–1200 logical pixels per tab. In a two-column
+layout it activates when two cards of that width and the 64-pixel central gap
+fit. There are always at most two columns. A wide value below the ordinary
+width uses the ordinary width. All cards in the selected tab change size together.
+
+In a single-column Vehicles, Maps or Tiers view, cards with the default ordinary
+width can use the available panel width up to that wide-card limit. Explicit
+nondefault ordinary widths retain their configured size. This keeps performance and finance
+tables beside each other whenever the actual card has enough room. Smaller
+cards stack the tables and give the compact statistics their own header row.
+Individual Battle cards retain their configured sizing.
 
 Maximize/Restore, the title-bar background slider and completed resize gestures
 save only their changed `window` fields. Other JSON values remain intact. The

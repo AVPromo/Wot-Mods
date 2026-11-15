@@ -3080,9 +3080,13 @@
                 if (!link) { return; }
                 // Preserve the cell's original text/figure nodes. Native Gameface
                 // can collapse button text even while its click target still works.
+                // Keep the arrow in the same normal inline flow as the number.
+                // Native percentage-sized overlays can use a different padding
+                // box; their geometry must never position the visible arrow.
                 // The transparent overlay owns the action, never the painted value.
-                var cue = append(link, element('span', 'ss-extreme-link-cue'));
+                var cue = append(cell, element('span', 'ss-extreme-link-cue'));
                 cue.setAttribute('aria-hidden', 'true');
+                append(cue, element('span', 'ss-extreme-link-arrow'));
                 cell.className += ' ss-extreme-cell';
             });
         });
@@ -3281,8 +3285,13 @@
         var cardWidth = (state.cardWidths || {battles:500, vehicles:560, maps:560, tiers:520})[state.group];
         var wider = Math.max(cardWidth, (state.wideCardWidths || {battles:720, vehicles:720, maps:720, tiers:720})[state.group]);
         if (width >= wider * 2 + 64) { cardWidth = wider; }
-        state.effectiveCardWidth = cardWidth;
         var columnWidth = cardWidth * 2 + 64, wide = width >= columnWidth;
+        // A default aggregate card may use its wider preset on a single lane.
+        // Otherwise a medium window wastes space while both tables stack.
+        // Explicit ordinary widths and all battle card presets remain fixed.
+        var ordinary = {vehicles:560, maps:560, tiers:520};
+        if (!wide && ordinary[state.group] === cardWidth) { cardWidth = Math.min(width, wider); }
+        state.effectiveCardWidth = cardWidth;
         var layoutKey = [wide, cardWidth, scale, Math.round(Math.min(width, cardWidth) * 1000)].join(':');
         var changed = state.cardLayoutKey !== layoutKey;
         if (changed) { invalidateCardFlow(); }
@@ -3309,7 +3318,7 @@
         var owned = [], cards = state.groupCards || [], total = state.renderedFeed ? state.renderedFeed.total : state.list.length;
         cards.forEach(function (card, index) {
             if (state.group !== 'battles') {
-                var compactHeadline = Math.min(width, cardWidth) < (state.group === 'tiers' ? 430 : 540);
+                var compactHeadline = Math.min(width, cardWidth) < 680;
                 if (card.classList.contains('ss-compact-headline') !== compactHeadline) {
                     card.classList[compactHeadline ? 'add' : 'remove']('ss-compact-headline');
                 }

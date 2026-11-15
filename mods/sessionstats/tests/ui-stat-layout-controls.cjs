@@ -86,6 +86,7 @@ module.exports=async({browser,nativeHost,check})=>{
           for(const icon of identity.querySelectorAll('.ss-vehicle-icon,.ss-info-button'))used.push(icon.getBoundingClientRect());
           const result={header:header.height/scale,card:card.getBoundingClientRect().height/scale,
             identityWidth:name.width/scale,identityUsed:(Math.max(...used.map(rect=>rect.right))-name.left)/scale,
+            kpiWidths:[...card.querySelectorAll('.ss-group-kpi')].map(node=>node.getBoundingClientRect().width/scale),
             content:Math.max(name.height,stats.height)/scale,badge:null};
           if(badge){
             const caption=badge.querySelector('.ss-group-sort-caption'),value=badge.querySelector('.ss-group-sort-number'),box=badge.getBoundingClientRect();
@@ -106,8 +107,8 @@ module.exports=async({browser,nativeHost,check})=>{
         },scale);
         check('The headline reserves only its actual content height '+metric+'/'+statistic+'/'+scale,
           geometry.header>=geometry.content&&geometry.header<=geometry.content+3);
-        check('The identity does not reserve an empty half-card beside its text '+metric+'/'+statistic+'/'+scale,
-          geometry.identityWidth<=geometry.identityUsed+24);
+        check('The familiar KPI columns retain compact widths while the identity takes spare space '+metric+'/'+statistic+'/'+scale,
+          geometry.kpiWidths.length===3&&geometry.kpiWidths.every((width,index)=>Math.abs(width-[60,62,72][index])<=0.5));
         check('KPI labels and figures use natural text height instead of blank fixed rows '+metric+'/'+statistic+'/'+scale,await naturalKPIBoxes(page));
         if(geometry.badge){
           const b=geometry.badge;
@@ -115,7 +116,7 @@ module.exports=async({browser,nativeHost,check})=>{
             b.height>=b.captionHeight+b.valueHeight+5&&b.height<=b.captionHeight+b.valueHeight+7&&
             b.centered&&b.separate&&b.fits&&b.iconAdjacent&&b.valueHeight<=20);
           if(metric==='credits_costs')check('A short statistic caption uses one centered line at '+scale,b.captionLines===1);
-          if(metric==='credits_income_received')check('A longer statistic caption uses the available width without clipping at '+scale,b.captionLines>=1&&b.captionLines<=2);
+          if(metric==='credits_income_received')check('A longer statistic caption widens its own column without wrapping at '+scale,b.captionLines===1);
           if(options.partial)check('A partial statistic keeps its marker inside the centered block at '+scale,b.partial);
         }
         if(metric==='credits_costs'&&scale===1){
@@ -172,7 +173,7 @@ module.exports=async({browser,nativeHost,check})=>{
           finance=[...card.querySelectorAll('.ss-credit-extreme-actions')];
         return {performance:performance.length,finance:finance.length,
           arrows:performance.every(cell=>{
-            const button=cell.querySelector('.ss-metric-battle-link'),cue=button.querySelector('.ss-extreme-link-cue'),
+            const button=cell.querySelector('.ss-metric-battle-link'),cue=cell.querySelector('.ss-extreme-link-cue'),
               figure=[...cell.childNodes].find(node=>node!==button),range=document.createRange();range.selectNode(figure);
             const ink=range.getBoundingClientRect(),box=cue.getBoundingClientRect();
             return Math.abs((box.left-ink.right)/scale-3)<=0.5&&Math.abs(box.width/scale-16)<=0.5&&
@@ -214,12 +215,13 @@ module.exports=async({browser,nativeHost,check})=>{
           });
           return {kpis,statsTop:stats.top,statsBottom:stats.bottom,headerHeight:header.height/scale,
             identityHeight:identity.height/scale,statsHeight:stats.height/scale,
+            contentHeight:(Math.max(identity.bottom,stats.bottom)-header.top)/scale,
             contained:identity.left>=header.left-scale&&stats.right<=header.right+scale&&
               identity.top>=header.top-scale&&identity.bottom<=header.bottom+scale};
         },scale);
         check('Wrapped identities and multi-line figures retain top labels and aligned bottoms at '+scale+': '+JSON.stringify(result),
           result.contained&&result.kpis.length===3&&result.kpis.every(kpi=>kpi.fits&&Math.abs(kpi.labelTop-result.statsTop)<=scale&&Math.abs(kpi.bottom-result.statsBottom)<=scale)&&
-          result.headerHeight<=Math.max(result.identityHeight,result.statsHeight)+3);
+          result.headerHeight<=result.contentHeight+3);
         if(profile.empty)check('A zero-results group retains its full recorded count and unknown values at '+scale,
           result.kpis[0].text==='137'&&result.kpis[1].text==='—'&&result.kpis[2].text==='—');
         else check('An actually wrapped count keeps every digit without a fixed reserved row at '+scale+': '+JSON.stringify(result),
@@ -227,4 +229,5 @@ module.exports=async({browser,nativeHost,check})=>{
       }
     }finally{await page.close();}
   }
+  await require('./ui-aggregate-responsive.cjs')({browser,nativeHost,check});
 };

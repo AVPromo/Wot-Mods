@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.13 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.14 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -28,12 +28,19 @@ The account and region determine which history and time points are shown.
 
 Advanced sorting marks the existing card value in orange when that value is
 already present. Additional credit or XP-total figures use a compact gold value
-block sized to its caption and figure. Aggregate headers share the available
-space between their identity, statistics and controls. When received results in
+block sized to its caption and figure. Aggregate headers retain compact fixed
+statistic columns; the sorting block alone grows to fit its unwrapped caption.
+Small cards give the identity and statistics separate rows. With default
+ordinary widths, single-column aggregate cards use the available width up to
+their configured wide-card limit,
+and their actual width determines whether the two tables sit side by side.
+When received results in
 the selected period lack the selected metric, the filter section shows a framed
 warning with the game's native alert triangle. Pending battles alone do not
 trigger it. Min/Max offers a rounded arrow cue immediately after the number,
 with a 3 px gap, to open its source battle across Maps, Vehicles and Tiers.
+The cue takes its own place in the numeric line so native overlay sizing cannot
+place it over a digit.
 The whole numeric cell remains clickable; only the small cue changes its
 background on hover or focus. Financial Min/Max buttons fit their captions and
 form centered pairs with a 3 px gap. Thin grey-olive rules separate the small
@@ -74,7 +81,8 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.10 native rendering and single coverage](docs/UI_REFINEMENTS_0.9.10.md), and
 [0.9.11 source arrows and historical data corrections](docs/UI_REFINEMENTS_0.9.11.md), and
 [0.9.12 bonus amounts, localized hints and source navigation](docs/UI_REFINEMENTS_0.9.12.md), and
-[0.9.13 adjacent source actions and native warnings](docs/UI_REFINEMENTS_0.9.13.md).
+[0.9.13 adjacent source actions and native warnings](docs/UI_REFINEMENTS_0.9.13.md), and
+[0.9.14 native arrow flow and compact responsive headers](docs/UI_REFINEMENTS_0.9.14.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
 already selected, including in a full-history Timeline range. **Back**, beside
