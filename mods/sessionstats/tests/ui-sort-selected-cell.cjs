@@ -6,7 +6,8 @@ module.exports=async({page,scale,check})=>{
     '.ss-metric-number > .ss-extreme-link-cue { display:block !important; }'+
     '.ss-metric-battle-link > span:not(.ss-control-label):not(.ss-extreme-link-cue) { width:0 !important; height:0 !important; font-size:0 !important; overflow:hidden !important; }'});
   async function audit(metric,statistic){
-    return page.locator('#ss-groups .ss-group').evaluateAll((cards,{metric,statistic,scale})=>cards.map(card=>{
+    return page.locator('#ss-groups .ss-group').evaluateAll((cards,{metric,statistic,scale})=>cards
+      .sort((left,right)=>Number(left.getAttribute('data-list-index'))-Number(right.getAttribute('data-list-index'))).map(card=>{
       const row=card.querySelector('.ss-metric-row[data-ss-metric="'+metric+'"]'),
         index=statistic==='min'?1:statistic==='max'?3:2,cell=row.children[index],style=getComputedStyle(cell),box=cell.getBoundingClientRect();
       const figure=cell.querySelector('.ss-extreme-number')||cell,range=document.createRange();range.selectNodeContents(figure);
