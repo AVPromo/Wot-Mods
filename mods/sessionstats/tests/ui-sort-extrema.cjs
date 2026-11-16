@@ -5,6 +5,8 @@ module.exports=async({browser,nativeHost,check})=>{
   await require('./ui-summary-extrema.cjs')({browser,nativeHost,check});
   const page=await nativeHost(browser,{initialViewport:{width:1800,height:1300},viewport:{width:1800,height:1300,scale:1}});
   const catalogs=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
+  const partialCardHelp=[catalogs.en['help.stats.compact'].replace('{0}','27').replace('{1}','27'),
+    catalogs.en['explain.wn8'],catalogs.en['help.credits.incomplete_brief']].join('\n');
   const performance=['xp_base','xp_received','battle_wn8'];
   const financial=['credits_income_base','credits_income_received','credits_net_base','credits_net_received','credits_costs'];
   const metrics=performance.concat(financial);
@@ -20,16 +22,23 @@ module.exports=async({browser,nativeHost,check})=>{
       if(options.width)payload.account_key='DEMO:extrema-layout-'+revision;
       scope.ordering[group]={metric,statistic,direction:'desc',chronology:'newest'};
       function fill(stats,owner){
-        const references={};
+        const references={},total=Math.max(stats.battles||0,stats.observed_battles||0);
         metrics.forEach(key=>{
           const min=key.indexOf('credits_net')===0?-500:0,max=options.maximum||12345;
-          stats[key]={count:3,min,max,avg:100,sum:300};
+          const count=key==='credits_income_base'||key==='credits_net_base'?total:3;
+          stats[key]={count,min,max,avg:100,sum:100*count};
           references[key]={};
           ['min','max'].forEach(extreme=>{references[key][extreme]={
             id:owner+'-'+key+'-'+extreme,name:'<b>Synthetic tank</b>',map:'Synthetic off-page map',
             map_id:'synthetic-map',started_at:1793514000,outcome:'win',wn8:500,
             metric:key,statistic:extreme,value:extreme==='min'?min:max};});
         });
+        // Enabled base-source fixtures need a complete displayed base total.
+        // Explicit partial-history cases below replace this availability.
+        const credits=stats.currencies.credits;
+        for(const [metric,field]of [['credits_income_base','income_base'],['credits_net_base','net_base']]){
+          credits[field]=stats[metric].sum;credits[field+'_count']=total;
+        }
         return references;
       }
       scope.extrema_battles=fill(scope.summary,'summary');
@@ -66,7 +75,7 @@ module.exports=async({browser,nativeHost,check})=>{
             const cell=node.parentNode,text=Array.from(cell.childNodes).filter(child=>child!==node).map(child=>child.textContent).join('').replace(/\s/g,''),box=node.getBoundingClientRect(),style=getComputedStyle(cell);
             return node.getAttribute('data-battle-id')===group+'-'+metric+'-'+statistic&&
               text===(statistic==='min'?'0':'12345')&&Math.abs(box.height-14)<=0.5&&Math.abs(box.width-14)<=0.5&&
-              style.textAlign==='right'&&cell.classList.contains('ss-extreme-cell')&&node.textContent===''&&
+              style.textAlign==='center'&&cell.classList.contains('ss-extreme-cell')&&node.textContent===''&&
               node.getAttribute('aria-label').includes('Show battle')&&
               node.getAttribute('data-ss-help').includes('Synthetic off-page map')&&
               node.getAttribute('data-ss-help').includes('<b>Synthetic tank</b>')&&
@@ -326,7 +335,7 @@ module.exports=async({browser,nativeHost,check})=>{
           !result.caption.includes('*')&&result.triangle===1&&result.nativeIcon==='url("img://gui/maps/icons/library/alertIcon.png")'&&
           result.hoverHelp&&result.directHelp.includes('Data available for '+count+' of 27 recorded battles.')&&
           result.accessible.includes('Data available for '+count+' of 27 recorded battles.')&&
-          result.help.includes('Data available for '+count+' of 27 recorded battles.')&&!/\d+\/\d+/.test(result.caption));
+          result.help===partialCardHelp&&!/\d+\/\d+/.test(result.caption));
         if(count===3&&statistic==='max'){
           const icon=page.locator('#ss-groups .ss-sort-partial-icon');
           check('The partial statistic uses the same decorative native warning triangle at 14px',await icon.evaluate(node=>{

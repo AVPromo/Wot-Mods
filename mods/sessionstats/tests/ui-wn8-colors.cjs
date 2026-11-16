@@ -76,10 +76,10 @@ function assertWN8Source(){
   panel.battleMeasure(parent,'WN8',2380,true);assert(parent.children[2].children.every(node=>node.style.color==='#83579d'));
   panel.battleMeasure(parent,'Base XP',2380,false);assert(parent.children[3].children.every(node=>node.style.color===undefined),'Other statistics retain their configured text colors');
   const card=new Node('div','ss-group');panel.paintWN8Card(card,1600);
-  assert.strictEqual(card.children.length,1);assert.strictEqual(card.children[0].style.borderColor,'rgba(76,118,46,0.22)');
+  assert.strictEqual(card.children.length,1);assert.strictEqual(card.children[0].style.borderColor,'rgba(76,118,46,0.62)');
   assert.strictEqual(card.children[0].attributes['aria-hidden'],'true');assert.deepStrictEqual(card.style,{},'Rating border cannot mutate card dimensions or padding');
   panel.paintWN8Card(card,0);assert.strictEqual(card.children.length,1,'Rating corrections reuse one owned border');
-  assert.strictEqual(card.children[0].style.borderColor,'rgba(0,0,0,0.22)','Zero retains its own rating tint');
+  assert.strictEqual(card.children[0].style.borderColor,'rgba(0,0,0,0.62)','Zero retains its own rating tint');
   panel.paintWN8Card(card,null);assert.strictEqual(card.children.length,0);assert.strictEqual(card.attributes['data-wn8-border-value'],undefined,'Unknown ratings retire a stale card border');
 }
 async function sourceArrowAppearance(page){
@@ -222,8 +222,8 @@ module.exports=async({browser,nativeHost,check})=>{
         card.classList.remove('ss-battle-target');const restored={rect:card.getBoundingClientRect().toJSON(),visibility:getComputedStyle(border).visibility,color:getComputedStyle(border).borderColor};
         return {original,selected,restored};
       });
-      const borderColor=group==='battles'?'rgba(76, 118, 46, 0.22)':'rgba(131, 87, 157, 0.22)';
-      check('The faint WN8 border follows the displayed headline and yields to selection without moving '+group+': '+JSON.stringify(borders),
+      const borderColor=group==='battles'?'rgba(76, 118, 46, 0.62)':'rgba(131, 87, 157, 0.62)';
+      check('The stronger WN8 border follows the displayed headline and yields to selection without moving '+group+': '+JSON.stringify(borders),
         borders.original.position==='absolute'&&borders.original.pointer==='none'&&borders.original.color===borderColor&&
         borders.selected.visibility==='hidden'&&borders.restored.visibility==='visible'&&borders.restored.color===borders.original.color&&
         borders.selected.color!==borders.original.color&&[borders.selected.rect,borders.restored.rect].every(rect=>rect.width===borders.original.width&&rect.height===borders.original.height));

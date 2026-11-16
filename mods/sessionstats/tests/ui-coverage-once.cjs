@@ -80,7 +80,8 @@ module.exports=async({browser,nativeHost,check})=>{
           result.status===messages['status.pending'].replace('{0}','2'));
         check('Hidden metric availability remains labeled and accessible without repeated badges '+caption,
           result.rows.find(row=>row.metric==='xp_base').aria===messages['xp.base']+' '+valueText(0)&&
-          (!aggregate||result.cards[0].help.includes(messages['xp.base']+' '+valueText(0)))&&
+          (!aggregate||result.cards[0].help===[messages['help.stats.compact'].replace('{0}',String(count)).replace('{1}',fixture==='legacy'?'3':'5'),
+            messages['explain.wn8'],messages['help.credits.incomplete_brief']].join('\n'))&&
           (!aggregate||!partial||result.cards[0].badges[0].aria===messages['metric.confirmed']+' '+valueText(count))&&
           (!aggregate||fixture==='legacy'||result.cards[0].finance.some(text=>text&&text.includes(valueText(Math.min(count,2)))))&&
           (!aggregate||fixture==='legacy'||result.cards[0].freeXP===messages['xp.free']+' '+valueText(Math.min(count,2))));

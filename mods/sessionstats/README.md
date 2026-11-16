@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.21 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.22 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -50,7 +50,9 @@ instead of leaving a compact performance table beside an oversized currency
 caption column. Individual battle cards center their paired data tables in
 the wide preset: performance receives more room and finance has a bounded
 width. Medium battle cards use a shared logical column budget to align their
-financial headings, credit rows and Bonds.
+financial headings, credit rows and Bonds. Aggregate and upper-summary
+figures are centered in their numeric cells, with source arrows kept beside
+their figures. WN8-colored card glow adds depth while retaining a thin border.
 When received results in
 the selected period lack the selected metric, the filter section shows a framed
 warning with the game's native alert triangle. Pending battles alone do not
@@ -66,13 +68,15 @@ performance and finance table cells. For WN8, the large figure shows the selecte
 that sort is active; otherwise the **Combined WN8** headline recalculates a rating
 from all group results and expected vehicle values. It differs from the arithmetic
 mean of individual-battle WN8 in the table. The card information button explains
-this distinction. **All** sorts aggregate XP, received credit income or credit costs by the sum of
+this distinction in a short group-information tooltip. **All** sorts aggregate XP, received credit income or credit costs by the sum of
 known values. Credit income and net sorting separately offer Base (before bonuses)
 and Received (settled income). Base totals and Base **All** sorting stay unavailable
 until every recorded battle in the group has the corresponding Base value;
 historical missing Base values remain unknown. Base Min/Average/Max still use the
 known sample, marked with the native alert triangle when the received reports
-themselves lack the selected field. Pending reports alone use the existing
+themselves lack the selected field. Base-credit Min/Max source actions stay
+disabled while their Base coverage is incomplete for the selected period and
+group. Selecting a fully covered period enables those actions. Pending reports alone use the existing
 received/recorded counters. Range and card warnings use the same rule; coverage
 help remains available for pending-only samples. One known
 battle therefore has equal Min/Average/Max. Both net variants subtract actual
@@ -109,7 +113,8 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.18 adjacent aggregate tables and compact headers](docs/UI_REFINEMENTS_0.9.18.md), and
 [0.9.19 native finance column allocation](docs/UI_REFINEMENTS_0.9.19.md), and
 [0.9.20 single-line captions and balanced wide tables](docs/UI_REFINEMENTS_0.9.20.md), and
-[0.9.21 centered battle data and aligned finance columns](docs/UI_REFINEMENTS_0.9.21.md).
+[0.9.21 centered battle data and aligned finance columns](docs/UI_REFINEMENTS_0.9.21.md), and
+[0.9.22 concise group help and centered statistics](docs/UI_REFINEMENTS_0.9.22.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
 already selected, including in a full-history Timeline range. **Back**, beside

@@ -295,11 +295,15 @@ async function runFeatureSuite(file,browser) {
   check('Missing battle exposes 16 of 17 results and marks averages incomplete',
     (await kpis())[0]==='16 / 17' && (await page.locator('#ss-status').innerText()).includes('Pending: 1') &&
     !(await page.locator('#ss-status').innerText()).includes('16 / 17') &&
-    (await page.locator('#ss-summary .ss-summary-main .ss-info-button').getAttribute('data-ss-help')).includes('Incomplete statistics') &&
+    await page.locator('#ss-summary .ss-summary-main .ss-info-button').getAttribute('data-ss-help').then(text=>
+      text.includes('Results: 16/17.')&&text.length<=400) &&
     (await page.locator('#ss-summary .ss-kpi-label').allTextContents()).includes('Win rate*'));
   check('Financial coverage includes the missing result in help instead of repeating a visible header count',
     await page.locator('#ss-summary .ss-money-head .ss-cell-coverage').count()===0&&
-    (await page.locator('#ss-summary .ss-economy .ss-info-button').getAttribute('data-ss-help')).includes('Data available for 16 of 17 recorded battles.'));
+    await page.locator('#ss-summary .ss-economy .ss-info-button').getAttribute('data-ss-help').then(text=>
+      text.includes('Results: 16/17.')&&text.length<=400)&&
+    await page.locator('#ss-summary .ss-money-value[data-ss-metric="credits_income_received"]').getAttribute('aria-label').then(text=>
+      !!text&&text.includes('Data available for 16 of 17 recorded battles.')));
   await page.locator('#ss-group-battles').click();
   const missingCard=(await battleCards(page)).find(row=>row.id==='missing-result-fixture');
   check('Unrecovered battle stays listed with unknown outcome and dashes rather than fabricated zeros',

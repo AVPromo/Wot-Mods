@@ -1,4 +1,4 @@
-GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.21 (persistent data schema unchanged)
+GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.22 (persistent data schema unchanged)
 Release date: 2026-11-16.
 
 Target: World of Tanks PC Wargaming EU 2.4.1.1, Python 2.7 runtime.
@@ -82,7 +82,7 @@ to current launch just because received now. Use returned battle start time in a
 
 SNAPSHOT -> Window ViewModel string property `payload`
 {
- version: '0.9.21', account_key: string, generated_at: unix seconds,
+ version: '0.9.22', account_key: string, generated_at: unix seconds,
  expected: {version: string, ...}, warnings: [string],
  appearance: {panel_css:string, footer_css:string, scroll_speed:number},
  recovery: {pending:int, in_flight:int, states:{status_label:int}},
@@ -120,7 +120,11 @@ physical costs cell spans the base/received pair; its credits_costs series and
 coverage are independent of either income field. Credit bonuses never create
 separate base/received expense records in the supported client contract.
 Partial sums are sums of confirmed known values. Metric-specific availability
-remains in existing help/ARIA. Visible received/recorded coverage appears only
+remains in ARIA; info icons use at most three short localized sentences.
+Base-credit Min/Max source actions require the corresponding displayed currency
+field to cover every observed battle and have a finite total. Otherwise show
+disabled, inert placeholders; a complete selected range enables valid sources.
+Visible received/recorded coverage appears only
 in the global result headline and one generic badge beside a partial aggregate
 name; tables, metric labels, totals and the footer never repeat it. The single
 Battles KPI shows the recorded total used by its sorter.
@@ -280,7 +284,8 @@ XP sorting selects its own metric independently of the visible rows.
 WN8 full integer, never k/truncation/leading zeroes.
 Use Gameface-safe flex/block CSS; no grid, gap, sticky, inline-block, fit-content,
 font-feature-settings. Warhelios native font, warm cream/olive/gold.
-Modest corner radii, quiet row separators and right-aligned figures with a trailing inset.
+Modest corner radii and quiet row separators. Aggregate and summary figures and
+source-action groups are centered within their existing complete-value budgets.
 Native ordinary wheel events move one quarter of the visible list at multiplier 1.0,
 with the WoT sign. Apply appearance.scroll_speed to native scrolling, including page-mode
 input, without changing direction or boundary handling. Missing/invalid presentation uses 1.0.

@@ -420,7 +420,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-list-meta > span + span { margin-left:8rem; }
 .ss-group { margin-bottom:5rem; padding:5rem 6rem; border-radius:{{radii.group_card}}rem; background:linear-gradient({{colors.group_card_background_start}}, {{colors.group_card_background_end}}); border:1rem solid {{colors.group_card_shadow}}; box-shadow:inset 0 1rem {{colors.group_card_shadow}}; }
 .ss-group[data-wn8-border-value] { position:relative; }
-.ss-wn8-card-border { display:block; position:absolute; z-index:1; top:-1rem; right:-1rem; bottom:-1rem; left:-1rem; border:1rem solid {{colors.group_card_shadow}}; border-radius:{{radii.group_card}}rem; pointer-events:none; }
+.ss-wn8-card-border { display:block; position:absolute; z-index:1; top:-1rem; right:-1rem; bottom:-1rem; left:-1rem; border:1rem solid {{colors.group_card_shadow}}; border-radius:{{radii.group_card}}rem; box-shadow:0 2rem 4rem {{colors.group_card_shadow}}; pointer-events:none; }
 .ss-group.ss-battle-target .ss-wn8-card-border { visibility:hidden; }
 .ss-group-header { display:flex; align-items:center; min-height:35rem; padding-bottom:2rem; }
 .ss-group-thumb { display:block; flex-shrink:0; width:54rem; height:32rem; margin-right:8rem; background-repeat:no-repeat; background-position:center; background-size:contain; }
@@ -638,13 +638,13 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-info-button:hover .ss-info-symbol, .ss-info-button:focus .ss-info-symbol, .ss-info-button[aria-expanded="true"] .ss-info-symbol { color:{{colors.button_hover_text}}; }
 .ss-summary .ss-kpi-label { display:flex; align-items:center; justify-content:center; }
 .ss-summary .ss-detail-title { display:flex; align-items:center; }
-/* Header labels own their full caption boxes. Compensating margins retain the
-   original starts and widths of the right-aligned numeric columns. */
+/* Titles and their info buttons stay inside the actual caption lane so they
+   cannot cover centered numeric headings. Numeric columns keep their widths. */
 .ss-summary-details .ss-metric-head, .ss-summary-details .ss-money-head { align-items:center; }
 .ss-summary-details .ss-summary-table-heading { display:block; min-width:0; }
-.ss-summary-details .ss-metric-head .ss-summary-table-heading { width:40%; margin-right:-14%; }
-.ss-summary-details .ss-money-head .ss-summary-table-heading { width:30.8%; margin-right:-7.8%; }
-.ss-summary-details .ss-summary-table-title { position:relative; z-index:1; display:flex; align-items:center; width:100%; min-width:0; height:26rem; margin:0; font-size:11rem; line-height:13rem; }
+.ss-summary-details .ss-metric-head .ss-summary-table-heading { width:26%; margin-right:0; }
+.ss-summary-details .ss-money-head .ss-summary-table-heading { width:23%; margin-right:0; }
+.ss-summary-details .ss-summary-table-title { position:relative; z-index:1; display:flex; align-items:center; width:100%; min-width:0; min-height:26rem; height:auto; margin:0; font-size:11rem; line-height:13rem; }
 .ss-summary-details .ss-economy .ss-summary-table-title { width:100%; }
 .ss-summary-table-title .ss-table-heading-text { display:block; flex:1 1 0rem; min-width:0; overflow-wrap:break-word; }
 .ss-summary-table-title .ss-info-button { margin-left:3rem; }
@@ -745,6 +745,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 /* Paint numbers outside the button; explicit nonwrapping flex items reserve its lane. */
 .ss-metric-battle-link { display:block; min-width:0; width:100%; min-height:26rem; margin:0; padding:3rem 0; border:1rem solid {{colors.button_border}}; border-radius:{{radii.control}}rem; background:linear-gradient({{colors.button_background_start}},{{colors.button_background_middle}} 48%,{{colors.button_background_end}}); color:{{colors.button_text}}; font-family:Warhelios, Arial, sans-serif; font-size:14rem; font-weight:normal; line-height:20rem; text-align:center; cursor:pointer; }
 .ss-metric-battle-link:hover, .ss-metric-battle-link:focus { outline:1rem solid {{colors.session_tab_marker_background}}; outline-offset:-1rem; border-color:{{colors.session_tab_marker_background}}; }
+.ss-metric-battle-link.ss-metric-action-disabled, .ss-metric-battle-link.ss-metric-action-disabled:hover, .ss-metric-battle-link.ss-metric-action-disabled:focus { color:{{colors.date_unavailable_text}}; border-color:{{colors.date_unavailable_border}}; background:{{colors.date_unavailable_background}}; outline:none; box-shadow:none; text-shadow:none; cursor:default; }
+.ss-metric-action-disabled .ss-control-label, .ss-metric-action-disabled .ss-metric-action-label { color:{{colors.date_unavailable_text}}; text-shadow:none; }
 .ss-metric-extreme-action .ss-metric-action-label { display:block; width:100%; min-width:0; height:16rem; font-size:11rem; line-height:16rem; text-align:center; }
 .ss-metric-row .ss-metric-number.ss-extreme-cell { display:flex; position:relative; flex-wrap:nowrap; align-items:center; justify-content:flex-end; min-width:0; padding-left:0; padding-right:2rem; cursor:pointer; }
 .ss-extreme-number { display:block; flex:0 0 auto; min-width:0; white-space:nowrap; text-align:right; }
@@ -958,6 +960,15 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-economy.ss-credit-compact > .ss-money-head .ss-summary-table-title { width:100%; height:26rem; }
 .ss-economy.ss-credit-compact > .ss-money-row:not(.ss-credit-pair) > .ss-money-label { width:100%; padding-bottom:0; }
 .ss-economy.ss-credit-compact > .ss-money-head > .ss-money-value, .ss-economy.ss-credit-compact > .ss-money-row:not(.ss-credit-pair) > .ss-money-value { width:33.333%; }
+/* Aggregate figures and their permanent actions share one centered reading
+   axis. Symmetric insets retain the existing complete-number width budgets. */
+.ss-aggregate .ss-metric-number, .ss-aggregate .ss-metric-row .ss-metric-number { padding-left:1rem; padding-right:1rem; text-align:center; }
+.ss-summary-details .ss-metric-number { padding-left:1.5rem; padding-right:1.5rem; text-align:center; }
+.ss-summary-details .ss-metric-row .ss-metric-number.ss-extreme-cell { padding-left:1rem; padding-right:1rem; }
+.ss-aggregate .ss-metric-row .ss-metric-number, .ss-summary-details .ss-metric-row .ss-metric-number { justify-content:center; }
+.ss-aggregate .ss-money-value { padding-left:0.5rem; padding-right:0.5rem; text-align:center; }
+.ss-summary-details .ss-money-value { padding-left:2rem; padding-right:2rem; text-align:center; }
+.ss-aggregate .ss-credit-shared-cost, .ss-summary-details .ss-credit-shared-cost { padding-left:0; padding-right:0; }
 /* Fixed-width cards stay in native column flow. Expanded battle heights are
    sampled after layout to choose chronological lanes, never absolute offsets. */
 .ss-card-layout { display:flex; align-items:flex-start; justify-content:center; width:100%; }

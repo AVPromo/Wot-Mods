@@ -60,10 +60,20 @@ function inspectNativeCredits({scale,legacy=false}){
         if(parseFloat(getComputedStyle(figure).fontSize)/scale<13)failures.push('small-credit-figure');
       }
       for(const label of pair.querySelectorAll('.ss-credit-row-label,.ss-credit-inline-label'))checkText(label,label);
+      const scope=JSON.parse(model.payload).scopes.launch,input=['vehicles','maps','tiers'].flatMap(group=>scope[group]||[])
+        .find(item=>String(item.id)===card.getAttribute('data-group-id')),
+        credits=input&&input.stats.currencies.credits,total=input&&input.stats.observed_battles;
+      if(!credits)failures.push('missing-credit-input-owner');
       for(const action of pair.querySelectorAll('.ss-metric-battle-link')){
         const cell=action.closest('.ss-money-value');
         if(!visible(action)||!inside(rect(action),rect(cell))||!inside(rect(action),table))failures.push('credit-source-outside');
-        if(!action.getAttribute('data-battle-id').startsWith(card.getAttribute('data-group-id')+'-'))failures.push('credit-source-owner');
+        const metric=action.getAttribute('data-ss-source-metric'),field=metric==='credits_income_base'?'income_base':metric==='credits_net_base'?'net_base':null,
+          incompleteBase=credits&&field&&(!(credits[field+'_count']>0)||credits[field+'_count']!==total||!Number.isFinite(credits[field])),
+          id=action.getAttribute('data-battle-id');
+        if(incompleteBase){
+          if(!action.disabled||action.getAttribute('aria-disabled')!=='true'||!action.classList.contains('ss-metric-action-disabled')||
+            id!==null||action.onclick!==null)failures.push('incomplete-base-source-contract');
+        }else if(!id||!id.startsWith(card.getAttribute('data-group-id')+'-'))failures.push('credit-source-owner');
         checkText(action,action);
       }
       const numericHeaders=[...header.children].slice(1).map(rect),lanes=[pair.querySelector('.ss-credit-income-column'),pair.querySelector('.ss-credit-shared-cost'),pair.querySelector('.ss-credit-net-column')].map(rect);

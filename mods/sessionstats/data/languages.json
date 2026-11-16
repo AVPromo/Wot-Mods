@@ -386,7 +386,7 @@
       "finance.credits_net_received": "Received net",
       "finance.credits_base": "Credits (base)",
       "finance.credits_received": "Credits (received)",
-      "help.credits.base_received": "Base credits are the reported original earnings before bonuses. Base net subtracts actual battle costs. Received credits are the settled earnings after bonuses and deductions. Base income and net totals are unavailable until all recorded battles have those amounts. Min/Max still open the known source results; a warning triangle marks statistics based on partial data. Historical received earnings are retained. Missing base earnings can be added when a full report becomes available. Both credit rows remain visible; unavailable amounts are shown as dashes.",
+      "help.credits.base_received": "Base: before bonuses; received: settled earnings.",
       "sort.partial": "Available results only. With one available result, Min, Average and Max are equal.",
       "vehicle.role.role_HT_assault.name": "Assault heavy tank",
       "vehicle.role.role_HT_assault.description": "Armored heavy vehicles for close-range combat and holding positions.",
@@ -424,7 +424,10 @@
       "sort.field_coverage": "This field is available in {0} of {1} received results.",
       "more.bonus.premium.free_xp": "Premium account: +{0} Free XP",
       "more.bonus.premium.crew_xp": "Premium account: +{0} Crew XP",
-      "battle.return": "Back to source"
+      "battle.return": "Back to source",
+      "help.stats.compact": "Results: {0}/{1}.",
+      "help.credits.incomplete_brief": "Base credits incomplete; Min/Max unavailable.",
+      "sort.base_extrema_unavailable": "{0}: incomplete base data ({1}/{2}); Min/Max unavailable."
     },
     "pl": {
       "title": "Statystyki sesji",
@@ -811,7 +814,7 @@
       "finance.credits_net_received": "Netto otrzymane",
       "finance.credits_base": "Kredyty (bazowe)",
       "finance.credits_received": "Kredyty (otrzymane)",
-      "help.credits.base_received": "Bazowe kredyty to raportowany pierwotny przychód przed premiami. Bazowe netto odejmuje rzeczywiste koszty bitwy. Otrzymane kredyty to rozliczony przychód po premiach i potrąceniach. Bazowe sumy przychodu i netto są niedostępne, dopóki nie ma tych kwot dla wszystkich zapisanych bitew. Min/Max nadal otwierają znane wyniki źródłowe; trójkąt ostrzegawczy oznacza statystykę na podstawie niepełnych danych. Historyczne otrzymane kwoty są zachowane. Brakujące bazowe kwoty można uzupełnić po uzyskaniu pełnego raportu. Oba wiersze kredytów pozostają widoczne; niedostępne kwoty są oznaczone kreskami.",
+      "help.credits.base_received": "Bazowe: przed premiami; otrzymane: rozliczony przychód.",
       "sort.partial": "Tylko dostępne wyniki. Przy jednym dostępnym wyniku Min, Średnia i Max są równe.",
       "vehicle.role.role_HT_assault.name": "Szturmowy czołg ciężki",
       "vehicle.role.role_HT_assault.description": "Opancerzone czołgi ciężkie do walki na bliskim dystansie i utrzymywania pozycji.",
@@ -849,7 +852,10 @@
       "sort.field_coverage": "To pole jest dostępne w {0} z {1} otrzymanych wyników.",
       "more.bonus.premium.free_xp": "Konto premium: +{0} Wolne PD",
       "more.bonus.premium.crew_xp": "Konto premium: +{0} PD załogi",
-      "battle.return": "Wróć do miejsca wejścia"
+      "battle.return": "Wróć do miejsca wejścia",
+      "help.stats.compact": "Wyniki: {0}/{1}.",
+      "help.credits.incomplete_brief": "Niepełne kredyty bazowe; Min/Max niedostępne.",
+      "sort.base_extrema_unavailable": "{0}: niepełne dane bazowe ({1}/{2}); Min/Max niedostępne."
     },
     "ru": {
       "title": "Статистика сессии",
@@ -1236,7 +1242,7 @@
       "finance.credits_net_received": "Полученное нетто",
       "finance.credits_base": "Кредиты (базовые)",
       "finance.credits_received": "Полученные кредиты",
-      "help.credits.base_received": "Базовые кредиты — исходный доход из отчёта до бонусов. Базовое нетто вычитает фактические расходы боя. Полученные кредиты — итоговый доход после бонусов и удержаний. Базовые суммы дохода и нетто недоступны, пока эти данные не известны для всех записанных боёв. Мин/Макс открывают известные результаты; предупреждающий треугольник отмечает статистику по неполным данным. Исторические полученные суммы сохраняются. Недостающие базовые суммы можно добавить при получении полного отчёта. Обе строки кредитов остаются видимыми; недоступные суммы отмечаются прочерками.",
+      "help.credits.base_received": "Базовые: до бонусов; полученные: итоговый доход.",
       "sort.partial": "Только доступные результаты. При одном результате Мин, Среднее и Макс равны.",
       "vehicle.role.role_HT_assault.name": "Штурмовой тяжёлый танк",
       "vehicle.role.role_HT_assault.description": "Бронированные тяжёлые машины для ближнего боя и удержания позиций.",
@@ -1274,7 +1280,10 @@
       "sort.field_coverage": "Это поле доступно в {0} из {1} полученных результатов.",
       "more.bonus.premium.free_xp": "Премиум аккаунт: +{0} свободный опыт",
       "more.bonus.premium.crew_xp": "Премиум аккаунт: +{0} опыт экипажа",
-      "battle.return": "Вернуться к исходному месту"
+      "battle.return": "Вернуться к исходному месту",
+      "help.stats.compact": "Результаты: {0}/{1}.",
+      "help.credits.incomplete_brief": "Базовые кредиты неполные; Мин/Макс недоступны.",
+      "sort.base_extrema_unavailable": "{0}: неполные базовые данные ({1}/{2}); Мин/Макс недоступны."
     },
     "fr": {
       "title": "Statistiques de session",
@@ -1661,7 +1670,7 @@
       "finance.credits_net_received": "Net reçu",
       "finance.credits_base": "Crédits (base)",
       "finance.credits_received": "Crédits (reçus)",
-      "help.credits.base_received": "Les crédits de base sont le revenu initial du rapport avant bonus. Le net de base déduit les frais réels de bataille. Les crédits reçus sont les revenus réglés après bonus et déductions. Les totaux de base du revenu et du net restent indisponibles tant que ces montants ne sont pas connus pour toutes les batailles enregistrées. Min/Max ouvrent toujours les résultats connus ; un triangle d’avertissement indique des statistiques sur données partielles. Les revenus reçus historiques sont conservés. Un rapport complet peut compléter les montants de base manquants. Les deux lignes de crédits restent visibles ; les montants indisponibles sont indiqués par des tirets.",
+      "help.credits.base_received": "Base : avant bonus ; reçus : gains réglés.",
       "sort.partial": "Résultats disponibles uniquement. Avec un seul résultat, Min, Moyenne et Max sont égaux.",
       "vehicle.role.role_HT_assault.name": "Char lourd d'assaut",
       "vehicle.role.role_HT_assault.description": "Véhicules lourds blindés destinés au combat rapproché et à la défense de positions.",
@@ -1699,7 +1708,10 @@
       "sort.field_coverage": "Ce champ est disponible dans {0} résultats reçus sur {1}.",
       "more.bonus.premium.free_xp": "Compte premium : +{0} EXP. libre",
       "more.bonus.premium.crew_xp": "Compte premium : +{0} EXP. équipage",
-      "battle.return": "Revenir au point de départ"
+      "battle.return": "Revenir au point de départ",
+      "help.stats.compact": "Résultats : {0}/{1}.",
+      "help.credits.incomplete_brief": "Crédits de base incomplets ; Min/Max indisponibles.",
+      "sort.base_extrema_unavailable": "{0} : données de base incomplètes ({1}/{2}) ; Min/Max indisponibles."
     },
     "de": {
       "title": "Sitzungsstatistik",
@@ -2086,7 +2098,7 @@
       "finance.credits_net_received": "Erhaltenes Netto",
       "finance.credits_base": "Kredite (Basis)",
       "finance.credits_received": "Kredite (erhalten)",
-      "help.credits.base_received": "Basiskredite sind die gemeldeten ursprünglichen Einnahmen vor Boni. Das Basisnetto zieht die tatsächlichen Gefechtskosten ab. Erhaltene Kredite sind die abgerechneten Einnahmen nach Boni und Abzügen. Basiseinnahmen und Basisnettosummen sind erst verfügbar, wenn die Beträge für alle erfassten Gefechte vorliegen. Min/Max öffnen weiterhin bekannte Ergebnisse; ein Warndreieck kennzeichnet Statistiken mit unvollständigen Daten. Historische erhaltene Einnahmen bleiben erhalten. Fehlende Basisbeträge können mit einem vollständigen Bericht ergänzt werden. Beide Kreditzeilen bleiben sichtbar; nicht verfügbare Beträge erscheinen als Striche.",
+      "help.credits.base_received": "Basis: vor Boni; erhalten: abgerechnete Einnahmen.",
       "sort.partial": "Nur verfügbare Ergebnisse. Bei einem verfügbaren Ergebnis sind Min, Durchschnitt und Max gleich.",
       "vehicle.role.role_HT_assault.name": "Schwerer Angriffspanzer",
       "vehicle.role.role_HT_assault.description": "Gepanzerte schwere Fahrzeuge für den Nahkampf und das Halten von Stellungen.",
@@ -2124,7 +2136,10 @@
       "sort.field_coverage": "Dieses Feld ist in {0} von {1} empfangenen Ergebnissen verfügbar.",
       "more.bonus.premium.free_xp": "Premiumkonto: +{0} Freie EP",
       "more.bonus.premium.crew_xp": "Premiumkonto: +{0} Besatzungs-EP",
-      "battle.return": "Zurück zum Ausgangspunkt"
+      "battle.return": "Zurück zum Ausgangspunkt",
+      "help.stats.compact": "Ergebnisse: {0}/{1}.",
+      "help.credits.incomplete_brief": "Unvollständige Basiskredite; Min/Max nicht verfügbar.",
+      "sort.base_extrema_unavailable": "{0}: unvollständige Basisdaten ({1}/{2}); Min/Max nicht verfügbar."
     },
     "es": {
       "title": "Estadísticas de sesión",
@@ -2511,7 +2526,7 @@
       "finance.credits_net_received": "Neto recibido",
       "finance.credits_base": "Créditos (base)",
       "finance.credits_received": "Créditos (recibidos)",
-      "help.credits.base_received": "Los créditos base son los ingresos originales del informe antes de las bonificaciones. El neto base resta los costes reales. Los créditos recibidos son los ingresos liquidados después de bonificaciones y deducciones. Los totales base de ingresos y neto no están disponibles hasta conocer estos importes de todas las batallas registradas. Mín/Máx siguen abriendo los resultados conocidos; un triángulo de advertencia indica estadísticas con datos parciales. Se conservan los ingresos recibidos históricos. Un informe completo puede aportar los importes base que faltan. Ambas filas de créditos permanecen visibles; los importes no disponibles se muestran con guiones.",
+      "help.credits.base_received": "Base: antes de bonos; recibidos: ingresos liquidados.",
       "sort.partial": "Solo resultados disponibles. Con un único resultado, Mín, Media y Máx son iguales.",
       "vehicle.role.role_HT_assault.name": "Carro pesado de asalto",
       "vehicle.role.role_HT_assault.description": "Vehículos pesados blindados para el combate a corta distancia y la defensa de posiciones.",
@@ -2549,7 +2564,10 @@
       "sort.field_coverage": "Este campo está disponible en {0} de {1} resultados recibidos.",
       "more.bonus.premium.free_xp": "Cuenta prémium: +{0} EXP libre",
       "more.bonus.premium.crew_xp": "Cuenta prémium: +{0} EXP de tripulación",
-      "battle.return": "Volver al origen"
+      "battle.return": "Volver al origen",
+      "help.stats.compact": "Resultados: {0}/{1}.",
+      "help.credits.incomplete_brief": "Créditos base incompletos; Mín/Máx no disponibles.",
+      "sort.base_extrema_unavailable": "{0}: datos base incompletos ({1}/{2}); Mín/Máx no disponibles."
     },
     "uk": {
       "title": "Статистика сесії",
@@ -2936,7 +2954,7 @@
       "finance.credits_net_received": "Отримане нетто",
       "finance.credits_base": "Кредити (базові)",
       "finance.credits_received": "Кредити (отримані)",
-      "help.credits.base_received": "Базові кредити — початковий дохід зі звіту до бонусів. Базове нетто віднімає фактичні витрати бою. Отримані кредити — підсумковий дохід після бонусів і відрахувань. Базові суми доходу та нетто недоступні, доки ці дані не відомі для всіх записаних боїв. Мін/Макс відкривають відомі результати; попереджувальний трикутник позначає статистику за неповними даними. Історичні отримані суми зберігаються. Відсутні базові суми можна додати після отримання повного звіту. Обидва рядки кредитів залишаються видимими; недоступні суми позначаються рисками.",
+      "help.credits.base_received": "Базові: до бонусів; отримані: підсумковий дохід.",
       "sort.partial": "Лише доступні результати. За одного результату Мін, Середнє та Макс однакові.",
       "vehicle.role.role_HT_assault.name": "Штурмовий важкий танк",
       "vehicle.role.role_HT_assault.description": "Броньовані важкі машини для ближнього бою та утримання позицій.",
@@ -2974,7 +2992,10 @@
       "sort.field_coverage": "Це поле доступне в {0} з {1} отриманих результатів.",
       "more.bonus.premium.free_xp": "Преміум акаунт: +{0} вільний досвід",
       "more.bonus.premium.crew_xp": "Преміум акаунт: +{0} досвід екіпажу",
-      "battle.return": "Повернутися до місця переходу"
+      "battle.return": "Повернутися до місця переходу",
+      "help.stats.compact": "Результати: {0}/{1}.",
+      "help.credits.incomplete_brief": "Базові кредити неповні; Мін/Макс недоступні.",
+      "sort.base_extrema_unavailable": "{0}: неповні базові дані ({1}/{2}); Мін/Макс недоступні."
     }
   }
 }

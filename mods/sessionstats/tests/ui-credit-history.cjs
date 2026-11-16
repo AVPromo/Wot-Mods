@@ -60,7 +60,7 @@ module.exports=async({browser,nativeHost,check})=>{
             const economy=panel.querySelector('.ss-economy'),pair=economy.querySelector('.ss-credit-pair'),rows=[...economy.querySelectorAll('.ss-money-row:not(.ss-credit-pair)')],find=label=>rows.find(row=>[...row.querySelector('.ss-money-label').childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('')===label),values=row=>[...row.querySelectorAll(':scope > .ss-money-value > .ss-cell-value')].map(n=>n.textContent.replace(/\s/g,''));
             const creditValues=basis=>['credits_income_'+basis,'credits_costs','credits_net_'+basis].map(metric=>pair.querySelector('.ss-money-value[data-ss-metric="'+metric+'"] > .ss-cell-value').textContent.replace(/\s/g,''));
             const base=pair.querySelector('.ss-credit-label-column [data-ss-credit-row="base"]'),received=pair.querySelector('.ss-credit-label-column [data-ss-credit-row="received"]'),bonds=find(messages['finance.bonds']),gold=find(messages['finance.gold']),help=(economy.querySelector('.ss-info-button')||panel.querySelector('.ss-group-heading .ss-info-button')).getAttribute('data-ss-help')||'';
-            return {base:base.textContent===messages['finance.credits_base'],baseValues:creditValues('base'),received:received.textContent===messages['finance.credits_received']?creditValues('received'):[],bonds:bonds?values(bonds):[],gold:gold?values(gold):[],costOwners:economy.querySelectorAll('.ss-money-value[data-ss-metric="credits_costs"]').length,help:help.includes(messages['help.credits.base_received']),availability:available||help.includes(messages['sort.credits_income_base']+': '+messages['coverage.value'].replace('{0}','0').replace('{1}','3'))};
+            return {base:base.textContent===messages['finance.credits_base'],baseValues:creditValues('base'),received:received.textContent===messages['finance.credits_received']?creditValues('received'):[],bonds:bonds?values(bonds):[],gold:gold?values(gold):[],costOwners:economy.querySelectorAll('.ss-money-value[data-ss-metric="credits_costs"]').length,help:help.includes(messages['help.credits.base_received'])||help.includes(messages['help.credits.incomplete_brief']),availability:available||help.includes(messages['help.credits.incomplete_brief'])};
           }
           return {summary:inspect(document.querySelector('#ss-summary')),card:inspect(document.querySelector('#ss-groups .ss-group'))};
         },{messages,available:scenario.available});
@@ -119,4 +119,5 @@ module.exports=async({browser,nativeHost,check})=>{
     }
   }finally{await page.close();}
   await require('./ui-credit-pair-layout.cjs')({browser,nativeHost,check});
+  await require('./ui-base-credit-availability.cjs')({browser,nativeHost,check});
 };

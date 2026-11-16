@@ -1,6 +1,9 @@
 /* Notice counts and coverage explanations must reflect the visible data. */
 const fs=require('fs'), path=require('path');
 module.exports=async({browser,nativeHost,check:reportCheck})=>{
+  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages,
+    results=(stats,messages=catalog.en)=>messages['help.stats.compact'].replace('{0}',String(stats.battles)).replace('{1}',String(stats.observed_battles)),
+    brief=text=>text.length<=400&&text.split('\n').filter(line=>line.trim()).length<=3;
   const failures=[];
   const check=(name,pass)=>{
     if(pass) reportCheck(name,true);
@@ -16,10 +19,10 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
   payload.warnings=['Deferred credits do not increase this balance.','Deferred credits do not increase this balance.',
     'Synthetic additional notice','Synthetic additional notice'];
   await render(payload);
-  check('Repeated errors render once while reserve information uses the finance info icon',
+  check('Repeated errors render once while reserve information uses the brief finance info icon',
     await page.locator('.ss-data-notices .ss-data-notice').count()===1 &&
     await page.locator('#ss-summary .ss-economy .ss-info-button').getAttribute('data-ss-help').then(t=>
-      t.split('\n').filter(line=>line==='Deferred credits do not increase this balance.').length===1));
+      brief(t)&&t.split('\n').filter(line=>line==='Deferred credits do not increase this balance.').length===1));
   check('Notice count matches visible unique errors',await page.locator('#ss-status').textContent().then(t=>t.includes('Data notices: 1')));
   check('Notice presentation does not rewrite the incoming model',await page.evaluate(()=>JSON.parse(model.payload).warnings.length===4));
   payload.warnings=['__proto__','__proto__','<img src=x onerror=alert(1)>'];
@@ -43,7 +46,7 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
   check('Incomplete totals keep their explanation on an explicit overview icon',
     await page.locator('#ss-summary .ss-coverage-legend,.ss-explainer').count()===0 &&
     await page.locator('#ss-summary .ss-summary-main .ss-info-button').getAttribute('data-ss-help').then(t=>
-      t.includes('x/y: battles with this value / recorded battles.')));
+      brief(t)&&t.includes(results(stats))&&t.includes(catalog.en['help.credits.incomplete_brief'])));
   check('Zero available metric values keep their honest count and explanation',
     await page.locator('#ss-summary [data-ss-metric="xp_base"]').first().getAttribute('aria-label')===
       'Base XP Data available for 0 of '+stats.observed_battles+' recorded battles.' &&
@@ -59,7 +62,7 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
         'Data available for '+stats.currencies.credits.income_count+' of '+stats.observed_battles+' recorded battles.',
         'Data available for '+stats.currencies.credits.income_base_count+' of '+stats.observed_battles+' recorded battles.'])&&
     await page.locator('#ss-summary .ss-economy .ss-info-button').getAttribute('data-ss-help').then(text=>
-      text.includes('Data available for '+stats.currencies.credits.income_count+' of '+stats.observed_battles+' recorded battles.')));
+      brief(text)&&text.includes(results(stats))&&text.includes(catalog.en['help.credits.incomplete_brief'])));
   const performance=page.locator('#ss-summary .ss-performance');
   const info=performance.locator('.ss-info-button');
   await performance.hover({position:{x:5,y:5}});
@@ -98,7 +101,7 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
     await info.getAttribute('aria-describedby')==='ss-help-tooltip' && await info.getAttribute('aria-expanded')==='true' &&
     await page.locator('#ss-help-tooltip').isVisible() &&
     await page.locator('#ss-help-tooltip').textContent().then(t=>
-      t.includes('Data available for 0 of '+stats.observed_battles+' recorded battles.') &&
+      brief(t)&&t.includes(results(stats)) &&
       t.includes('Average battle WN8 may differ from period WN8.')));
   const tooltipPosition=await page.locator('#ss-help-tooltip').getAttribute('style');
   await page.mouse.move(infoBox.x+9,infoBox.y+6);
@@ -180,11 +183,10 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
   check('Updating data clears the previous hover timer without a ghost popup '+JSON.stringify({pendingTimer,...timerAudit}),
     timerAudit.cleared.includes(pendingTimer) && !timerAudit.fired.includes(pendingTimer) &&
     await page.locator('#ss-help-tooltip').isHidden());
-  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   for(const [language,messages] of Object.entries(catalog)) {
     payload.localization={language,messages};await render(payload);
     check('Coverage help follows the selected language '+language,
-      await page.locator('#ss-summary .ss-summary-main .ss-info-button').getAttribute('data-ss-help').then(t=>t.includes(messages['coverage.legend'])) &&
+      await page.locator('#ss-summary .ss-summary-main .ss-info-button').getAttribute('data-ss-help').then(t=>brief(t)&&t.includes(results(stats,messages))&&t.includes(messages['help.credits.incomplete_brief'])) &&
       await page.locator('#ss-summary .ss-performance .ss-info-button').getAttribute('aria-label').then(t=>t.startsWith(messages['help.info']+':')));
   }
   const complete=copy(),completeStats=complete.scopes.launch.summary;
@@ -206,7 +208,7 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
   // Non-rendered zero gold must not prevent the visible rows sharing coverage.
   partial.currencies.gold={income:0,costs:0,net:0,income_count:1,costs_count:1,net_count:1};
   await render(payload);
-  check('Partial groups show one generic coverage badge beside the name and keep metric availability in help',await page.locator('#ss-groups .ss-group').first().evaluate(group=>{
+  check('Partial groups show one generic coverage badge beside the name and keep their brief count explanation',await page.locator('#ss-groups .ss-group').first().evaluate((group,expectedHelp)=>{
     const heading=group.querySelector('.ss-group-heading'), note=heading.querySelector('.ss-group-coverage');
     const title=heading.querySelector('.ss-group-title').getBoundingClientRect();
     const free=group.querySelector('.ss-free-xp'),freeBox=free.getBoundingClientRect();
@@ -215,10 +217,10 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
       group.querySelector('.ss-group-count .ss-kpi-value').textContent==='4' &&
       group.querySelector('.ss-group-count .ss-kpi-value').children.length===0 &&
       group.querySelectorAll('.ss-info-button').length===1 &&
-      heading.querySelector('.ss-info-button').getAttribute('data-ss-help').includes('Period WN8: data for 3/4 battles.') &&
+      heading.querySelector('.ss-info-button').getAttribute('data-ss-help')===expectedHelp &&
       free.getAttribute('aria-label')==='Free XP: Data available for 3 of 4 recorded battles.' && !free.textContent.includes('/') &&
       note.getBoundingClientRect().left>=title.left && freeBox.bottom<=group.querySelector('.ss-details').getBoundingClientRect().top+1;
-  }));
+  },[results(partial),catalog.en['explain.wn8'],catalog.en['help.credits.incomplete_brief']].join('\n')));
   check('Shared financial availability stays accessible without header or row ratios',await page.locator('#ss-groups .ss-group').first().locator('.ss-economy').evaluate(table=>
     table.querySelectorAll('.ss-cell-coverage').length===0 && table.querySelectorAll('.ss-money-row').length===2 &&
     table.querySelectorAll('.ss-credit-label-column [data-ss-credit-row]').length===2 &&
