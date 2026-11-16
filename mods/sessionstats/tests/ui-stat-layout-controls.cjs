@@ -1,4 +1,4 @@
-/* Statistic text is centered as one readable block; table rows share the finance height. */
+/* Statistic text stays centered; adjacent tables retain natural row heights. */
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 async function naturalKPIBoxes(page){
   return page.locator('#ss-groups .ss-group-kpi .ss-kpi-label,#ss-groups .ss-group-kpi .ss-kpi-value').evaluateAll(nodes=>nodes.length===6&&nodes.every(node=>{
@@ -141,19 +141,35 @@ module.exports=async({browser,nativeHost,check})=>{
         large.captionLines>=1&&large.valueLines>=1&&large.partial&&large.value==='-1234567890'&&
         large.height>=large.captionHeight+large.valueHeight+5&&large.height<=large.captionHeight+large.valueHeight+7&&large.centered&&large.fits);
       await publish('credits_costs','max');
-      const table=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
+      async function tableGeometry(){return page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
         const performance=card.querySelector('.ss-performance'),economy=card.querySelector('.ss-economy'),
-          left=performance.getBoundingClientRect(),right=economy.getBoundingClientRect(),rows=[...performance.querySelectorAll('.ss-metric-head,.ss-metric-row')].map(node=>node.getBoundingClientRect());
+          left=performance.getBoundingClientRect(),right=economy.getBoundingClientRect(),bounds=card.querySelector('.ss-details').getBoundingClientRect(),
+          rows=[...performance.querySelectorAll('.ss-metric-head,.ss-metric-row')].map(node=>node.getBoundingClientRect());
         const gaps=rows.slice(1).map((row,index)=>(row.top-rows[index].bottom)/scale),top=(rows[0].top-left.top)/scale,bottom=(left.bottom-rows[rows.length-1].bottom)/scale;
-        return {fill:Math.abs(left.top-right.top)<=scale&&Math.abs(left.bottom-right.bottom)<=scale&&left.right<=right.left+scale,
-          gaps,top,bottom,rows:rows.length,distributed:getComputedStyle(performance).justifyContent==='space-around',
+        return {adjacent:Math.abs(left.top-right.top)<=scale&&left.right<=right.left+scale,
+          tablesContained:[left,right].every(box=>box.width>0&&box.height>0&&box.left>=bounds.left-scale&&box.right<=bounds.right+scale&&
+            box.top>=bounds.top-scale&&box.bottom<=bounds.bottom+scale),
+          gaps,top,bottom,rows:rows.length,start:getComputedStyle(performance).justifyContent==='flex-start',
+          distributed:getComputedStyle(performance).justifyContent==='space-around',
+          rowHeight:rows.reduce((sum,row)=>sum+row.height/scale,0),performanceHeight:left.height/scale,economyHeight:right.height/scale,
           contained:rows.every(row=>row.top>=left.top-scale&&row.bottom<=left.bottom+scale&&row.left>=left.left-scale&&row.right<=left.right+scale),
           coverage:card.querySelectorAll('.ss-cell-coverage,.ss-count-coverage,.ss-wn8-coverage').length,height:card.getBoundingClientRect().height/scale};
-      },scale);
-      check('Performance fills the adjacent financial table height without overlapping columns at '+scale+': '+JSON.stringify(table),table.fill&&table.contained&&table.rows===4);
-      check('Performance rows distribute their available space evenly at '+scale,
-        table.distributed&&table.gaps.every(gap=>gap>=0)&&Math.max(...table.gaps)-Math.min(...table.gaps)<=1.5&&
-        Math.abs(table.top-table.bottom)<=1.5&&Math.abs(table.gaps[1]-(table.top+table.bottom))<=1.5);
+      },scale);}
+      const naturalRows=table=>table.start&&table.rows===4&&table.contained&&
+        table.gaps.concat([table.top,table.bottom]).every(gap=>gap>=-0.1&&gap<=1.1)&&
+        table.performanceHeight>=table.rowHeight-0.1&&table.performanceHeight<=table.rowHeight+table.gaps.length+2.1;
+      const table=await tableGeometry();
+      check('Performance and finance remain adjacent, top-aligned and contained at '+scale+': '+JSON.stringify(table),
+        table.adjacent&&table.tablesContained&&table.contained&&table.rows===4);
+      check('Performance retains natural row heights and only zero/one-pixel gaps at '+scale+': '+JSON.stringify(table),naturalRows(table));
+      const stretch=await page.addStyleTag({content:
+        '.ss-group .ss-details.ss-paired-tables { align-items:stretch !important; }'+
+        '.ss-group .ss-paired-tables .ss-performance { justify-content:space-around !important; }'});
+      const obsolete=await tableGeometry();
+      check('The natural-height guard rejects the previous stretched space-around layout at '+scale+': '+JSON.stringify(obsolete),
+        obsolete.distributed&&Math.abs(obsolete.performanceHeight-obsolete.economyHeight)<=1&&!naturalRows(obsolete));
+      await stretch.evaluate(node=>node.remove());
+      check('Removing the previous stretching restores natural performance rows at '+scale,naturalRows(await tableGeometry()));
       const rules=await page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{
         const rows=[...card.querySelectorAll('.ss-metric-row,.ss-money-row')],
           cells=[...card.querySelectorAll('.ss-metric-head > .ss-metric-number,.ss-metric-row > .ss-metric-number,.ss-money-head > .ss-money-value,.ss-money-row .ss-money-value')],

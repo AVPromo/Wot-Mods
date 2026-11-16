@@ -14,7 +14,9 @@ module.exports=async({page,scale,check})=>{
       const ink=range.getBoundingClientRect(),button=cell.querySelector('.ss-metric-battle-link'),cue=cell.querySelector('.ss-extreme-link-cue');
       const marks=[...card.querySelectorAll('.ss-metric-row [data-ss-sort-active]')],others=[...card.querySelectorAll('.ss-metric-row > .ss-metric-number')].filter(node=>node!==cell);
       const baseline=window.__selectedCellBaseline[card.getAttribute('data-group-id')][metric][index-1];
-      const action=button&&button.getBoundingClientRect(),arrow=cue&&cue.getBoundingClientRect();
+      const action=button&&button.getBoundingClientRect(),arrow=cue&&cue.getBoundingClientRect(),
+        figureBox=figure.getBoundingClientRect(),rowBox=row.getBoundingClientRect(),line=parseFloat(style.lineHeight);
+      const contained=rect=>rect.left>=box.left-scale&&rect.right<=box.right+scale&&rect.top>=box.top-scale&&rect.bottom<=box.bottom+scale;
       return {value:figure.textContent.replace(/\s/g,''),selected:marks.length===1&&marks[0]===cell&&cell.getAttribute('data-ss-sort-active')===metric,
         headerNeutral:card.querySelectorAll('.ss-metric-head [data-ss-sort-active]').length===0,
         paint:style.boxShadow.includes('inset')&&style.boxShadow.includes('rgb(231, 162, 59)')&&style.backgroundColor==='rgb(37, 42, 35)',
@@ -25,7 +27,8 @@ module.exports=async({page,scale,check})=>{
           style.display==='flex'&&style.flexWrap==='nowrap'&&getComputedStyle(figure).whiteSpace==='nowrap'&&
           Math.abs(action.width/scale-14)<=0.5&&Math.abs(action.height/scale-14)<=0.5&&action.height<=box.height-4*scale&&
           Math.abs((arrow.left-ink.right)/scale-5)<=0.5&&Math.abs((arrow.top+arrow.bottom-ink.top-ink.bottom)/scale)<=4&&
-          arrow.right<=box.right-scale&&box.height/scale<=27,
+          arrow.right<=box.right-scale&&ink.height<=line+scale&&figureBox.height<=line+scale&&arrow.height<=line+scale&&
+          contained(action)&&contained(arrow)&&Math.abs(box.height-rowBox.height)<=scale,
         returned:!button||!button.classList.contains('ss-source-returned')||getComputedStyle(cue).outlineColor==='rgb(231, 162, 59)'&&
           Math.abs(parseFloat(getComputedStyle(cue).outlineWidth)/scale-2)<=0.1};
     }),{metric,statistic,scale});
