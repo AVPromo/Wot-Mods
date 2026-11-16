@@ -58,6 +58,21 @@ module.exports=async({browser,nativeHost,check})=>{
         await frames(page);
       }
       async function audit(){return page.locator('#ss-groups').evaluate((owner,scale)=>{
+      // Only a marked caption may intentionally clip; numeric ink and source
+      // controls still have to fit their original owning cell in full.
+      const captionEllipsis=(text,owner)=>{
+        const parent=text.nodeType===3?text.parentElement:text,
+          caption=parent&&parent.closest('.ss-caption-ellipsis');
+        if(!caption||!owner.contains(caption)||!caption.closest('.ss-aggregate')||
+          !caption.closest('.ss-metric-name,.ss-credit-row-label,.ss-credit-inline-label,.ss-money-head > .ss-money-label,.ss-money-row > .ss-money-label,.ss-money-head > .ss-money-value,.ss-metric-head > .ss-metric-number,.ss-group-kpi .ss-kpi-label'))return false;
+        const style=getComputedStyle(caption),box=caption.getBoundingClientRect(),cell=owner.getBoundingClientRect(),full=caption.textContent,
+          inset=['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(style[key])||0),0);
+        return full.length>0&&caption.classList.contains('ss-hover-help')&&caption.getAttribute('data-ss-help')===full&&
+          caption.getAttribute('aria-label')===full&&caption.getAttribute('aria-controls')==='ss-help-tooltip'&&
+          style.whiteSpace==='nowrap'&&style.overflowX==='hidden'&&style.textOverflow==='ellipsis'&&
+          caption.scrollWidth>caption.clientWidth&&box.width>0&&box.height>0&&box.height<=parseFloat(style.lineHeight)+inset+scale&&
+          box.left>=cell.left-scale&&box.right<=cell.right+scale&&box.top>=cell.top-scale&&box.bottom<=cell.bottom+scale;
+      };
         const rect=node=>{const r=node.getBoundingClientRect();return {left:r.left/scale,right:r.right/scale,top:r.top/scale,bottom:r.bottom/scale,width:r.width/scale,height:r.height/scale};};
         const cards=[...owner.querySelectorAll('.ss-group')].map(card=>{
           const header=rect(card.querySelector('.ss-group-header')),identity=rect(card.querySelector('.ss-group-name')),headlineStats=rect(card.querySelector('.ss-group-stats'));
@@ -65,8 +80,12 @@ module.exports=async({browser,nativeHost,check})=>{
           const failures=[];
           for(const node of card.querySelectorAll('.ss-metric-row .ss-extreme-number,.ss-metric-row > .ss-metric-number:not(.ss-extreme-cell),.ss-money-value > .ss-cell-value,.ss-metric-name,.ss-money-label,.ss-credit-inline-label,.ss-metric-head > .ss-metric-number,.ss-money-head > .ss-money-value')){
             if(!(node.getBoundingClientRect().width>0))continue;
-            const cell=rect(node.parentNode.classList.contains('ss-extreme-cell')||node.classList.contains('ss-cell-value')?node.parentNode:node),range=document.createRange();range.selectNodeContents(node);
-            for(const ink of range.getClientRects())if(ink.width>0&&(ink.left/scale<cell.left-1||ink.right/scale>cell.right+1||ink.top/scale<cell.top-1||ink.bottom/scale>cell.bottom+1))failures.push({text:node.textContent,cell,ink:{left:ink.left/scale,right:ink.right/scale,top:ink.top/scale,bottom:ink.bottom/scale}});
+            const owner=node.parentNode.classList.contains('ss-extreme-cell')||node.classList.contains('ss-cell-value')?node.parentNode:node,
+              cell=rect(owner),walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text;
+            while((text=walker.nextNode()))if(text.textContent.trim()&&!captionEllipsis(text,owner)){
+              const range=document.createRange();range.selectNodeContents(text);
+              for(const ink of range.getClientRects())if(ink.width>0&&(ink.left/scale<cell.left-1||ink.right/scale>cell.right+1||ink.top/scale<cell.top-1||ink.bottom/scale>cell.bottom+1))failures.push({text:text.textContent,cell,ink:{left:ink.left/scale,right:ink.right/scale,top:ink.top/scale,bottom:ink.bottom/scale}});
+            }
           }
           for(const button of card.querySelectorAll('.ss-metric-row .ss-metric-battle-link')){
             const action=rect(button),cell=rect(button.parentNode);

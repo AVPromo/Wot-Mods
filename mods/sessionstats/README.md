@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.19 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.20 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -42,7 +42,12 @@ retain the readable stacked fallback.
 Aggregate finance columns use the assigned card-width budget rather than
 remeasuring a flex table during the same layout pass. Credit rows, headings
 and Bonds share explicit column widths so stale native geometry cannot give
-the currency caption the space reserved for its figures.
+the currency caption the space reserved for its figures. Table captions stay
+on one line and use an ellipsis when their available width is insufficient;
+custom hover help shows the full caption after 500 ms. Figures remain complete.
+Wide aggregate cards distribute spare width to performance and numeric columns
+instead of leaving a compact performance table beside an oversized currency
+caption column.
 When received results in
 the selected period lack the selected metric, the filter section shows a framed
 warning with the game's native alert triangle. Pending battles alone do not
@@ -99,7 +104,8 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.16 summary return, selected cells and shared costs](docs/UI_REFINEMENTS_0.9.16.md).
 [0.9.17 compact battle cards and smaller source arrows](docs/UI_REFINEMENTS_0.9.17.md), and
 [0.9.18 adjacent aggregate tables and compact headers](docs/UI_REFINEMENTS_0.9.18.md), and
-[0.9.19 native finance column allocation](docs/UI_REFINEMENTS_0.9.19.md).
+[0.9.19 native finance column allocation](docs/UI_REFINEMENTS_0.9.19.md), and
+[0.9.20 single-line captions and balanced wide tables](docs/UI_REFINEMENTS_0.9.20.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
 already selected, including in a full-history Timeline range. **Back**, beside

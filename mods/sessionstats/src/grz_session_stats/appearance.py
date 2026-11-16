@@ -887,6 +887,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 /* Aggregate Min/Avg/Max columns reserve their real text and action widths.
    Pair the tables at ordinary card sizes instead of wrapping their old bases. */
 .ss-aggregate .ss-table-text { display:inline-block; white-space:nowrap; }
+.ss-aggregate .ss-caption-ellipsis { min-width:0; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; overflow-wrap:normal; cursor:help; }
 .ss-aggregate .ss-metric-row .ss-metric-number { display:flex; flex-wrap:nowrap; align-items:center; justify-content:flex-end; }
 .ss-aggregate .ss-credit-extreme-actions > .ss-metric-battle-link { padding-left:3rem; padding-right:3rem; }
 .ss-aggregate .ss-metric-name .ss-cell-value, .ss-paired-tables .ss-credit-label-text { overflow-wrap:break-word; }

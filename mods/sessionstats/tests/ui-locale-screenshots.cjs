@@ -23,6 +23,21 @@ const frames=page=>page.evaluate(()=>new Promise(resolve=>{
 
 async function audit(page,mode,group) {
   return page.evaluate(({scale,group,sample,stress})=>{
+      // Only a marked caption may intentionally clip; numeric ink and source
+      // controls still have to fit their original owning cell in full.
+      const captionEllipsis=(text,owner)=>{
+        const parent=text.nodeType===3?text.parentElement:text,
+          caption=parent&&parent.closest('.ss-caption-ellipsis');
+        if(!caption||!owner.contains(caption)||!caption.closest('.ss-aggregate')||
+          !caption.closest('.ss-metric-name,.ss-credit-row-label,.ss-credit-inline-label,.ss-money-head > .ss-money-label,.ss-money-row > .ss-money-label,.ss-money-head > .ss-money-value,.ss-metric-head > .ss-metric-number,.ss-group-kpi .ss-kpi-label'))return false;
+        const style=getComputedStyle(caption),box=caption.getBoundingClientRect(),cell=owner.getBoundingClientRect(),full=caption.textContent,
+          inset=['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(style[key])||0),0);
+        return full.length>0&&caption.classList.contains('ss-hover-help')&&caption.getAttribute('data-ss-help')===full&&
+          caption.getAttribute('aria-label')===full&&caption.getAttribute('aria-controls')==='ss-help-tooltip'&&
+          style.whiteSpace==='nowrap'&&style.overflowX==='hidden'&&style.textOverflow==='ellipsis'&&
+          caption.scrollWidth>caption.clientWidth&&box.width>0&&box.height>0&&box.height<=parseFloat(style.lineHeight)+inset+scale&&
+          box.left>=cell.left-scale&&box.right<=cell.right+scale&&box.top>=cell.top-scale&&box.bottom<=cell.bottom+scale;
+      };
     const panel=document.getElementById('grz-session-stats'),root=panel.getBoundingClientRect();
     const issues=[];
     const visible=node=>{const box=node.getBoundingClientRect();return box.width>0 && box.height>0;};
@@ -105,7 +120,7 @@ async function audit(page,mode,group) {
       }
       let textNode;
       while((textNode=walker.nextNode())) {
-        if(!textNode.textContent.trim()) continue;
+        if(!textNode.textContent.trim()||captionEllipsis(textNode,node)) continue;
         const range=document.createRange();range.selectNodeContents(textNode);
         for(const rect of range.getClientRects()) if(rect.left<box.left-limit || rect.right>box.right+limit) {
           issues.push({kind:'clipped-text',className:node.className,text:textNode.textContent.slice(0,100)});break;
@@ -229,7 +244,7 @@ async function audit(page,mode,group) {
       const cells=[...detail.querySelectorAll('.ss-metric-row > .ss-metric-name,.ss-metric-row > .ss-metric-number,.ss-money-row .ss-money-label,.ss-money-row .ss-money-value')];
       const textContained=cells.length>0&&cells.every(cell=>{
         const bounds=cell.getBoundingClientRect(),walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);
-        let text;while((text=walker.nextNode()))if(text.textContent.trim()){
+        let text;while((text=walker.nextNode()))if(text.textContent.trim()&&!captionEllipsis(text,cell)){
           const range=document.createRange();range.selectNodeContents(text);
           if([...range.getClientRects()].some(ink=>ink.width>0&&!inside(ink,bounds)))return false;
         }

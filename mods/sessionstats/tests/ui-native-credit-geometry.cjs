@@ -6,6 +6,21 @@ const frames=page=>page.evaluate(()=>new Promise(resolve=>{let count=5;
 }));
 
 function inspectNativeCredits({scale,legacy=false}){
+      // Only a marked caption may intentionally clip; numeric ink and source
+      // controls still have to fit their original owning cell in full.
+      const captionEllipsis=(text,owner)=>{
+        const parent=text.nodeType===3?text.parentElement:text,
+          caption=parent&&parent.closest('.ss-caption-ellipsis');
+        if(!caption||!owner.contains(caption)||!caption.closest('.ss-aggregate')||
+          !caption.closest('.ss-metric-name,.ss-credit-row-label,.ss-credit-inline-label,.ss-money-head > .ss-money-label,.ss-money-row > .ss-money-label,.ss-money-head > .ss-money-value,.ss-metric-head > .ss-metric-number,.ss-group-kpi .ss-kpi-label'))return false;
+        const style=getComputedStyle(caption),box=caption.getBoundingClientRect(),cell=owner.getBoundingClientRect(),full=caption.textContent,
+          inset=['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(style[key])||0),0);
+        return full.length>0&&caption.classList.contains('ss-hover-help')&&caption.getAttribute('data-ss-help')===full&&
+          caption.getAttribute('aria-label')===full&&caption.getAttribute('aria-controls')==='ss-help-tooltip'&&
+          style.whiteSpace==='nowrap'&&style.overflowX==='hidden'&&style.textOverflow==='ellipsis'&&
+          caption.scrollWidth>caption.clientWidth&&box.width>0&&box.height>0&&box.height<=parseFloat(style.lineHeight)+inset+scale&&
+          box.left>=cell.left-scale&&box.right<=cell.right+scale&&box.top>=cell.top-scale&&box.bottom<=cell.bottom+scale;
+      };
   const fault=window.__nativeCreditFault,real=fault.rect,previous=fault.audit;
   const rect=node=>{const r=real.call(node);return {left:r.left/scale,right:r.right/scale,top:r.top/scale,bottom:r.bottom/scale,width:r.width/scale,height:r.height/scale};};
   fault.audit=false;
@@ -30,8 +45,11 @@ function inspectNativeCredits({scale,legacy=false}){
       const visible=node=>{const r=rect(node);return r.width>0&&r.height>0;};
       const checkText=(node,owner)=>{
         if(!visible(node))return;
-        const cell=rect(owner),range=document.createRange();range.selectNodeContents(node);
-        for(const ink of range.getClientRects())if(ink.width>0&&!inside({left:ink.left/scale,right:ink.right/scale,top:ink.top/scale,bottom:ink.bottom/scale},cell))failures.push('text:'+node.textContent);
+        const cell=rect(owner),walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text;
+        while((text=walker.nextNode()))if(text.textContent.trim()&&!captionEllipsis(text,owner)){
+          const range=document.createRange();range.selectNodeContents(text);
+          for(const ink of range.getClientRects())if(ink.width>0&&!inside({left:ink.left/scale,right:ink.right/scale,top:ink.top/scale,bottom:ink.bottom/scale},cell))failures.push('text:'+text.textContent);
+        }
       };
       for(const cell of header.children)if(visible(cell)){
         if(!inside(rect(cell),table))failures.push('header-outside');checkText(cell,cell);

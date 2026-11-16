@@ -5,6 +5,21 @@ const frames=page=>page.evaluate(()=>new Promise(resolve=>{let left=4;
 }));
 
 function inspectCreditPairs({messages,scale,group}){
+      // Only a marked caption may intentionally clip; numeric ink and source
+      // controls still have to fit their original owning cell in full.
+      const captionEllipsis=(text,owner)=>{
+        const parent=text.nodeType===3?text.parentElement:text,
+          caption=parent&&parent.closest('.ss-caption-ellipsis');
+        if(!caption||!owner.contains(caption)||!caption.closest('.ss-aggregate')||
+          !caption.closest('.ss-metric-name,.ss-credit-row-label,.ss-credit-inline-label,.ss-money-head > .ss-money-label,.ss-money-row > .ss-money-label,.ss-money-head > .ss-money-value,.ss-metric-head > .ss-metric-number,.ss-group-kpi .ss-kpi-label'))return false;
+        const style=getComputedStyle(caption),box=caption.getBoundingClientRect(),cell=owner.getBoundingClientRect(),full=caption.textContent,
+          inset=['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(style[key])||0),0);
+        return full.length>0&&caption.classList.contains('ss-hover-help')&&caption.getAttribute('data-ss-help')===full&&
+          caption.getAttribute('aria-label')===full&&caption.getAttribute('aria-controls')==='ss-help-tooltip'&&
+          style.whiteSpace==='nowrap'&&style.overflowX==='hidden'&&style.textOverflow==='ellipsis'&&
+          caption.scrollWidth>caption.clientWidth&&box.width>0&&box.height>0&&box.height<=parseFloat(style.lineHeight)+inset+scale&&
+          box.left>=cell.left-scale&&box.right<=cell.right+scale&&box.top>=cell.top-scale&&box.bottom<=cell.bottom+scale;
+      };
   const problems={semantics:[],flow:[],readability:[]},compact=text=>text.replace(/\s/g,'');
   const visible=node=>{const box=node.getBoundingClientRect();return box.width>0&&box.height>0;};
   const near=(left,right)=>Math.abs(left-right)<=scale*1.5;
@@ -20,7 +35,11 @@ function inspectCreditPairs({messages,scale,group}){
     const actual=metrics.map(metric=>compact(pair.querySelector('[data-ss-metric="'+metric+'"] > .ss-cell-value').textContent));
     if(actual.join('|')!==expected.join('|'))issue('semantics','amounts:'+actual.join('|'));
     const labels=[...pair.querySelectorAll('.ss-credit-label-column [data-ss-credit-row]')],inline=[...pair.querySelectorAll('.ss-credit-inline-label')];
-    if(labels.length!==2||inline.length!==2||!inline.every(label=>label.getAttribute('aria-hidden')==='true'))issue('semantics','labels');
+    const inlineAccessible=inline.every(label=>owner==='card'&&!battle?
+      label.classList.contains('ss-caption-ellipsis')&&label.classList.contains('ss-hover-help')&&label.getAttribute('aria-hidden')===null&&
+      label.getAttribute('data-ss-help')===label.textContent&&label.getAttribute('aria-label')===label.textContent&&
+      label.getAttribute('aria-controls')==='ss-help-tooltip'&&label.getAttribute('tabindex')==='0':label.getAttribute('aria-hidden')==='true');
+    if(labels.length!==2||inline.length!==2||!inlineAccessible)issue('semantics','labels');
     for(const basis of ['base','received']){
       const income=pair.querySelector('.ss-credit-income-column [data-ss-credit-row="'+basis+'"]'),net=pair.querySelector('.ss-credit-net-column [data-ss-credit-row="'+basis+'"]'),label=pair.querySelector('.ss-credit-label-column [data-ss-credit-row="'+basis+'"]');
       if(!income||!net||!label||!visible(income)||!visible(net)||label.textContent!==messages['finance.credits_'+basis]){issue('semantics','missing-row:'+basis);continue;}
@@ -64,9 +83,12 @@ function inspectCreditPairs({messages,scale,group}){
       if(cell===cost&&!near((ink.left+ink.right)/2,(box.left+box.right)/2))issue('flow','horizontal-cost-center');
     }
     for(const label of labels.concat(inline).filter(visible)){
-      const box=label.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(label);
-      if(![...range.getClientRects()].every(ink=>ink.left>=box.left-scale&&ink.right<=box.right+scale&&ink.top>=box.top-scale&&ink.bottom<=box.bottom+scale)||
-        parseFloat(getComputedStyle(label).fontSize)/scale<12)issue('readability','currency-caption');
+      const box=label.getBoundingClientRect(),walker=document.createTreeWalker(label,NodeFilter.SHOW_TEXT);let text,contained=true;
+      while((text=walker.nextNode()))if(text.textContent.trim()&&!captionEllipsis(text,label)){
+        const range=document.createRange();range.selectNodeContents(text);
+        if(![...range.getClientRects()].every(ink=>ink.left>=box.left-scale&&ink.right<=box.right+scale&&ink.top>=box.top-scale&&ink.bottom<=box.bottom+scale))contained=false;
+      }
+      if(!contained||parseFloat(getComputedStyle(label).fontSize)/scale<12)issue('readability','currency-caption');
     }
   }
   return problems;

@@ -57,7 +57,22 @@ module.exports=async({browser,nativeHost,check})=>{
               const kpis=[...card.querySelectorAll('.ss-group-kpi')].map(node=>{
                 const box=node.getBoundingClientRect(),number=node.querySelector('.ss-kpi-value'),range=document.createRange();range.selectNodeContents(number);
                 const text=range.getBoundingClientRect(),label=node.querySelector('.ss-kpi-label'),labelBox=label.getBoundingClientRect(),labelRange=document.createRange();labelRange.selectNodeContents(label);
-                const fit=[...labelRange.getClientRects()].every(part=>part.left>=labelBox.left-1&&part.right<=labelBox.right+1&&part.top>=labelBox.top-1&&part.bottom<=labelBox.bottom+1)&&text.left>=box.left-1&&text.right<=box.right+1;return {fits:fit,box:rect(node,cardBox),label:rect(node.querySelector('.ss-kpi-label'),cardBox),value:rect(number,cardBox),centered:Math.abs((text.left+text.right-box.left-box.right)/2)<=1};
+                const inside=(part,owner)=>part.left>=owner.left-1&&part.right<=owner.right+1&&part.top>=owner.top-1&&part.bottom<=owner.bottom+1,
+                  style=getComputedStyle(label),full=label.textContent,
+                  inset=['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(style[key])||0),0),
+                  labelParts=[...labelRange.getClientRects()].filter(part=>part.width>0&&part.height>0),lineTops=[];
+                for(const part of labelParts)if(!lineTops.some(top=>Math.abs(top-part.top)<=1))lineTops.push(part.top);
+                // Only a marked aggregate caption may clip its own full text.
+                // KPI figures must remain inside their own visible value box.
+                const ellipsis=label.classList.contains('ss-caption-ellipsis')&&label.classList.contains('ss-hover-help')&&
+                  label.closest('.ss-aggregate')&&full.length>0&&label.getAttribute('data-ss-help')===full&&
+                  label.getAttribute('aria-label')===full&&label.getAttribute('aria-controls')==='ss-help-tooltip'&&
+                  label.getAttribute('title')===null&&style.whiteSpace==='nowrap'&&style.overflowX==='hidden'&&style.textOverflow==='ellipsis'&&
+                  label.scrollWidth>label.clientWidth&&lineTops.length===1&&labelBox.width>0&&labelBox.height>0&&
+                  labelBox.height<=parseFloat(style.lineHeight)+inset+1&&inside(labelBox,box),numberBox=number.getBoundingClientRect();
+                const fit=(labelParts.every(part=>inside(part,labelBox))||ellipsis)&&inside(numberBox,box)&&
+                  [...range.getClientRects()].every(part=>inside(part,numberBox));
+                return {fits:!!fit,box:rect(node,cardBox),label:rect(label,cardBox),value:rect(number,cardBox),centered:Math.abs((text.left+text.right-box.left-box.right)/2)<=1};
               });
               const field=document.querySelector('.ss-sort-statistic'),trigger=document.querySelector('#ss-sort-statistic .ss-select-trigger');
               const host=card.querySelector('.ss-group-sort-host');
@@ -85,6 +100,13 @@ module.exports=async({browser,nativeHost,check})=>{
               Math.max(...value.kpis.map(item=>item.label[1]))-Math.min(...value.kpis.map(item=>item.label[1]))<=scale&&
               Math.max(...value.kpis.map(item=>item.value[1]+item.value[3]))-Math.min(...value.kpis.map(item=>item.value[1]+item.value[3]))<=scale;
             check('Aggregate text stays aligned, readable and contained in its natural header '+caption+(centered?'':': '+JSON.stringify(value)),centered);
+            if(language==='en'&&width===550&&group==='maps'&&metric==='battles'){
+              const cropped=await page.addStyleTag({content:'#ss-groups .ss-group:first-child .ss-group-kpi .ss-kpi-value { width:1rem !important; max-width:1rem !important; overflow:hidden !important; text-overflow:ellipsis !important; white-space:nowrap !important; }'});
+              const invalid=await audit();
+              check('Caption ellipsis never permits cropped unmarked KPI figures at '+scale+'x',invalid.kpis.some(item=>!item.fits));
+              await cropped.evaluate(node=>node.remove());
+              check('Removing cropped KPI figures restores strict header containment at '+scale+'x',(await audit()).kpis.every(item=>item.fits));
+            }
             if(language==='en'&&width===1200&&group==='maps'&&metric==='credits_costs'){
               await page.evaluate(()=>{const payload=JSON.parse(model.payload);payload.scopes.launch.ordering.maps.direction='asc';
                 model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();});await frames(page);

@@ -810,7 +810,11 @@
             }
             var captionWidth = measurement.numberWidth > 0 && !measurement.compact ?
                 measurement.width - measurement.numberWidth * 3 : 0;
-            var numericWidth = measurement.compact ? measurement.width / 3 : measurement.numberWidth;
+            if (measurement.assigned && !measurement.compact) {
+                // Captions may ellipsize; spare room also belongs to figures.
+                captionWidth = Math.min(captionWidth, Math.max(64, measurement.width * 0.35));
+            }
+            var numericWidth = measurement.assigned ? (measurement.width - captionWidth) / 3 : measurement.numberWidth;
             function setColumn(cell, width) {
                 var value = measurement.assigned ? width + 'rem' : '';
                 cell.style.width = value;
@@ -3532,6 +3536,27 @@
             });
         } else { deferSettle(); }
     }
+    function layoutAggregateCaptions(card) {
+        if (card._ssCaptionsReady) { return; }
+        var selectors = ['.ss-metric-name > .ss-cell-value', '.ss-credit-label-text',
+            '.ss-credit-inline-label', '.ss-money-head > .ss-money-label',
+            '.ss-money-head > .ss-money-value', '.ss-money-row > .ss-money-label',
+            '.ss-group-kpi > .ss-kpi-label'];
+        selectors.forEach(function (selector) {
+            Array.prototype.forEach.call(card.querySelectorAll(selector), function (label) {
+                var caption = label.textContent;
+                if (!caption) { return; }
+                label.classList.add('ss-caption-ellipsis'); label.classList.add('ss-hover-help');
+                label.setAttribute('data-ss-help', caption); label.setAttribute('aria-label', caption);
+                label.setAttribute('aria-controls', helpTooltip.id); label.setAttribute('aria-expanded', 'false');
+                label.setAttribute('tabindex', '0'); label.removeAttribute('title');
+                // The duplicate credit caption is visible only in compact mode.
+                // Its CSS visibility, rather than aria-hidden, owns duplication.
+                if (label.classList.contains('ss-credit-inline-label')) { label.removeAttribute('aria-hidden'); }
+            });
+        });
+        card._ssCaptionsReady = true;
+    }
     function layoutAggregateTables(card, available) {
         var holder = card.querySelector('.ss-details'), performance = holder && holder.querySelector('.ss-performance');
         var economy = holder && holder.querySelector('.ss-economy');
@@ -3559,17 +3584,7 @@
         var numberWidth = columns[0] + columns[1] + columns[2];
         // Keep a readable caption lane while lending finance the recovered
         // space. Exceptionally wide figures retain the stacked fallback.
-        var performanceWidth = Math.max(222, numberWidth + 79);
-        if (available >= 600) {
-            // Wider cards have room for the full translated metric caption.
-            // Measure its natural text box without changing the figure fonts.
-            Array.prototype.forEach.call(performance.querySelectorAll('.ss-metric-name > .ss-cell-value'), function (label) {
-                label.style.display = 'inline-block'; label.style.whiteSpace = 'nowrap';
-                performanceWidth = Math.max(performanceWidth, numberWidth +
-                    Math.ceil(label.getBoundingClientRect().width / scale) + 10);
-                label.style.display = ''; label.style.whiteSpace = '';
-            });
-        }
+        var minimumPerformance = Math.max(222, numberWidth + 79), performanceWidth = minimumPerformance;
         var financeNumber = 54;
         Array.prototype.forEach.call(economy.querySelectorAll('.ss-table-text'), function (text) {
             financeNumber = Math.max(financeNumber, Math.ceil(text.getBoundingClientRect().width / scale) + 3);
@@ -3584,7 +3599,10 @@
             financeNumber = Math.max(financeNumber, Math.ceil(width / scale) + 2);
         });
         var financeMinimum = Math.max(244, financeNumber * 3 + 9);
-        var paired = available >= performanceWidth + financeMinimum;
+        var paired = available >= minimumPerformance + financeMinimum;
+        if (paired) {
+            performanceWidth = Math.max(minimumPerformance, Math.min(Math.round(available * 0.45), available - financeMinimum));
+        }
         if (holder.classList.contains('ss-paired-tables') !== paired) {
             holder.classList[paired ? 'add' : 'remove']('ss-paired-tables');
         }
@@ -3600,9 +3618,12 @@
             economy.removeAttribute('data-ss-finance-number-width');
             economy.removeAttribute('data-ss-finance-width');
         }
+        var contentWidth = performanceWidth - 9;
+        var captionWidth = Math.min(contentWidth - numberWidth, Math.max(70, Math.min(110, contentWidth * 0.30)));
+        var extraNumberWidth = Math.max(0, (contentWidth - captionWidth - numberWidth) / 3);
         Array.prototype.forEach.call(rows, function (row) {
             for (var index = 0; index < 3; index += 1) {
-                var width = paired ? columns[index] + 'rem' : '';
+                var width = paired ? (columns[index] + extraNumberWidth) + 'rem' : '';
                 if (row.children[index + 1].style.width !== width) { row.children[index + 1].style.width = width; }
             }
         });
@@ -3668,7 +3689,10 @@
                     card.classList[inlineCaptions ? 'add' : 'remove']('ss-battle-inline-captions');
                 }
             }
-            if (state.group !== 'battles') { layoutAggregateTables(card, Math.max(1, Math.min(width, cardWidth) - 14)); }
+            if (state.group !== 'battles') {
+                layoutAggregateCaptions(card);
+                layoutAggregateTables(card, Math.max(1, Math.min(width, cardWidth) - 14));
+            }
             layoutMoreColumns(card, Math.max(1, Math.min(width, cardWidth) - 14));
             card.setAttribute('aria-posinset', String(Number(card.getAttribute('data-list-index')) + 1));
             card.setAttribute('aria-setsize', String(total));
