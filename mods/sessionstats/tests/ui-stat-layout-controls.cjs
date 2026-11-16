@@ -215,13 +215,41 @@ module.exports=async({browser,nativeHost,check})=>{
           card.querySelectorAll('.ss-group-heading .ss-group-coverage').length===1&&
           card.querySelectorAll('.ss-cell-coverage,.ss-count-coverage,.ss-wn8-coverage').length===0));
       await publish('credits_costs','max',{noSources:true});
-      check('Missing financial source references leave no empty extrema action slots at '+scale,
-        await page.locator('#ss-groups .ss-group').evaluate(card=>card.querySelectorAll('.ss-credit-extreme-actions').length===0&&
-          [...card.querySelectorAll('.ss-credit-cell')].every(cell=>{
+      const sourceLess=()=>page.locator('#ss-groups .ss-group').evaluate(card=>{
+        const economy=card.querySelector('.ss-economy'),compact=economy.classList.contains('ss-credit-compact');
+        return {actions:card.querySelectorAll('.ss-credit-extreme-actions').length,
+          cells:[...card.querySelectorAll('.ss-credit-cell')].map(cell=>{
             const content=[...cell.children].filter(child=>!child.classList.contains('ss-credit-inline-label'));
-            return content.length===1&&content[0].classList.contains('ss-cell-value')&&
-              [...cell.querySelectorAll('.ss-credit-inline-label')].every(label=>label.getAttribute('aria-hidden')==='true');
-          })));
+            return {content:content.length,oneValue:content.length===1&&content[0].classList.contains('ss-cell-value')};
+          }),
+          labelColumnDisplay:getComputedStyle(card.querySelector('.ss-credit-label-column')).display,
+          expectedColumnDisplay:compact?'none':'flex',
+          captions:[...card.querySelectorAll('.ss-credit-inline-label')].map(label=>{
+            const full=label.textContent,issues=[];
+            if(!label.classList.contains('ss-caption-ellipsis')||!label.classList.contains('ss-hover-help'))issues.push('marker');
+            if(!full||label.getAttribute('data-ss-help')!==full)issues.push('help');
+            if(label.getAttribute('aria-label')!==full||label.getAttribute('aria-controls')!=='ss-help-tooltip'||
+              label.getAttribute('tabindex')!=='0'||label.getAttribute('aria-hidden')!==null)issues.push('aria');
+            if(label.getAttribute('title')!==null)issues.push('native-title');
+            if(getComputedStyle(label).display!==(compact?'block':'none'))issues.push('duplicate-visibility');
+            return {row:label.parentNode.getAttribute('data-ss-credit-row'),issues};
+          })};
+      });
+      const validSourceLess=result=>result.actions===0&&result.cells.length===5&&result.cells.every(cell=>cell.oneValue)&&
+        result.captions.length===2&&result.captions.every(label=>!label.issues.length)&&
+        result.labelColumnDisplay===result.expectedColumnDisplay;
+      const noSources=await sourceLess();
+      check('Missing financial source references leave one value per cell, no empty actions and accessible CSS-owned captions at '+scale+': '+JSON.stringify(noSources),
+        validSourceLess(noSources));
+      const caption=page.locator('#ss-groups .ss-credit-inline-label').first(),fullHelp=await caption.getAttribute('data-ss-help');
+      await caption.evaluate(label=>label.setAttribute('data-ss-help','Incomplete synthetic caption'));
+      const incompleteHelp=await sourceLess();
+      check('The missing-source guard rejects an incomplete aggregate caption help contract at '+scale+': '+JSON.stringify(incompleteHelp),
+        !validSourceLess(incompleteHelp)&&incompleteHelp.actions===0&&incompleteHelp.cells.every(cell=>cell.oneValue)&&
+        incompleteHelp.captions.some(label=>label.issues.includes('help')));
+      await caption.evaluate((label,fullHelp)=>label.setAttribute('data-ss-help',fullHelp),fullHelp);
+      const restoredHelp=await sourceLess();
+      check('Restoring aggregate caption help preserves the source-less cell contract at '+scale+': '+JSON.stringify(restoredHelp),validSourceLess(restoredHelp));
       for(const profile of [
         {name:'Long synthetic vehicle designation with complete metadata',width:590,count:1234567890123456},
         {name:'Long synthetic pending vehicle designation',width:590,empty:true},
