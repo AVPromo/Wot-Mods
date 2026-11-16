@@ -65,7 +65,7 @@ module.exports=async({browser,nativeHost,check})=>{
           await action.count()===1&&await action.evaluate((node,{group,metric,statistic})=>{
             const cell=node.parentNode,text=Array.from(cell.childNodes).filter(child=>child!==node).map(child=>child.textContent).join('').replace(/\s/g,''),box=node.getBoundingClientRect(),style=getComputedStyle(cell);
             return node.getAttribute('data-battle-id')===group+'-'+metric+'-'+statistic&&
-              text===(statistic==='min'?'0':'12345')&&Math.abs(box.height-18)<=0.5&&Math.abs(box.width-16)<=0.5&&
+              text===(statistic==='min'?'0':'12345')&&Math.abs(box.height-14)<=0.5&&Math.abs(box.width-14)<=0.5&&
               style.textAlign==='right'&&cell.classList.contains('ss-extreme-cell')&&node.textContent===''&&
               node.getAttribute('aria-label').includes('Show battle')&&
               node.getAttribute('data-ss-help').includes('Synthetic off-page map')&&
@@ -178,15 +178,15 @@ module.exports=async({browser,nativeHost,check})=>{
             const range=document.createRange();range.selectNode(original[0]);const ink=range.getBoundingClientRect(),box=cell.getBoundingClientRect(),hit=button.getBoundingClientRect();
             const visual=getComputedStyle(cell),overlay=getComputedStyle(button),cue=cell.querySelector('.ss-extreme-link-cue'),corner=cue.getBoundingClientRect();
             return actual===expected&&ink.width>3&&ink.height>=14&&ink.left>=box.left-1&&ink.right<=box.right+1&&
-              Math.abs(hit.width-16)<=0.5&&Math.abs(hit.height-18)<=0.5&&overlay.backgroundImage==='none'&&overlay.backgroundColor==='rgba(0, 0, 0, 0)'&&
+              Math.abs(hit.width-14)<=0.5&&Math.abs(hit.height-14)<=0.5&&overlay.backgroundImage==='none'&&overlay.backgroundColor==='rgba(0, 0, 0, 0)'&&
               parseFloat(overlay.borderWidth)===0&&overlay.outlineStyle==='none'&&overlay.boxShadow==='none'&&
               visual.boxShadow==='none'&&visual.display==='flex'&&visual.flexWrap==='nowrap'&&getComputedStyle(cue).display==='block'&&
               getComputedStyle(paint).display==='block'&&getComputedStyle(paint).whiteSpace==='nowrap'&&
               cue.parentNode===button&&getComputedStyle(cue).position==='relative'&&overlay.position==='relative'&&overlay.flexShrink==='0'&&
               parseFloat(getComputedStyle(cue).borderWidth)===0&&getComputedStyle(cue).outlineStyle==='none'&&
               getComputedStyle(cue).backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(getComputedStyle(cue).borderRadius)>0&&
-              Math.abs(corner.width-16)<=0.5&&Math.abs(corner.height-18)<=0.5&&
-              corner.left>=ink.right+2&&corner.left<=ink.right+4&&corner.right<=box.right-1&&
+              Math.abs(corner.width-14)<=0.5&&Math.abs(corner.height-14)<=0.5&&
+              corner.left>=ink.right+4.5&&corner.left<=ink.right+5.5&&corner.right<=box.right-1&&
               Math.abs((corner.top+corner.bottom)-(ink.top+ink.bottom))<=2&&
               (row.getAttribute('data-ss-metric')!=='battle_wn8'||statistic!=='min'||
                 original[0].classList.contains('ss-wn8-low-ink')&&getComputedStyle(cell).color==='rgb(0, 0, 0)');
@@ -249,9 +249,9 @@ module.exports=async({browser,nativeHost,check})=>{
           const line=parseFloat(style.lineHeight)+parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
           if(!paint||paint!==cell.firstChild||paint.nextSibling!==button||cue.parentNode!==button||button.textContent!==''||original.some(node=>node.parentNode!==paint)||
             style.display!=='flex'||style.flexWrap!=='nowrap'||getComputedStyle(paint).whiteSpace!=='nowrap'||action.position!=='relative'||action.flexShrink!=='0'||
-            after.left<ink.right+2*scale||after.left>ink.right+4*scale||after.right>bounds.right-scale||
+            after.left<ink.right+4.5*scale||after.left>ink.right+5.5*scale||after.right>bounds.right-scale||
             Math.abs((after.top+after.bottom-ink.top-ink.bottom)/scale)>4||bounds.height>line+scale||
-            Math.abs(hit.width-16*scale)>0.5||Math.abs(hit.height-18*scale)>0.5||!arrow||painted.width<15*scale||painted.height<17*scale||
+            Math.abs(hit.width-14*scale)>0.5||Math.abs(hit.height-14*scale)>0.5||hit.height>bounds.height-4*scale||!arrow||painted.width<13*scale||painted.height<13*scale||
             painted.left<bounds.left-1||painted.right>bounds.right+1)
             failures.push({value:original.map(node=>node.textContent).join(''),gap:(after.left-ink.right)/scale,height:bounds.height/scale,line:line/scale});
         }

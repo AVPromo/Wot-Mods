@@ -178,8 +178,8 @@ module.exports=async({browser,nativeHost,check})=>{
             const button=cell.querySelector('.ss-metric-battle-link'),cue=cell.querySelector('.ss-extreme-link-cue'),
               figure=cell.querySelector('.ss-extreme-number'),range=document.createRange();range.selectNodeContents(figure);
             const ink=range.getBoundingClientRect(),box=cue.getBoundingClientRect();
-            return Math.abs((box.left-ink.right)/scale-3)<=0.5&&Math.abs(box.width/scale-16)<=0.5&&
-              Math.abs(box.height/scale-18)<=0.5&&figure.parentNode===cell&&figure===cell.firstChild&&
+            return Math.abs((box.left-ink.right)/scale-5)<=0.5&&Math.abs(box.width/scale-14)<=0.5&&
+              Math.abs(box.height/scale-14)<=0.5&&figure.parentNode===cell&&figure===cell.firstChild&&
               figure.nextSibling===button&&!button.contains(figure)&&button.contains(cue)&&
               getComputedStyle(cell).display==='flex'&&getComputedStyle(cell).flexWrap==='nowrap';
           }),
@@ -190,7 +190,7 @@ module.exports=async({browser,nativeHost,check})=>{
               Math.abs((first.left-box.left)-(box.right-last.right))<=scale;
           })};
       },scale);
-      check('Source arrows follow original figures by3px and financial Min/Max stay adjacent at '+scale+': '+JSON.stringify(actions),
+      check('Source arrows follow original figures by 5px and financial Min/Max stay adjacent at '+scale+': '+JSON.stringify(actions),
         actions.performance===6&&actions.finance===5&&actions.arrows&&actions.pairs);
       check('Metric coverage adds no repeated visible rows or counters at '+scale,table.coverage===0);
       await publish('credits_costs','max',{pending:true});

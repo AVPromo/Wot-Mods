@@ -782,11 +782,12 @@
     }
     function layoutCreditPairs(owner) {
         var scale = state.nativeScale || 1, measurements = [];
+        var narrowCards = owner === nodes.groups && owner.classList.contains('ss-narrow-cards');
         Array.prototype.forEach.call(owner.querySelectorAll('.ss-economy'), function (economy) {
             var box = economy.getBoundingClientRect(), style = window.getComputedStyle(economy);
             var width = (box.width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) -
                 (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0)) / scale;
-            if (width > 0) { measurements.push({node:economy, compact:width <= 300}); }
+            if (width > 0) { measurements.push({node:economy, compact:narrowCards || width <= 300}); }
         });
         measurements.forEach(function (measurement) {
             var active = measurement.node.classList.contains('ss-credit-compact');

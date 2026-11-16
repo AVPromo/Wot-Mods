@@ -595,18 +595,18 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
   .ss-language-caption { margin-right:4rem; }
 }
 
-/* Result/map slots have the same footprint for every card in a caption mode.
-   Fixed artwork and caption boxes keep columns aligned across short/long
-   localized results and map names without measuring or probing their text. */
+/* Result/map slots retain their column footprint in each caption mode.
+   Natural caption heights center the visible artwork/text together, including
+   one-line captions, without measuring or probing translated text. */
 .ss-battle .ss-group-header { flex-wrap:nowrap; }
 .ss-battle .ss-battle-outcome { display:flex; align-items:center; justify-content:center; flex:0 0 64rem; width:64rem; max-width:64rem; height:59rem; margin-left:6rem; padding:0; }
 .ss-battle .ss-outcome-art { flex-direction:column; background:none; }
 .ss-battle .ss-outcome-image { width:54rem; height:30rem; }
 .ss-battle .ss-outcome-label { width:100%; min-width:0; max-width:100%; padding:0; font-size:11rem; line-height:14rem; text-align:center; white-space:normal; overflow-wrap:break-word; }
-.ss-battle .ss-outcome-art .ss-outcome-label { flex:0 0 28rem; height:28rem; margin-top:1rem; overflow:visible; }
+.ss-battle .ss-outcome-art .ss-outcome-label { flex:0 0 auto; height:auto; margin-top:1rem; overflow:visible; }
 .ss-battle-map-visual { display:flex; flex-direction:column; align-items:center; justify-content:center; flex:0 0 84rem; width:84rem; min-width:0; max-width:84rem; height:59rem; margin-left:6rem; }
 .ss-battle-map-visual .ss-battle-map-thumb { width:54rem; height:30rem; margin:0; }
-.ss-battle-map-label { display:block; flex:0 0 28rem; height:28rem; min-width:0; width:100%; max-width:100%; margin-top:1rem; color:{{colors.group_subtitle_text}}; font-size:11rem; line-height:14rem; text-align:center; white-space:normal; overflow-wrap:break-word; }
+.ss-battle-map-label { display:block; flex:0 0 auto; height:auto; min-width:0; width:100%; max-width:100%; margin-top:1rem; color:{{colors.group_subtitle_text}}; font-size:11rem; line-height:14rem; text-align:center; white-space:normal; overflow-wrap:break-word; }
 .ss-battle .ss-more-button { flex:0 0 82rem; width:82rem; min-width:82rem; max-width:82rem; padding-left:5rem; padding-right:5rem; }
 .ss-battle.ss-battle-inline-captions .ss-battle-outcome { flex:0 0 160rem; width:160rem; max-width:160rem; height:38rem; }
 .ss-battle.ss-battle-inline-captions .ss-outcome-art { flex-direction:row; }
@@ -622,7 +622,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-narrow-cards .ss-battle-map-visual { flex-basis:76rem; width:76rem; max-width:76rem; height:55rem; }
 .ss-narrow-cards .ss-battle .ss-outcome-image, .ss-narrow-cards .ss-battle-map-thumb { width:48rem; height:28rem; }
 .ss-narrow-cards .ss-battle .ss-outcome-label, .ss-narrow-cards .ss-battle-map-label { font-size:11rem; line-height:13rem; }
-.ss-narrow-cards .ss-battle .ss-outcome-art .ss-outcome-label, .ss-narrow-cards .ss-battle-map-label { flex-basis:26rem; height:26rem; }
+.ss-narrow-cards .ss-battle .ss-outcome-art .ss-outcome-label, .ss-narrow-cards .ss-battle-map-label { flex-basis:auto; height:auto; }
 
 .ss-time-point-controls { display:flex; align-items:center; flex:1 1 266rem; min-width:0; width:266rem; max-width:100%; margin-right:8rem; border:1rem solid {{colors.button_border}}; border-radius:{{radii.control}}rem; background:{{colors.window_background}}; box-shadow:inset 0 1rem {{colors.button_shadow_2}}; }
 .ss-time-point-name { display:block; flex:1 1 0rem; width:0; min-width:0; height:28rem; padding:4rem 7rem; margin:0; border:0; border-radius:0 {{radii.control}}rem {{radii.control}}rem 0; background:{{colors.close_background}}; color:{{colors.button_text}}; font-family:Warhelios, Arial, sans-serif; font-size:12rem; line-height:18rem; }
@@ -750,11 +750,11 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-extreme-number { display:block; flex:0 0 auto; min-width:0; white-space:nowrap; text-align:right; }
 .ss-extreme-cell > .ss-metric-battle-link,
 .ss-extreme-cell > .ss-metric-battle-link:hover,
-.ss-extreme-cell > .ss-metric-battle-link:focus { display:block; position:relative; flex:0 0 16rem; align-self:center; width:16rem; min-width:16rem; max-width:16rem; height:18rem; min-height:18rem; margin:0 0 0 3rem; padding:0; background:none; border:0; outline:none; box-shadow:none; }
-.ss-extreme-link-cue { display:block; position:relative; width:16rem; height:18rem; border:0; outline:none; box-shadow:none; border-radius:{{radii.extreme_link}}rem; background:{{colors.extreme_link_background}}; pointer-events:none; }
-.ss-extreme-link-arrow { display:block; position:relative; width:16rem; height:18rem; pointer-events:none; }
-.ss-extreme-link-arrow:before { content:""; display:block; position:absolute; left:3rem; top:9rem; width:10rem; height:1rem; background:{{colors.extreme_link_text}}; transform:rotate(-45deg); }
-.ss-extreme-link-arrow:after { content:""; display:block; position:absolute; left:7rem; top:4rem; width:5rem; height:5rem; border-top:1rem solid {{colors.extreme_link_text}}; border-right:1rem solid {{colors.extreme_link_text}}; }
+.ss-extreme-cell > .ss-metric-battle-link:focus { display:block; position:relative; flex:0 0 14rem; align-self:center; width:14rem; min-width:14rem; max-width:14rem; height:14rem; min-height:14rem; margin:0 0 0 5rem; padding:0; background:none; border:0; outline:none; box-shadow:none; }
+.ss-extreme-link-cue { display:block; position:relative; width:14rem; height:14rem; border:0; outline:none; box-shadow:none; border-radius:{{radii.extreme_link}}rem; background:{{colors.extreme_link_background}}; pointer-events:none; }
+.ss-extreme-link-arrow { display:block; position:relative; width:14rem; height:14rem; pointer-events:none; }
+.ss-extreme-link-arrow:before { content:""; display:block; position:absolute; left:3rem; top:7rem; width:8rem; height:1rem; background:{{colors.extreme_link_text}}; transform:rotate(-45deg); }
+.ss-extreme-link-arrow:after { content:""; display:block; position:absolute; left:7rem; top:3rem; width:4rem; height:4rem; border-top:1rem solid {{colors.extreme_link_text}}; border-right:1rem solid {{colors.extreme_link_text}}; }
 .ss-extreme-cell > .ss-metric-battle-link:hover .ss-extreme-link-cue,
 .ss-extreme-cell > .ss-metric-battle-link:focus .ss-extreme-link-cue,
 .ss-extreme-cell.ss-sort-active-value .ss-extreme-link-cue { background:{{colors.extreme_link_hover_background}}; }
@@ -887,12 +887,22 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group .ss-metric-name { width:28%; padding-left:1rem; padding-right:0; }
 .ss-group .ss-metric-number { width:24%; padding-right:2rem; }
 .ss-long-metrics .ss-metric-row .ss-metric-number { font-size:14rem; }
-.ss-group .ss-battle-performance { flex:0 0 176rem; padding-right:7rem; }
+.ss-group .ss-battle-performance { flex:0 0 148rem; padding-right:7rem; }
+.ss-battle .ss-battle-measure { padding-left:4rem; padding-right:4rem; }
+.ss-battle .ss-battle-label { padding-right:4rem; }
 /* Reclaim cell insets before widening a table: translated currency names and
    complete signed eight-digit amounts must fit the same compact card. */
 .ss-group .ss-money-label { width:24.5%; padding-left:2rem; padding-right:0; font-size:12rem; }
 .ss-group .ss-money-value { width:25.166%; padding-right:1rem; }
 .ss-group .ss-money-row .ss-money-value { font-size:13rem; }
+/* A single result has no distribution columns. Give its recovered width to
+   readable currency captions while retaining complete signed credit amounts. */
+.ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy:not(.ss-credit-compact) .ss-money-head > .ss-money-label, .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy:not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-label { width:35%; }
+.ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy:not(.ss-credit-compact) .ss-money-head > .ss-money-value, .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy:not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-value { width:21.666%; }
+.ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy:not(.ss-credit-compact) .ss-credit-label-column { flex-basis:35%; width:35%; }
+.ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-money-head > .ss-money-label, .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-label { width:24.5%; }
+.ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-money-head > .ss-money-value, .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-value { width:25.166%; }
+.ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-credit-label-column { flex-basis:24.5%; width:24.5%; }
 .ss-narrow-cards .ss-group .ss-performance, .ss-narrow-cards .ss-group .ss-economy { flex-basis:100%; }
 .ss-narrow-cards .ss-group .ss-performance { padding-right:0; }
 .ss-narrow-cards .ss-group .ss-economy { padding:5rem 0 0; margin-top:3rem; border-left:0; border-top:1rem solid {{colors.details_separator_border_top}}; }

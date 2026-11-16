@@ -23,8 +23,8 @@ module.exports=async({page,scale,check})=>{
           ink.left>=box.left-scale&&ink.right<=box.right+scale&&ink.top>=box.top-scale&&ink.bottom<=box.bottom+scale,
         action:!button||figure===cell.firstChild&&figure.nextSibling===button&&!button.contains(figure)&&cue.parentNode===button&&
           style.display==='flex'&&style.flexWrap==='nowrap'&&getComputedStyle(figure).whiteSpace==='nowrap'&&
-          Math.abs(action.width/scale-16)<=0.5&&Math.abs(action.height/scale-18)<=0.5&&
-          Math.abs((arrow.left-ink.right)/scale-3)<=0.5&&Math.abs((arrow.top+arrow.bottom-ink.top-ink.bottom)/scale)<=4&&
+          Math.abs(action.width/scale-14)<=0.5&&Math.abs(action.height/scale-14)<=0.5&&action.height<=box.height-4*scale&&
+          Math.abs((arrow.left-ink.right)/scale-5)<=0.5&&Math.abs((arrow.top+arrow.bottom-ink.top-ink.bottom)/scale)<=4&&
           arrow.right<=box.right-scale&&box.height/scale<=27,
         returned:!button||!button.classList.contains('ss-source-returned')||getComputedStyle(cue).outlineColor==='rgb(231, 162, 59)'&&
           Math.abs(parseFloat(getComputedStyle(cue).outlineWidth)/scale-2)<=0.1};
