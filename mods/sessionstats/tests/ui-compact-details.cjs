@@ -111,6 +111,7 @@ module.exports=async({browser,nativeHost,check})=>{
     }finally{await page.close();}
   }
   await require('./ui-stat-layout-controls.cjs')({browser,nativeHost,check});
+  await require('./ui-battle-table-alignment.cjs')({browser,nativeHost,check});
 };
 module.exports.sourceChecks=sourceChecks;
 if(require.main===module){sourceChecks();console.log('Actual-source compact history, stable paging and complete bonus-column checks passed.');}

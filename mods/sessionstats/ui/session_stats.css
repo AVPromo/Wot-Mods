@@ -694,6 +694,12 @@ button:disabled { opacity:0.45; }
 .ss-group .ss-battle-performance { flex:0 0 148rem; padding-right:7rem; }
 .ss-battle .ss-battle-measure { padding-left:4rem; padding-right:4rem; }
 .ss-battle .ss-battle-label { padding-right:4rem; }
+.ss-battle .ss-table-text { display:inline-block; white-space:nowrap; }
+.ss-battle-inline-captions .ss-battle-details { justify-content:center; }
+.ss-battle-inline-captions .ss-battle-value { flex:0 0 42%; width:42%; text-align:center; }
+.ss-battle-inline-captions .ss-money-value { padding-left:1rem; padding-right:1rem; text-align:center; }
+.ss-battle .ss-battle-tables-stacked .ss-performance { padding-right:0; }
+.ss-battle .ss-battle-tables-stacked .ss-economy { padding:5rem 0 0; margin-top:3rem; border-left:0; border-top:1rem solid #303421; }
 /* Reclaim cell insets before widening a table: translated currency names and
    complete signed eight-digit amounts must fit the same compact card. */
 .ss-group .ss-money-label { width:24.5%; padding-left:2rem; padding-right:0; font-size:12rem; }

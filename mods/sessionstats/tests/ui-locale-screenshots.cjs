@@ -232,9 +232,17 @@ async function audit(page,mode,group) {
     const detail=first.querySelector('.ss-details'),performance=detail.querySelector('.ss-performance').getBoundingClientRect(),
       economy=detail.querySelector('.ss-economy').getBoundingClientRect();
     const cardWidth=first.getBoundingClientRect().width/scale;
-    if(group==='battles' && cardWidth>=499 && (performance.width/scale>177 || economy.width/scale<296 ||
-      performance.right>economy.left+limit)) {
-      issues.push({kind:'unbalanced-card-finance',performance:performance.width/scale,economy:economy.width/scale});
+    if(group==='battles' && cardWidth>=499) {
+      const bounds=detail.getBoundingClientRect(),wide=first.classList.contains('ss-battle-inline-captions'),
+        spare=(bounds.width-performance.width-economy.width)/scale,
+        contained=[performance,economy].every(box=>box.left>=bounds.left-limit&&box.right<=bounds.right+limit&&
+          box.top>=bounds.top-limit&&box.bottom<=bounds.bottom+limit),
+        centered=Math.abs((performance.left-bounds.left)-(bounds.right-economy.right))<=limit,
+        balanced=wide?performance.width/scale>=156&&performance.width/scale<=200&&economy.width/scale<=500&&
+          spare>=12&&contained&&centered:performance.width/scale<=177;
+      if(!balanced||economy.width/scale<296||performance.right>economy.left+limit) {
+        issues.push({kind:'unbalanced-card-finance',performance:performance.width/scale,economy:economy.width/scale,wide,spare,contained,centered});
+      }
     }
     if(group!=='battles' && !stress && cardWidth>=559) {
       const bounds=detail.getBoundingClientRect(),contained=[performance,economy].every(box=>

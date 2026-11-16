@@ -726,6 +726,13 @@
         var output = append(row, element('strong', 'ss-battle-value' + (wn8 ? ' ss-wn8' : ''),
             wn8 ? integer(value) : number(value)));
         if (wn8) { paintWN8Caption(name, value); paintWN8(output, value); }
+        var text = output.querySelector('.ss-wn8-low-ink');
+        if (text) { text.className += ' ss-table-text'; }
+        else {
+            text = element('span', 'ss-table-text');
+            while (output.firstChild) { text.appendChild(output.firstChild); }
+            append(output, text);
+        }
     }
     function moneyCell(parent, data, field, total, metric, item, global, battle, label) {
         var count = data[field + '_count'];
@@ -733,8 +740,8 @@
         var output = field === 'costs' ? cost(value) : (field === 'net' ? signed(value) : number(value));
         var cell = append(parent, element('div', 'ss-money-value' +
             (field === 'net' ? quantityClass(value) : (!hasNumber(value) ? ' ss-unknown' : ''))));
-        var figure = append(cell, element('span', 'ss-cell-value', !global && !battle ? '' : output));
-        if (!global && !battle) { append(figure, element('span', 'ss-table-text', output)); }
+        var figure = append(cell, element('span', 'ss-cell-value', !global ? '' : output));
+        if (!global) { append(figure, element('span', 'ss-table-text', output)); }
         if (coverage(data[field + '_count'], total)) {
             explainCoverage(cell, data[field + '_count'], total, label + ' ' + t('finance.' + field));
         }
@@ -800,8 +807,10 @@
             var width = (outerWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) -
                 (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0)) / scale;
             var numberWidth = Number(economy.getAttribute('data-ss-finance-number-width')) || 0;
+            var battle = economy.parentNode.classList.contains('ss-battle-details');
             if (width > 0) { measurements.push({node:economy, width:width, assigned:assigned > 0, numberWidth:numberWidth,
-                compact:narrowCards || (numberWidth > 0 ? width - numberWidth * 3 < 64 : width <= 300)}); }
+                battle:battle, compact:narrowCards || (battle && width <= 300) ||
+                    (numberWidth > 0 ? width - numberWidth * 3 < 64 : width <= 300)}); }
         });
         measurements.forEach(function (measurement) {
             var active = measurement.node.classList.contains('ss-credit-compact');
@@ -810,6 +819,10 @@
             }
             var captionWidth = measurement.numberWidth > 0 && !measurement.compact ?
                 measurement.width - measurement.numberWidth * 3 : 0;
+            if (measurement.battle && !measurement.compact) {
+                captionWidth = Math.min(captionWidth, measurement.width *
+                    (measurement.node.classList.contains('ss-long-finance') ? 0.245 : 0.35));
+            }
             if (measurement.assigned && !measurement.compact) {
                 // Captions may ellipsize; spare room also belongs to figures.
                 captionWidth = Math.min(captionWidth, Math.max(64, measurement.width * 0.35));
@@ -3628,6 +3641,34 @@
             }
         });
     }
+    function layoutBattleTables(card, available) {
+        var holder = card.querySelector('.ss-battle-details'), performance = holder && holder.querySelector('.ss-battle-performance');
+        var economy = holder && holder.querySelector('.ss-economy');
+        if (!performance || !economy) { return; }
+        var scale = state.nativeScale || 1, financeNumber = 54, performanceNumber = 0;
+        Array.prototype.forEach.call(economy.querySelectorAll('.ss-table-text'), function (text) {
+            financeNumber = Math.max(financeNumber, Math.ceil(text.getBoundingClientRect().width / scale) + 3);
+        });
+        Array.prototype.forEach.call(performance.querySelectorAll('.ss-table-text'), function (text) {
+            performanceNumber = Math.max(performanceNumber, Math.ceil(text.getBoundingClientRect().width / scale));
+        });
+        var wide = card.classList.contains('ss-battle-inline-captions');
+        var performanceWidth = wide ? Math.max(190, Math.ceil(performanceNumber / 0.42) + 15) : Math.max(148, performanceNumber + 84);
+        var financeMinimum = Math.max(244, financeNumber * 3 + 9);
+        var paired = available >= 416 && available >= performanceWidth + financeMinimum;
+        var financeWidth = paired ? available - performanceWidth : available;
+        if (wide && paired) { financeWidth = Math.min(financeWidth, Math.max(480, financeMinimum)); }
+        holder.classList[paired ? 'remove' : 'add']('ss-battle-tables-stacked');
+        holder.style.flexWrap = paired ? 'nowrap' : 'wrap';
+        performance.style.flex = '0 0 ' + (paired ? performanceWidth : available) + 'rem';
+        performance.style.width = (paired ? performanceWidth : available) + 'rem';
+        economy.style.flex = '0 0 ' + financeWidth + 'rem';
+        economy.style.width = financeWidth + 'rem';
+        // Battle headers, paired credits and Bonds share the same logical
+        // budget even when native geometry still reports the previous width.
+        economy.setAttribute('data-ss-finance-width', String(financeWidth));
+        economy.setAttribute('data-ss-finance-number-width', String(financeNumber));
+    }
     function layoutBattleCards() {
         if (!state.cardPages || !state.cardPages.length) { return; }
         var scale = state.nativeScale || 1, width = nodes.groups.getBoundingClientRect().width / scale;
@@ -3692,6 +3733,8 @@
             if (state.group !== 'battles') {
                 layoutAggregateCaptions(card);
                 layoutAggregateTables(card, Math.max(1, Math.min(width, cardWidth) - 14));
+            } else {
+                layoutBattleTables(card, Math.max(1, Math.min(width, cardWidth) - 14));
             }
             layoutMoreColumns(card, Math.max(1, Math.min(width, cardWidth) - 14));
             card.setAttribute('aria-posinset', String(Number(card.getAttribute('data-list-index')) + 1));
