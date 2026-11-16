@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.17 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.18 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -30,15 +30,20 @@ Advanced sorting marks the existing card value in orange when that value is
 already present. Additional credit or XP-total figures use a compact gold value
 block sized to its caption and figure. Aggregate headers retain compact fixed
 statistic columns; the sorting block alone grows to fit its unwrapped caption.
-Small cards give the identity and statistics separate rows. With default
+Small cards give the identity and statistics separate rows when the sorting result needs the space.
+Without an additional sorting result, ordinary aggregate cards keep them on one row. With default
 ordinary widths, single-column aggregate cards use the available width up to
 their configured wide-card limit,
 and their actual width determines whether the two tables sit side by side.
+Vehicle, map and tier tables measure the actual Min/Average/Max text and source
+actions before allocating their columns, so ordinary cards retain adjacent
+performance and finance tables. Very narrow cards or unusually wide figures
+retain the readable stacked fallback.
 When received results in
 the selected period lack the selected metric, the filter section shows a framed
 warning with the game's native alert triangle. Pending battles alone do not
 trigger it. Min/Max offers a rounded arrow cue immediately after the number,
-with a 3 px gap, to open its source battle across Maps, Vehicles and Tiers.
+with a 5 px gap, to open its source battle across Maps, Vehicles and Tiers.
 The original figure lives in a plain paint block outside the fixed-size arrow
 button. Both occupy one explicit non-wrapping row, including in native clients
 that treat anonymous text and inline decorations as separate lines.
@@ -66,8 +71,8 @@ A compact summary table shows total base XP, total received XP and Free XP in th
 horizontal columns, with metric availability in the existing overview help.
 The repeated visible x/y captions are removed. Performance tables and battle
 cards always show both Base XP and Received XP; the display selector is removed.
-Performance rows share spare card height evenly; financial cells reserve an
-action row only when a source action is available. Black WN8 uses bold black text
+Adjacent aggregate performance tables keep their natural row heights; financial
+cells reserve an action row only when a source action is available. Black WN8 uses bold black text
 on its muted backing, without a light text outline or shadow ring.
 Win-rate sorting is available in Vehicles, Maps and Tiers;
 unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
@@ -88,7 +93,8 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.14 native arrow flow and compact responsive headers](docs/UI_REFINEMENTS_0.9.14.md), and
 [0.9.15 native single-row actions, help timing and returned sources](docs/UI_REFINEMENTS_0.9.15.md), and
 [0.9.16 summary return, selected cells and shared costs](docs/UI_REFINEMENTS_0.9.16.md).
-[0.9.17 compact battle cards and smaller source arrows](docs/UI_REFINEMENTS_0.9.17.md).
+[0.9.17 compact battle cards and smaller source arrows](docs/UI_REFINEMENTS_0.9.17.md), and
+[0.9.18 adjacent aggregate tables and compact headers](docs/UI_REFINEMENTS_0.9.18.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
 already selected, including in a full-history Timeline range. **Back**, beside

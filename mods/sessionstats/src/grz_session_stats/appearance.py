@@ -884,6 +884,20 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group .ss-performance.ss-wide-metrics { flex-basis:400rem; }
 .ss-group .ss-economy { flex:1 1 296rem; min-width:0; width:auto; }
 .ss-group .ss-economy.ss-long-finance { flex-basis:304rem; }
+/* Aggregate Min/Avg/Max columns reserve their real text and action widths.
+   Pair the tables at ordinary card sizes instead of wrapping their old bases. */
+.ss-aggregate .ss-table-text { display:inline-block; white-space:nowrap; }
+.ss-aggregate .ss-metric-row .ss-metric-number { display:flex; flex-wrap:nowrap; align-items:center; justify-content:flex-end; }
+.ss-aggregate .ss-credit-extreme-actions > .ss-metric-battle-link { padding-left:3rem; padding-right:3rem; }
+.ss-aggregate .ss-metric-name .ss-cell-value, .ss-paired-tables .ss-credit-label-text { overflow-wrap:break-word; }
+.ss-group .ss-details.ss-paired-tables { flex-wrap:nowrap; align-items:flex-start; }
+.ss-paired-tables .ss-performance { justify-content:flex-start; }
+.ss-group .ss-paired-tables .ss-metric-name { flex:1 1 0rem; min-width:0; width:0; }
+.ss-group .ss-paired-tables .ss-metric-number { flex:0 0 auto; min-width:0; }
+.ss-group .ss-paired-tables .ss-economy { padding-top:0; margin-top:0; border-top:0; }
+.ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-money-head > .ss-money-label, .ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-label { width:35%; }
+.ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-money-head > .ss-money-value, .ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-value { width:21.666%; }
+.ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-credit-label-column { flex-basis:35%; width:35%; }
 .ss-group .ss-metric-name { width:28%; padding-left:1rem; padding-right:0; }
 .ss-group .ss-metric-number { width:24%; padding-right:2rem; }
 .ss-long-metrics .ss-metric-row .ss-metric-number { font-size:14rem; }

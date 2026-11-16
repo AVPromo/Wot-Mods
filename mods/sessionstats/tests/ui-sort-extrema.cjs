@@ -204,11 +204,12 @@ module.exports=async({browser,nativeHost,check})=>{
           const label=button.querySelector('.ss-control-label.ss-metric-action-label'),style=getComputedStyle(label),box=label.getBoundingClientRect();
           const range=document.createRange();range.selectNodeContents(label);const ink=range.getBoundingClientRect();
           const action=getComputedStyle(button),hit=button.getBoundingClientRect(),host=button.parentNode.getBoundingClientRect();
-          const inset=parseFloat(action.borderLeftWidth)+parseFloat(action.borderRightWidth)+parseFloat(action.paddingLeft)+parseFloat(action.paddingRight);
+          const inset=parseFloat(action.borderLeftWidth)+parseFloat(action.borderRightWidth)+parseFloat(action.paddingLeft)+parseFloat(action.paddingRight),
+            expectedPadding=button.closest('.ss-aggregate')?3:4;
           return label.textContent===messages['metric.'+button.getAttribute('data-ss-extreme')]&&style.display==='block'&&
             parseFloat(style.fontSize)===11&&parseFloat(style.lineHeight)===16&&box.width>15&&ink.width>3&&ink.height>=11&&
             action.flexBasis==='auto'&&action.maxWidth==='none'&&Math.abs(hit.width-ink.width-inset)<=1.5&&
-            parseFloat(action.paddingLeft)===4&&parseFloat(action.paddingRight)===4&&
+            parseFloat(action.paddingLeft)===expectedPadding&&parseFloat(action.paddingRight)===expectedPadding&&
             Math.abs(box.width-(hit.width-inset))<=0.5&&ink.left>=box.left-0.5&&ink.right<=box.right+0.5&&
             ink.top>=box.top-0.5&&ink.bottom<=box.bottom+0.5&&action.borderStyle==='solid'&&action.backgroundImage!=='none';
         });
@@ -246,14 +247,21 @@ module.exports=async({browser,nativeHost,check})=>{
             paint=cell.querySelector('.ss-extreme-number'),original=cell.__originalNativeValue,range=document.createRange();range.selectNode(original[0]);
           const style=getComputedStyle(cell),action=getComputedStyle(button),ink=range.getBoundingClientRect(),after=cue.getBoundingClientRect(),hit=button.getBoundingClientRect(),bounds=cell.getBoundingClientRect();
           const canvas=document.createRange();canvas.selectNodeContents(cue);const painted=canvas.getBoundingClientRect();
-          const line=parseFloat(style.lineHeight)+parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
+          const line=parseFloat(style.lineHeight)+parseFloat(style.paddingTop)+parseFloat(style.paddingBottom),
+            paintBounds=paint.getBoundingClientRect(),rowBounds=cell.closest('.ss-metric-row').getBoundingClientRect();
+          // Translated row captions may wrap while the figure and arrow stay
+          // on one centered line. The cell must still fill its own table row.
+          const contained=[ink,after,paintBounds,hit,painted].every(box=>box.left>=bounds.left-scale&&box.right<=bounds.right+scale&&
+            box.top>=bounds.top-scale&&box.bottom<=bounds.bottom+scale);
           if(!paint||paint!==cell.firstChild||paint.nextSibling!==button||cue.parentNode!==button||button.textContent!==''||original.some(node=>node.parentNode!==paint)||
             style.display!=='flex'||style.flexWrap!=='nowrap'||getComputedStyle(paint).whiteSpace!=='nowrap'||action.position!=='relative'||action.flexShrink!=='0'||
             after.left<ink.right+4.5*scale||after.left>ink.right+5.5*scale||after.right>bounds.right-scale||
-            Math.abs((after.top+after.bottom-ink.top-ink.bottom)/scale)>4||bounds.height>line+scale||
+            Math.abs((after.top+after.bottom-ink.top-ink.bottom)/scale)>4||
+            ink.height>line+scale||after.height>line+scale||paintBounds.height>line+scale||
+            Math.abs(bounds.height-rowBounds.height)>scale||!contained||
             Math.abs(hit.width-14*scale)>0.5||Math.abs(hit.height-14*scale)>0.5||hit.height>bounds.height-4*scale||!arrow||painted.width<13*scale||painted.height<13*scale||
             painted.left<bounds.left-1||painted.right>bounds.right+1)
-            failures.push({value:original.map(node=>node.textContent).join(''),gap:(after.left-ink.right)/scale,height:bounds.height/scale,line:line/scale});
+            failures.push({value:original.map(node=>node.textContent).join(''),gap:(after.left-ink.right)/scale,height:bounds.height/scale,rowHeight:rowBounds.height/scale,inkHeight:ink.height/scale,paintHeight:paintBounds.height/scale,cueHeight:after.height/scale,line:line/scale,contained});
         }
         return {cells:cells.length,failures};
       },scale);

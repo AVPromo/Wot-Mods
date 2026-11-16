@@ -2,6 +2,7 @@
 const fs=require('fs'),path=require('path');
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 module.exports=async({browser,nativeHost,check})=>{
+  await require('./ui-aggregate-table-layout.cjs')({browser,nativeHost,check});
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   for(const scale of [1,2]){
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2560},viewport:{width:3840,height:2560,scale}});
@@ -41,6 +42,17 @@ module.exports=async({browser,nativeHost,check})=>{
         for(const line of captionLines)if(!lineTops.some(top=>Math.abs(top-line.top)<1))lineTops.push(line.top);
         const cardBox=box(card),headerBox=box(header),badgeBox=box(badge),captionBox=box(caption),numberBox=box(number),iconBox=icon&&box(icon);
         const performance=box(card.querySelector('.ss-performance')),economy=box(card.querySelector('.ss-economy'));
+        const readabilityFailures=[];
+        const figures=[...card.querySelectorAll('.ss-metric-row .ss-table-text,.ss-money-row .ss-cell-value')];
+        for(const figure of figures){
+          const cell=figure.closest('.ss-metric-number,.ss-money-value');
+          if(!cell||!rangeBoxes(figure).every(ink=>inside(ink,box(cell))))readabilityFailures.push('number:'+figure.textContent);
+        }
+        for(const action of card.querySelectorAll('.ss-performance .ss-metric-battle-link,.ss-economy .ss-metric-battle-link')){
+          const cell=action.closest('.ss-metric-number,.ss-money-value'),cue=action.querySelector('.ss-extreme-link-cue');
+          if(!cell||!inside(box(action),box(cell))||cue&&!inside(box(cue),box(cell))||
+            !rangeBoxes(action).every(ink=>inside(ink,box(action))))readabilityFailures.push('source:'+action.getAttribute('data-ss-source-metric'));
+        }
         const more=card.querySelector('.ss-map-more-button'),moreBox=more&&box(more);
         const group=box(document.getElementById('ss-groups'));
         return {card:cardBox,group,header:headerBox,identity:box(identity),stats:box(stats),kpis,badge:badgeBox,
@@ -49,7 +61,8 @@ module.exports=async({browser,nativeHost,check})=>{
           partial:!!icon&&getComputedStyle(icon).backgroundImage.includes('img://gui/maps/icons/library/alertIcon.png'),
           headerFits:[box(identity),box(stats),...kpis,badgeBox].every(part=>inside(part,headerBox)),
           moreFits:!!more&&moreBox.width>=40&&moreBox.height>=20&&inside(moreBox,headerBox)&&rangeBoxes(more).every(line=>inside(line,moreBox)),
-          tablesFit:inside(performance,cardBox)&&inside(economy,cardBox),performance,economy,
+          tablesFit:inside(performance,cardBox)&&inside(economy,cardBox),performance,economy,readabilityFailures,
+          tablesReadable:figures.length>=9&&readabilityFailures.length===0,
           two:document.getElementById('ss-groups').classList.contains('ss-two-columns')};
       },scale);}
       for(const [language,messages]of Object.entries(languages))for(const width of [550,863,1200,1600]){
@@ -61,8 +74,10 @@ module.exports=async({browser,nativeHost,check})=>{
           value.captionLines===1&&value.captionFits&&value.badgeFits&&value.partial&&value.headerFits&&value.moreFits&&value.tablesFit);
         if(width===863)check('Default single-column maps use the 720px cap and horizontal tables '+caption+': '+JSON.stringify(value),
           !value.two&&Math.abs(value.card.width-720)<=1&&value.economy.left>=value.performance.right-1&&Math.abs(value.economy.top-value.performance.top)<=1);
-        if(width===550)check('Small aggregates separate identity from compact statistics and stack readable tables '+caption+': '+JSON.stringify(value),
-          !value.two&&value.card.width<=value.group.width+1&&value.identity.bottom<=value.stats.top+1&&value.economy.top>=value.performance.bottom-1);
+        if(width===550)check('Small aggregates separate identity from compact statistics and retain readable paired or stacked tables '+caption+': '+JSON.stringify(value),
+          !value.two&&value.card.width<=value.group.width+1&&value.identity.bottom<=value.stats.top+1&&value.tablesReadable&&
+          (value.economy.left>=value.performance.right-1&&Math.abs(value.economy.top-value.performance.top)<=1||
+            value.economy.top>=value.performance.bottom-1));
       }
       for(const options of [{base:600},{wide:800},{longName:true}]){
         await publish('pl',languages.pl,863,options);const value=await geometry();

@@ -699,7 +699,7 @@
         if (digits > 6) { value.style.fontSize = (digits > 9 ? 10 : digits > 8 ? 12 : 14) + 'rem'; }
         return holder;
     }
-    function measureRow(parent, label, data, wn8, total, metric) {
+    function measureRow(parent, label, data, wn8, total, metric, intrinsic) {
         var row = append(parent, element('div', 'ss-metric-row'));
         if (metric) { row.setAttribute('data-ss-metric', metric); }
         var name = append(row, element('div', 'ss-metric-name'));
@@ -708,6 +708,15 @@
         ['min', 'avg', 'max'].forEach(function (field) {
             var output = append(row, element('div', 'ss-metric-number', wn8 ? integer(data[field]) : number(data[field])));
             if (wn8) { paintWN8(output, data[field]); }
+            if (intrinsic) {
+                var text = output.querySelector('.ss-wn8-low-ink');
+                if (text) { text.className += ' ss-table-text'; }
+                else {
+                    text = element('span', 'ss-table-text');
+                    while (output.firstChild) { text.appendChild(output.firstChild); }
+                    append(output, text);
+                }
+            }
         });
     }
     function battleMeasure(parent, label, value, wn8, metric) {
@@ -724,7 +733,8 @@
         var output = field === 'costs' ? cost(value) : (field === 'net' ? signed(value) : number(value));
         var cell = append(parent, element('div', 'ss-money-value' +
             (field === 'net' ? quantityClass(value) : (!hasNumber(value) ? ' ss-unknown' : ''))));
-        append(cell, element('span', 'ss-cell-value', output));
+        var figure = append(cell, element('span', 'ss-cell-value', !global && !battle ? '' : output));
+        if (!global && !battle) { append(figure, element('span', 'ss-table-text', output)); }
         if (coverage(data[field + '_count'], total)) {
             explainCoverage(cell, data[field + '_count'], total, label + ' ' + t('finance.' + field));
         }
@@ -787,13 +797,25 @@
             var box = economy.getBoundingClientRect(), style = window.getComputedStyle(economy);
             var width = (box.width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) -
                 (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0)) / scale;
-            if (width > 0) { measurements.push({node:economy, compact:narrowCards || width <= 300}); }
+            var numberWidth = Number(economy.getAttribute('data-ss-finance-number-width')) || 0;
+            if (width > 0) { measurements.push({node:economy, width:width, numberWidth:numberWidth,
+                compact:narrowCards || (numberWidth > 0 ? width - numberWidth * 3 < 64 : width <= 300)}); }
         });
         measurements.forEach(function (measurement) {
             var active = measurement.node.classList.contains('ss-credit-compact');
             if (active !== measurement.compact) {
                 measurement.node.classList[measurement.compact ? 'add' : 'remove']('ss-credit-compact');
             }
+            var captionWidth = measurement.numberWidth > 0 && !measurement.compact ?
+                measurement.width - measurement.numberWidth * 3 : 0;
+            var labels = measurement.node.querySelector('.ss-credit-label-column');
+            labels.style.width = captionWidth ? captionWidth + 'rem' : '';
+            labels.style.flexBasis = captionWidth ? captionWidth + 'rem' : '';
+            Array.prototype.forEach.call(measurement.node.querySelectorAll('.ss-money-head, .ss-money-row:not(.ss-credit-pair)'), function (row) {
+                Array.prototype.forEach.call(row.children, function (cell, index) {
+                    cell.style.width = captionWidth ? (index ? measurement.numberWidth : captionWidth) + 'rem' : '';
+                });
+            });
         });
         // Flex columns share the two natural row heights. Measure their real
         // contents, not a previously stretched cell or an empty action lane.
@@ -913,12 +935,13 @@
                 var performanceTitle = append(countHeader, element('h3', 'ss-detail-title ss-summary-table-title'));
                 append(performanceTitle, element('span', 'ss-table-heading-text', t('performance.period')));
             }
-            append(header, element('div', 'ss-metric-number', t('metric.min')));
-            append(header, element('div', 'ss-metric-number', t('metric.avg')));
-            append(header, element('div', 'ss-metric-number', t('metric.max')));
-            measureRow(performance, t('xp.base'), baseXP, false, total, 'xp_base');
-            measureRow(performance, t('xp.received'), receivedXP, false, total, 'xp_received');
-            measureRow(performance, t('metric.battle_wn8'), battleWN8, true, total, 'battle_wn8');
+            ['min', 'avg', 'max'].forEach(function (field) {
+                var cell = append(header, element('div', 'ss-metric-number', global ? t('metric.' + field) : ''));
+                if (!global) { append(cell, element('span', 'ss-table-text', t('metric.' + field))); }
+            });
+            measureRow(performance, t('xp.base'), baseXP, false, total, 'xp_base', !global);
+            measureRow(performance, t('xp.received'), receivedXP, false, total, 'xp_received', !global);
+            measureRow(performance, t('metric.battle_wn8'), battleWN8, true, total, 'battle_wn8', !global);
         }
         if (!battle) { help(performance, t('explain.wn8')); }
         var economy = append(holder, element('div', 'ss-economy'));
@@ -3491,6 +3514,63 @@
             });
         } else { deferSettle(); }
     }
+    function layoutAggregateTables(card) {
+        var holder = card.querySelector('.ss-details'), performance = holder && holder.querySelector('.ss-performance');
+        var economy = holder && holder.querySelector('.ss-economy');
+        if (!performance || !economy) { return; }
+        var scale = state.nativeScale || 1, available = holder.getBoundingClientRect().width / scale;
+        // Measure explicit text boxes, including the native font and actual
+        // source actions. Average has no arrow and need not reserve its lane.
+        var columns = [0, 0, 0], rows = performance.querySelectorAll('.ss-metric-head, .ss-metric-row');
+        Array.prototype.forEach.call(rows, function (row) {
+            for (var index = 0; index < 3; index += 1) {
+                var cell = row.children[index + 1], text = cell.querySelector('.ss-table-text');
+                if (!text) { continue; }
+                var width = text.getBoundingClientRect().width / scale, style = window.getComputedStyle(cell);
+                var action = cell.querySelector('.ss-metric-battle-link');
+                if (action) {
+                    var actionStyle = window.getComputedStyle(action);
+                    width += (action.getBoundingClientRect().width + (parseFloat(actionStyle.marginLeft) || 0)) / scale;
+                }
+                width += ((parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0) +
+                    (parseFloat(style.borderLeftWidth) || 0)) / scale;
+                columns[index] = Math.max(columns[index], Math.ceil(width));
+            }
+        });
+        var numberWidth = columns[0] + columns[1] + columns[2];
+        // Keep a readable caption lane while lending finance the recovered
+        // space. Exceptionally wide figures retain the stacked fallback.
+        var performanceWidth = Math.max(222, numberWidth + 79);
+        var financeNumber = 54;
+        Array.prototype.forEach.call(economy.querySelectorAll('.ss-table-text'), function (text) {
+            financeNumber = Math.max(financeNumber, Math.ceil(text.getBoundingClientRect().width / scale) + 3);
+        });
+        Array.prototype.forEach.call(economy.querySelectorAll('.ss-credit-extreme-actions'), function (actions) {
+            var width = 0;
+            Array.prototype.forEach.call(actions.children, function (action) {
+                var style = window.getComputedStyle(action);
+                width += action.getBoundingClientRect().width + (parseFloat(style.marginLeft) || 0) +
+                    (parseFloat(style.marginRight) || 0);
+            });
+            financeNumber = Math.max(financeNumber, Math.ceil(width / scale) + 2);
+        });
+        var financeMinimum = Math.max(244, financeNumber * 3 + 9);
+        var paired = available >= performanceWidth + financeMinimum;
+        if (holder.classList.contains('ss-paired-tables') !== paired) {
+            holder.classList[paired ? 'add' : 'remove']('ss-paired-tables');
+        }
+        performance.style.flex = paired ? '0 0 ' + performanceWidth + 'rem' : '';
+        performance.style.width = paired ? performanceWidth + 'rem' : '';
+        economy.style.flex = paired ? '1 1 0rem' : '';
+        if (paired) { economy.setAttribute('data-ss-finance-number-width', String(financeNumber)); }
+        else { economy.removeAttribute('data-ss-finance-number-width'); }
+        Array.prototype.forEach.call(rows, function (row) {
+            for (var index = 0; index < 3; index += 1) {
+                var width = paired ? columns[index] + 'rem' : '';
+                if (row.children[index + 1].style.width !== width) { row.children[index + 1].style.width = width; }
+            }
+        });
+    }
     function layoutBattleCards() {
         if (!state.cardPages || !state.cardPages.length) { return; }
         var scale = state.nativeScale || 1, width = nodes.groups.getBoundingClientRect().width / scale;
@@ -3538,7 +3618,8 @@
         var owned = [], cards = state.groupCards || [], total = state.renderedFeed ? state.renderedFeed.total : state.list.length;
         cards.forEach(function (card, index) {
             if (state.group !== 'battles') {
-                var compactHeadline = Math.min(width, cardWidth) < 680;
+                var hasSortValue = !!card.querySelector('.ss-group-sort-value');
+                var compactHeadline = Math.min(width, cardWidth) < (hasSortValue ? 680 : 500);
                 if (card.classList.contains('ss-compact-headline') !== compactHeadline) {
                     card.classList[compactHeadline ? 'add' : 'remove']('ss-compact-headline');
                 }
@@ -3551,6 +3632,7 @@
                     card.classList[inlineCaptions ? 'add' : 'remove']('ss-battle-inline-captions');
                 }
             }
+            if (state.group !== 'battles') { layoutAggregateTables(card); }
             layoutMoreColumns(card, Math.max(1, Math.min(width, cardWidth) - 14));
             card.setAttribute('aria-posinset', String(Number(card.getAttribute('data-list-index')) + 1));
             card.setAttribute('aria-setsize', String(total));
