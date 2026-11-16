@@ -3541,6 +3541,16 @@
         // Keep a readable caption lane while lending finance the recovered
         // space. Exceptionally wide figures retain the stacked fallback.
         var performanceWidth = Math.max(222, numberWidth + 79);
+        if (available >= 600) {
+            // Wider cards have room for the full translated metric caption.
+            // Measure its natural text box without changing the figure fonts.
+            Array.prototype.forEach.call(performance.querySelectorAll('.ss-metric-name > .ss-cell-value'), function (label) {
+                label.style.display = 'inline-block'; label.style.whiteSpace = 'nowrap';
+                performanceWidth = Math.max(performanceWidth, numberWidth +
+                    Math.ceil(label.getBoundingClientRect().width / scale) + 10);
+                label.style.display = ''; label.style.whiteSpace = '';
+            });
+        }
         var financeNumber = 54;
         Array.prototype.forEach.call(economy.querySelectorAll('.ss-table-text'), function (text) {
             financeNumber = Math.max(financeNumber, Math.ceil(text.getBoundingClientRect().width / scale) + 3);

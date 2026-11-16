@@ -224,15 +224,31 @@ async function audit(page,mode,group) {
     if(group!=='battles' && !stress && cardWidth>=559) {
       const bounds=detail.getBoundingClientRect(),contained=[performance,economy].every(box=>
         box.left>=bounds.left-limit&&box.right<=bounds.right+limit&&box.top>=bounds.top-limit&&box.bottom<=bounds.bottom+limit);
-      const horizontal=performance.width/scale>=300&&economy.width/scale>=296&&
+      const inside=(box,cell)=>box.left>=cell.left-limit&&box.right<=cell.right+limit&&
+        box.top>=cell.top-limit&&box.bottom<=cell.bottom+limit;
+      const cells=[...detail.querySelectorAll('.ss-metric-row > .ss-metric-name,.ss-metric-row > .ss-metric-number,.ss-money-row .ss-money-label,.ss-money-row .ss-money-value')];
+      const textContained=cells.length>0&&cells.every(cell=>{
+        const bounds=cell.getBoundingClientRect(),walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);
+        let text;while((text=walker.nextNode()))if(text.textContent.trim()){
+          const range=document.createRange();range.selectNodeContents(text);
+          if([...range.getClientRects()].some(ink=>ink.width>0&&!inside(ink,bounds)))return false;
+        }
+        return true;
+      });
+      const sourcesContained=[...detail.querySelectorAll('.ss-metric-battle-link')].every(action=>{
+        const cell=action.closest('.ss-metric-number,.ss-money-value'),box=action.getBoundingClientRect(),cue=action.querySelector('.ss-extreme-link-cue');
+        if(!cell||box.width<=0||box.height<=0||!inside(box,cell.getBoundingClientRect()))return false;
+        if(!cue)return true;
+        const arrow=cue.getBoundingClientRect();return arrow.width>0&&arrow.height>0&&inside(arrow,cell.getBoundingClientRect());
+      });
+      const horizontal=performance.width>0&&economy.width>0&&
         performance.right<=economy.left+limit&&Math.abs(performance.top-economy.top)<=limit;
-      // The arrow reserves its own leading space, so a medium-width card can
-      // wrap the two complete columns. Stacking is valid only when both stay
-      // contained and the economy starts below the performance block.
-      const stacked=performance.width/scale>=300&&economy.width/scale>=296&&economy.top>=performance.bottom-limit&&
+      // Actual text and source controls determine the required column widths.
+      // A stacked fallback retains complete, aligned and nonoverlapping tables.
+      const stacked=performance.width>0&&economy.width>0&&economy.top>=performance.bottom-limit&&
         Math.abs(performance.left-economy.left)<=limit&&Math.abs(performance.width-economy.width)<=limit;
-      if(!contained||(!horizontal&&!stacked)) issues.push({kind:'unbalanced-group-finance',
-        performance:performance.toJSON(),economy:economy.toJSON(),bounds:bounds.toJSON(),horizontal,stacked});
+      if(!contained||!textContained||!sourcesContained||(!horizontal&&!stacked)) issues.push({kind:'unbalanced-group-finance',
+        performance:performance.toJSON(),economy:economy.toJSON(),bounds:bounds.toJSON(),horizontal,stacked,textContained,sourcesContained});
     }
     const columns=panel.querySelector('.ss-card-columns');
     const axis=columns && getComputedStyle(columns,':before');
