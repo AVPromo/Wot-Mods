@@ -3,6 +3,7 @@ const fs=require('fs'),path=require('path');
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 module.exports=async({browser,nativeHost,check})=>{
   await require('./ui-aggregate-table-layout.cjs')({browser,nativeHost,check});
+  await require('./ui-native-credit-geometry.cjs')({browser,nativeHost,check});
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   for(const scale of [1,2]){
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2560},viewport:{width:3840,height:2560,scale}});

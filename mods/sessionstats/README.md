@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.18 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.19 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -39,6 +39,10 @@ Vehicle, map and tier tables measure the actual Min/Average/Max text and source
 actions before allocating their columns, so ordinary cards retain adjacent
 performance and finance tables. Very narrow cards or unusually wide figures
 retain the readable stacked fallback.
+Aggregate finance columns use the assigned card-width budget rather than
+remeasuring a flex table during the same layout pass. Credit rows, headings
+and Bonds share explicit column widths so stale native geometry cannot give
+the currency caption the space reserved for its figures.
 When received results in
 the selected period lack the selected metric, the filter section shows a framed
 warning with the game's native alert triangle. Pending battles alone do not
@@ -94,7 +98,8 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.15 native single-row actions, help timing and returned sources](docs/UI_REFINEMENTS_0.9.15.md), and
 [0.9.16 summary return, selected cells and shared costs](docs/UI_REFINEMENTS_0.9.16.md).
 [0.9.17 compact battle cards and smaller source arrows](docs/UI_REFINEMENTS_0.9.17.md), and
-[0.9.18 adjacent aggregate tables and compact headers](docs/UI_REFINEMENTS_0.9.18.md).
+[0.9.18 adjacent aggregate tables and compact headers](docs/UI_REFINEMENTS_0.9.18.md), and
+[0.9.19 native finance column allocation](docs/UI_REFINEMENTS_0.9.19.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
 already selected, including in a full-history Timeline range. **Back**, beside

@@ -794,11 +794,13 @@
         var scale = state.nativeScale || 1, measurements = [];
         var narrowCards = owner === nodes.groups && owner.classList.contains('ss-narrow-cards');
         Array.prototype.forEach.call(owner.querySelectorAll('.ss-economy'), function (economy) {
-            var box = economy.getBoundingClientRect(), style = window.getComputedStyle(economy);
-            var width = (box.width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) -
+            var assigned = Number(economy.getAttribute('data-ss-finance-width')) || 0;
+            var outerWidth = assigned > 0 ? assigned * scale : economy.getBoundingClientRect().width;
+            var style = window.getComputedStyle(economy);
+            var width = (outerWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) -
                 (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0)) / scale;
             var numberWidth = Number(economy.getAttribute('data-ss-finance-number-width')) || 0;
-            if (width > 0) { measurements.push({node:economy, width:width, numberWidth:numberWidth,
+            if (width > 0) { measurements.push({node:economy, width:width, assigned:assigned > 0, numberWidth:numberWidth,
                 compact:narrowCards || (numberWidth > 0 ? width - numberWidth * 3 < 64 : width <= 300)}); }
         });
         measurements.forEach(function (measurement) {
@@ -808,12 +810,28 @@
             }
             var captionWidth = measurement.numberWidth > 0 && !measurement.compact ?
                 measurement.width - measurement.numberWidth * 3 : 0;
-            var labels = measurement.node.querySelector('.ss-credit-label-column');
-            labels.style.width = captionWidth ? captionWidth + 'rem' : '';
-            labels.style.flexBasis = captionWidth ? captionWidth + 'rem' : '';
-            Array.prototype.forEach.call(measurement.node.querySelectorAll('.ss-money-head, .ss-money-row:not(.ss-credit-pair)'), function (row) {
+            var numericWidth = measurement.compact ? measurement.width / 3 : measurement.numberWidth;
+            function setColumn(cell, width) {
+                var value = measurement.assigned ? width + 'rem' : '';
+                cell.style.width = value;
+                cell.style.flex = measurement.assigned ? '0 0 ' + value : '';
+            }
+            var pair = measurement.node.querySelector('.ss-credit-pair');
+            var labels = pair.querySelector('.ss-credit-label-column');
+            setColumn(labels, captionWidth);
+            Array.prototype.forEach.call(pair.children, function (column) {
+                if (column.classList.contains('ss-credit-column') || column.classList.contains('ss-credit-shared-cost')) {
+                    setColumn(column, numericWidth);
+                }
+            });
+            // Gameface can return stale geometry after changing a flex lane.
+            // Keep every lane inside the assigned budget and visit direct rows;
+            // no compound selector or same-pass remeasurement owns these widths.
+            Array.prototype.forEach.call(measurement.node.children, function (row) {
+                if (!row.classList.contains('ss-money-head') &&
+                        (!row.classList.contains('ss-money-row') || row.classList.contains('ss-credit-pair'))) { return; }
                 Array.prototype.forEach.call(row.children, function (cell, index) {
-                    cell.style.width = captionWidth ? (index ? measurement.numberWidth : captionWidth) + 'rem' : '';
+                    setColumn(cell, index ? numericWidth : measurement.compact ? measurement.width : captionWidth);
                 });
             });
         });
@@ -3514,11 +3532,12 @@
             });
         } else { deferSettle(); }
     }
-    function layoutAggregateTables(card) {
+    function layoutAggregateTables(card, available) {
         var holder = card.querySelector('.ss-details'), performance = holder && holder.querySelector('.ss-performance');
         var economy = holder && holder.querySelector('.ss-economy');
         if (!performance || !economy) { return; }
-        var scale = state.nativeScale || 1, available = holder.getBoundingClientRect().width / scale;
+        var scale = state.nativeScale || 1;
+        if (!(available > 0)) { available = holder.getBoundingClientRect().width / scale; }
         // Measure explicit text boxes, including the native font and actual
         // source actions. Average has no arrow and need not reserve its lane.
         var columns = [0, 0, 0], rows = performance.querySelectorAll('.ss-metric-head, .ss-metric-row');
@@ -3571,9 +3590,16 @@
         }
         performance.style.flex = paired ? '0 0 ' + performanceWidth + 'rem' : '';
         performance.style.width = paired ? performanceWidth + 'rem' : '';
-        economy.style.flex = paired ? '1 1 0rem' : '';
-        if (paired) { economy.setAttribute('data-ss-finance-number-width', String(financeNumber)); }
-        else { economy.removeAttribute('data-ss-finance-number-width'); }
+        var financeWidth = available - performanceWidth;
+        economy.style.flex = paired ? '0 0 ' + financeWidth + 'rem' : '';
+        economy.style.width = paired ? financeWidth + 'rem' : '';
+        if (paired) {
+            economy.setAttribute('data-ss-finance-number-width', String(financeNumber));
+            economy.setAttribute('data-ss-finance-width', String(financeWidth));
+        } else {
+            economy.removeAttribute('data-ss-finance-number-width');
+            economy.removeAttribute('data-ss-finance-width');
+        }
         Array.prototype.forEach.call(rows, function (row) {
             for (var index = 0; index < 3; index += 1) {
                 var width = paired ? columns[index] + 'rem' : '';
@@ -3642,7 +3668,7 @@
                     card.classList[inlineCaptions ? 'add' : 'remove']('ss-battle-inline-captions');
                 }
             }
-            if (state.group !== 'battles') { layoutAggregateTables(card); }
+            if (state.group !== 'battles') { layoutAggregateTables(card, Math.max(1, Math.min(width, cardWidth) - 14)); }
             layoutMoreColumns(card, Math.max(1, Math.min(width, cardWidth) - 14));
             card.setAttribute('aria-posinset', String(Number(card.getAttribute('data-list-index')) + 1));
             card.setAttribute('aria-setsize', String(total));
