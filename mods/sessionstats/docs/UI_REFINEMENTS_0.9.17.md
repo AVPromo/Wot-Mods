@@ -25,3 +25,14 @@ Regression checks cover real text ink, six-digit signed values, large-value
 fallback, visible header-content centers, translated labels, narrow layouts,
 source-arrow geometry and native paint fault models. Fixtures and captures
 are synthetic; the actual renderer remains an in-game verification step.
+
+The appearance-only browser uses full rasterization for both the static and
+compiled-default frames. Partial repaint tiles produced tiny rounded-edge
+differences despite identical geometry and computed paint. Independent raw
+PNG comparisons reproduce that drift and confirm zero changed pixels through
+three default/fallback cycles with full rasterization. Actual configured
+theme changes remain detectable. The 37 assertions and existing 16-pixel /
+6-channel-level limits are retained.
+
+The Chromium rendering option is documented in
+[Chrome's tooling flags](https://github.com/GoogleChrome/chrome-launcher/blob/main/docs/chrome-flags-for-tools.md#rendering--gpu).

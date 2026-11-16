@@ -166,7 +166,9 @@ async function footer(browser) {
     const localChrome=path.resolve(root,'../.wot-design-tools/chrome-testing/chrome-headless-shell-linux64/chrome-headless-shell');
     // Grayscale text avoids RGB subpixel repaint artifacts when translated
     // glyphs touch a clipping edge. Keep the exact layout/paint and raster bounds.
-    const browser=await chromium.launch({executablePath:process.env.GRZ_CHROME||localChrome,headless:true,args:['--no-sandbox','--disable-lcd-text']});
+    // Full rasterization keeps rounded-edge pixels stable across stylesheet
+    // invalidation instead of comparing differently rounded partial paint tiles.
+    const browser=await chromium.launch({executablePath:process.env.GRZ_CHROME||localChrome,headless:true,args:['--no-sandbox','--disable-lcd-text','--disable-partial-raster']});
     try {
         const page=await panel(browser);
         await page.mouse.move(1400,940);
