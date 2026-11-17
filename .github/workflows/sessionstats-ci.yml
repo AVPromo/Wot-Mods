@@ -30,11 +30,18 @@ on:
       - 'tests/test_release_ruleset.py'
       - 'tests/test_unified_release_workflow.py'
       - '.github/workflows/sessionstats-ci.yml'
+      - '.github/actions/python27/**'
+      - 'tests/test_ci_optimizations.py'
       - '.github/workflows/wotmods-release.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# A newer PR commit supersedes its validation, but manual runs stay independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   updates:
@@ -44,6 +51,7 @@ jobs:
   sessionstats:
     needs: updates
     runs-on: ubuntu-24.04
+    cache-mode: read
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,21 +61,38 @@ jobs:
       - name: Detect source import
         id: source
         run: python3 scripts/sessionstats/source_state.py
-      - name: Prepare pinned browser QA runtime
-        if: steps.source.outputs.enabled == 'true'
-        run: python3 -I scripts/sessionstats/browser_qa.py --prepare
       - name: Test release infrastructure
         run: |
           python3 -m unittest discover -s tests -p 'test_sessionstats_*.py' -v
           python3 -m unittest discover -s tests -p 'test_release_*.py' -v
           python3 -m unittest discover -s tests -p 'test_hangar_release_installers.py' -v
           python3 -m unittest discover -s tests -p 'test_pr_ci_scoping.py' -v
-      - name: Compile verified CPython 2.7.18 for game bytecode
+          python3 -m unittest discover -s tests -p 'test_ci_optimizations.py' -v
+      - name: Restore or compile verified CPython 2.7.18
         if: steps.source.outputs.enabled == 'true'
-        run: bash scripts/sessionstats/python27.sh
-      - name: Test, build, audit and reproduce Session Stats
+        uses: ./.github/actions/python27
+      - parallel:
+          - name: Test Session Stats on Python 3
+            if: steps.source.outputs.enabled == 'true'
+            run: bash scripts/sessionstats/validate.sh python3
+          - name: Test Session Stats on Python 2.7
+            if: steps.source.outputs.enabled == 'true'
+            run: bash scripts/sessionstats/validate.sh python27
+      - name: Generate current Session Stats preview
         if: steps.source.outputs.enabled == 'true'
-        run: bash scripts/sessionstats/validate.sh
+        run: bash scripts/sessionstats/validate.sh preview
+      - name: Run complete pinned browser QA
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/validate.sh browser
+      - name: Build twice and verify all six release assets
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/validate.sh build
+      - name: Verify module integration
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/validate.sh integration
+      - name: Audit source, archives and game bytecode
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/validate.sh privacy
       - name: Package independently verified Session Stats PR installer
         if: steps.source.outputs.enabled == 'true'
         run: |

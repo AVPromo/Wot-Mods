@@ -24,6 +24,9 @@ file to the corresponding `.json` filename. Existing settings are preserved.
 
 ## Session Statistics PR builds
 
+Cache ownership, named validation phases and PR concurrency are documented in
+[CI validation and maintenance](CI_VALIDATION.md).
+
 `Validate Session Stats PR` compiles verified CPython 2.7.18, runs Python 3
 and 2.7 logic tests, browser/UI suites, privacy tests and reproducibility
 checks. It uploads the **existing installer ZIP** with `archive: false`:
