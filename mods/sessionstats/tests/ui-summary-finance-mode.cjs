@@ -66,6 +66,9 @@ module.exports=async({browser,nativeHost,check})=>{
           model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
           document.getElementById(options.timeline?'ss-scope-manual':'ss-scope-launch').onclick();document.getElementById('ss-group-maps').onclick();
         },{language,messages:languages[language],options,samples:options.nearZero?nearZeroSamples:options.cancellation?cancellationSamples:samples,period,account,scale});
+        // Every fixture requests a wide window; let its existing resize promotion
+        // finish before menu interactions so the initial layout is not still moving.
+        await page.waitForFunction(()=>document.getElementById('ss-list-controls').getAttribute('data-filter-layout')==='wide');
         await frames(page);return {period,account};
       }
       async function capture(){await page.evaluate(()=>{
