@@ -69,16 +69,21 @@ class SessionStatsPipelineTests(unittest.TestCase):
         self.assertIn('path: release-module/*.zip', publisher)
         self.assertNotIn('archive: false', publisher)
 
-    def test_browser_environment_is_prepared_before_compilation_without_skipping_validation(self):
+    def test_complete_browser_phase_prepares_once_before_any_package_is_built(self):
         workflow = (ROOT/'.github/workflows/sessionstats-ci.yml').read_text()
-        command = 'python3 -I scripts/sessionstats/browser_qa.py --prepare'
-        self.assertIn(command, workflow)
+        validate = (ROOT/'scripts/sessionstats/validate.sh').read_text()
+        command = 'run: bash scripts/sessionstats/validate.sh browser'
+        self.assertEqual(workflow.count(command), 1)
+        self.assertNotIn('browser_qa.py --prepare', workflow)
+        self.assertEqual(validate.count('python3 -I scripts/sessionstats/browser_qa.py'), 1)
         start = workflow.rfind('      - name:', 0, workflow.index(command))
         stop = workflow.find('\n      - ', workflow.index(command))
         preparation = workflow[start:stop]
         self.assertIn("if: steps.source.outputs.enabled == 'true'", preparation)
         self.assertLess(workflow.index('id: source'), start)
-        self.assertLess(start, workflow.index('run: bash scripts/sessionstats/python27.sh'))
+        self.assertLess(workflow.index('validate.sh preview'), start)
+        self.assertLess(start, workflow.index('validate.sh build'))
+        self.assertLess(start, workflow.index('scripts/release_installers.py package'))
         self.assertIn('contents: read', workflow)
         self.assertNotIn('contents: write', workflow)
         self.assertNotRegex(preparation, r'\|\|\s*(?:true|:)')

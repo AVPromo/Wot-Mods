@@ -38,11 +38,16 @@ on:
       - 'tests/test_release_ruleset.py'
       - 'tests/test_unified_release_workflow.py'
       - '.github/workflows/ci.yml'
+      - 'tests/test_ci_optimizations.py'
       - '.github/workflows/wotmods-release.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   updates:

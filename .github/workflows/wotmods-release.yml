@@ -112,6 +112,7 @@ jobs:
     if: needs.plan.outputs.publish == 'true'
     needs: [plan, updates]
     runs-on: ubuntu-24.04
+    cache-mode: write
     timeout-minutes: 45
     permissions:
       contents: read
@@ -126,6 +127,10 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.source_sha }}
           persist-credentials: false
+
+      - name: Restore or compile the accepted game compiler
+        if: matrix.mod == 'sessionstats'
+        uses: ./.github/actions/python27
 
       - name: Test and build one independently versioned installer
         if: matrix.mod != 'noop'
