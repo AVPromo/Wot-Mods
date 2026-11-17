@@ -1,0 +1,20 @@
+name: Verified CPython 2.7
+description: Reuse an exact source-build cache while validating the game compiler on every run.
+runs:
+  using: composite
+  steps:
+    - name: Restore exact CPython source build
+      id: restore
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ${{ runner.temp }}/sessionstats-cpython27/Python-2.7.18
+        key: cpython27-v1-ubuntu-24.04-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/sessionstats/python27.sh') }}
+    - name: Build on a miss and validate every restored interpreter
+      shell: bash
+      run: bash scripts/sessionstats/python27.sh
+    - name: Save validated build from accepted main only
+      if: steps.restore.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ${{ runner.temp }}/sessionstats-cpython27/Python-2.7.18
+        key: ${{ steps.restore.outputs.cache-primary-key }}
