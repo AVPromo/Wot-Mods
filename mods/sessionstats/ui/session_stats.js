@@ -817,6 +817,7 @@
             var statistic = summaryFinanceStatistic(), label = t('finance.period') + ': ' + t('finance.statistic');
             holder.setAttribute('data-ss-finance-statistic', statistic);
             control.trigger.setAttribute('aria-label', label);
+            control.trigger.setAttribute('title', t('finance.period') + ': ' + summaryFinanceStatisticLabel(statistic));
             control.trigger.setAttribute('aria-valuetext', summaryFinanceStatisticLabel(statistic));
             control.menu.setAttribute('aria-label', label);
             choices.forEach(function (choice, index) {

@@ -852,7 +852,8 @@ async function runFeatureSuite(file,browser) {
     check('Translated battle outcomes and finance headers for '+language,
       (await localized.locator('.ss-battle-outcome').allTextContents()).every(value=>
         ['win','loss','draw'].some(outcome=>value===messages['outcome.'+outcome].toUpperCase())) &&
-      await localized.locator('#ss-summary .ss-money-head .ss-table-heading-text').textContent()===messages['finance.period'] &&
+      await localized.locator('#ss-summary-finance-statistic .ss-select-trigger').getAttribute('aria-label')===messages['finance.period']+': '+messages['finance.statistic'] &&
+      await localized.locator('#ss-summary-finance-statistic .ss-select-trigger .ss-control-label').textContent()===messages['finance.statistic_all'] &&
       await localized.locator('#ss-summary .ss-metric-head .ss-table-heading-text').textContent()===messages['performance.period'] &&
       await localized.locator('.ss-battle .ss-money-head .ss-money-label').count()>0 &&
       (await localized.locator('.ss-battle .ss-money-head .ss-money-label').allTextContents()).every(value=>
