@@ -158,7 +158,7 @@ def _money(records, currency, observed_count):
     return money
 
 
-def aggregate_stats(records, expected_table):
+def aggregate_stats(records, expected_table, include_currency_series=False):
     observed = [record for record in records if record.get('mode') in (None, 'random')]
     records = [record for record in observed if record.get('mode') == 'random' and record.get('outcome') in _OUTCOMES]
     table = expected_table if isinstance(expected_table, ExpectedTable) else ExpectedTable(expected_table)
@@ -194,6 +194,17 @@ def aggregate_stats(records, expected_table):
     stats['wn8'] = wn8_from_totals(actual, reference) if per_battle else None
     stats['battle_wn8'] = _series(per_battle)
     stats['currencies'] = dict((currency, _money(records, currency, len(observed))) for currency in _CURRENCIES)
+    if include_currency_series:
+        # The summary selector needs distributions, not estimates from totals.
+        # Keep ordinary group/battle payloads unchanged.
+        credit_fields = dict((field, metric) for metric, field in _CREDIT_METRICS if metric not in _CREDIT_ALIASES)
+        stats['currency_series'] = {}
+        for currency in _CURRENCIES:
+            fields = ('income', 'costs', 'net') + (('income_base', 'net_base') if currency == 'credits' else ())
+            stats['currency_series'][currency] = dict((field,
+                dict(stats[credit_fields[field]]) if currency == 'credits' else
+                _series([record.get('currencies', {}).get(currency, {}).get(field) for record in records]))
+                for field in fields)
     return stats
 
 
@@ -1237,7 +1248,8 @@ class StatsService(object):
         """Project known records without changing their account/session ledger."""
         scope = {'label': label, 'started_at': started_at,
                  'pending': sum(1 for record in records if self._pending(record)),
-                 'summary': aggregate_stats(records, self.expected_table), 'vehicles': [], 'maps': [], 'battles': [], 'tiers': []}
+                 'summary': aggregate_stats(records, self.expected_table, include_currency_series=True),
+                 'vehicles': [], 'maps': [], 'battles': [], 'tiers': []}
         for group_type, field, name_field in (('vehicles', 'vehicle_id', 'vehicle_name'), ('maps', 'map_id', 'map_name'), ('tiers', 'vehicle_tier', 'vehicle_tier')):
             groups = {}
             for record in records:

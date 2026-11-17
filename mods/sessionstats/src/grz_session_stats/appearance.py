@@ -628,6 +628,17 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-time-point-name { display:block; flex:1 1 0rem; width:0; min-width:0; height:28rem; padding:4rem 7rem; margin:0; border:0; border-radius:0 {{radii.control}}rem {{radii.control}}rem 0; background:{{colors.close_background}}; color:{{colors.button_text}}; font-family:Warhelios, Arial, sans-serif; font-size:12rem; line-height:18rem; }
 .ss-time-point-name:focus { outline:none; box-shadow:inset 0 0 6rem {{colors.button_shadow_2}}; }
 .ss-time-point { flex:0 0 auto; min-width:122rem; width:auto; min-height:28rem; padding-left:7rem; padding-right:7rem; border:0; border-right:1rem solid {{colors.button_border}}; border-radius:{{radii.control}}rem 0 0 {{radii.control}}rem; }
+/* Logical panel widths keep wrapped native title controls inside their bar.
+   The lower row can use the close buttons' otherwise empty right-hand inset. */
+.ss-titlebar.ss-title-controls-row { padding-left:13rem; padding-right:13rem; }
+.ss-title-controls-row .ss-title-identity { flex:0 0 100%; width:100%; padding-right:61rem; }
+.ss-title-controls-row .ss-title-actions { flex:0 0 100%; width:100%; height:30rem; min-height:30rem; margin-left:0; justify-content:flex-start; flex-wrap:nowrap; }
+.ss-title-controls-row .ss-time-point-controls { flex:1 1 0rem; width:0; max-width:266rem; }
+.ss-title-controls-row .ss-time-point { flex:0 0 122rem; width:122rem; min-width:0; max-width:122rem; }
+.ss-title-controls-row .ss-background-control { flex:0 0 148rem; width:148rem; }
+.ss-title-controls-row .ss-language-row { flex:0 0 158rem; width:158rem; }
+.ss-title-controls-row.ss-title-controls-stacked .ss-title-actions { height:60rem; min-height:60rem; flex-wrap:wrap; align-content:flex-start; }
+.ss-title-controls-row.ss-title-controls-stacked .ss-time-point-controls { flex:0 0 244rem; width:244rem; }
 .ss-has-help { cursor:help; }
 .ss-help-tooltip { display:none; position:absolute; z-index:95; width:320rem; padding:9rem 11rem; border:1rem solid {{colors.confirmation_border}}; border-radius:{{radii.control}}rem; background:{{colors.window_background}}; color:{{colors.body_text}}; font-family:Warhelios, Arial, sans-serif; font-size:12rem; line-height:17rem; white-space:pre-line; overflow:hidden; box-shadow:0 3rem 14rem {{colors.title_text_shadow}}, inset 0 1rem {{colors.button_shadow_2}}; pointer-events:none; }
 .ss-info-button { display:flex; align-items:center; justify-content:center; flex:0 0 16rem; min-width:16rem; width:16rem; height:16rem; padding:0; margin:0 0 0 5rem; border:1rem solid {{colors.button_border}}; border-radius:{{radii.window}}rem; color:{{colors.button_text}}; background:{{colors.window_background}}; box-shadow:none; text-shadow:none; font-family:Warhelios, Arial, sans-serif; font-size:12rem; font-style:normal; font-weight:normal; line-height:14rem; cursor:help; }
@@ -648,6 +659,11 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-summary-details .ss-economy .ss-summary-table-title { width:100%; }
 .ss-summary-table-title .ss-table-heading-text { display:block; flex:1 1 0rem; min-width:0; overflow-wrap:break-word; }
 .ss-summary-table-title .ss-info-button { margin-left:3rem; }
+.ss-summary-details .ss-summary-finance-statistic { flex:0 1 56rem; width:56rem; max-width:56rem; min-width:0; }
+.ss-summary-finance-statistic .ss-select-trigger { height:24rem; min-height:24rem; padding:2rem 3rem; }
+.ss-summary-finance-statistic .ss-select-trigger .ss-control-label { font-size:11rem; line-height:16rem; }
+.ss-summary-finance-statistic .ss-select-arrow { width:5rem; height:5rem; margin-left:3rem; margin-right:1rem; }
+.ss-summary-finance-statistic .ss-select-options { width:96rem; min-width:100%; }
 .ss-narrow-summary .ss-summary-details .ss-money-head .ss-summary-table-heading { display:block; width:100%; margin-right:0; }
 .ss-narrow-summary .ss-summary-details .ss-money-head .ss-summary-table-title { width:100%; height:26rem; }
 @media (max-width:400px) {
@@ -799,6 +815,12 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group.ss-battle-target { outline:none; border-color:{{colors.session_tab_marker_background}}; }
 .ss-battle-selection-banner { display:flex; align-items:center; position:absolute; z-index:4; top:-10rem; right:6rem; max-width:95%; margin:0; padding:1rem 6rem; border:1rem solid {{colors.session_tab_marker_background}}; border-radius:{{radii.control}}rem; background:{{colors.table_header_background_start}}; color:{{colors.session_tab_marker_background}}; font-size:12rem; font-weight:bold; line-height:16rem; }
 .ss-battle-selection-label { display:block; min-width:0; }
+/* Keep narrow single-lane controls on the existing border overlay. Buttons
+   retain their parents and handlers so selected-battle return stays owned. */
+.ss-group.ss-card-border-more { padding-top:13rem; }
+.ss-card-border-more .ss-more-button { position:absolute; z-index:4; top:-10rem; right:6rem; width:82rem; min-width:82rem; max-width:82rem; height:20rem; min-height:20rem; margin:0; padding:0 5rem; }
+.ss-card-border-more .ss-battle-selection-banner { right:92rem; max-width:70%; flex-direction:row-reverse; }
+.ss-card-border-more .ss-battle-return { margin-left:5rem; margin-right:0; }
 .ss-battle-return { display:block; position:relative; flex:0 0 20rem; width:20rem; min-width:20rem; height:18rem; min-height:18rem; padding:0; margin:0 5rem 0 0; border:0; border-radius:{{radii.extreme_link}}rem; background:{{colors.extreme_link_background}}; color:{{colors.extreme_link_text}}; cursor:pointer; }
 .ss-battle-return:hover, .ss-battle-return:focus { background:{{colors.extreme_link_hover_background}}; outline:1rem solid {{colors.session_tab_marker_background}}; outline-offset:0; }
 .ss-battle-return-arrow { display:block; position:absolute; left:3rem; top:1rem; width:14rem; height:14rem; pointer-events:none; }

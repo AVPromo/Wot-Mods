@@ -250,4 +250,5 @@ module.exports=async function ({browser,nativeHost,check}) {
       }
     } finally { await page.close(); }
   });
+  await require('./ui-responsive-card-headers.cjs')({browser,nativeHost,check});
 };

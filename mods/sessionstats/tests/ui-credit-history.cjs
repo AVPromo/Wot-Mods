@@ -120,4 +120,5 @@ module.exports=async({browser,nativeHost,check})=>{
   }finally{await page.close();}
   await require('./ui-credit-pair-layout.cjs')({browser,nativeHost,check});
   await require('./ui-base-credit-availability.cjs')({browser,nativeHost,check});
+  await require('./ui-summary-finance-mode.cjs')({browser,nativeHost,check});
 };

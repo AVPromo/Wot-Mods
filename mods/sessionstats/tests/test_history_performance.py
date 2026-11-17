@@ -128,7 +128,7 @@ class HistoryPerformanceTests(unittest.TestCase):
                     ('manual', '_manual_id', self.service._state['current_manual_id'])):
                 rows = [row for row in self.service._state['battles'].values() if row.get(field) == identifier]
                 current = self.service.snapshot()['scopes'][scope_name]
-                self.assert_numbers(current['summary'], aggregate_stats(rows, EXPECTED))
+                self.assert_numbers(current['summary'], aggregate_stats(rows, EXPECTED, include_currency_series=True))
             if index in (30, 60):
                 self.service = self.reopen()
 

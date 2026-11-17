@@ -115,7 +115,8 @@ class TimelineIndexLoadingTests(TimelineLoadingHelpers, unittest.TestCase):
             self.assertFalse(scope['loading'])
             self.assertEqual(len(replacements), 10000)
             self.assertEqual(len(set(replacements)), 10000)
-            self.assert_statistics_equal(scope['summary'], aggregate_stats(list(rows.values()), self.service.expected_table))
+            self.assert_statistics_equal(scope['summary'], aggregate_stats(list(rows.values()), self.service.expected_table,
+                                                                          include_currency_series=True))
             self.assertEqual(scope['pagination']['battles']['total'], 10000)
             self.assertEqual(len(scope['battles']), 40)
             self.assertEqual(scope['pagination']['vehicles']['total'], 2)
@@ -153,7 +154,8 @@ class TimelineIndexLoadingTests(TimelineLoadingHelpers, unittest.TestCase):
         self.assertNotIn('load_error', scope)
         self.assertIs(self.service._filtered_timeline, candidate)
         expected = self.selected_rows(self.service, 130, 170)
-        self.assertEqual(scope['summary'], aggregate_stats(expected, self.service.expected_table))
+        self.assertEqual(scope['summary'], aggregate_stats(expected, self.service.expected_table,
+                                                            include_currency_series=True))
         self.assertEqual([row['id'] for row in scope['battles']],
                          ['new-after-cursor', 'unknown', 'outside', 'new-before-cursor', 'late'])
         self.assertEqual(scope['summary']['battles'], 5)

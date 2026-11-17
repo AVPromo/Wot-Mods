@@ -1,5 +1,5 @@
-GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.22 (persistent data schema unchanged)
-Release date: 2026-11-16.
+GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.23 (persistent data schema unchanged)
+Release date: 2026-11-17.
 
 Target: World of Tanks PC Wargaming EU 2.4.1.1, Python 2.7 runtime.
 All game-independent code must also run under Python 3 for development.
@@ -82,15 +82,15 @@ to current launch just because received now. Use returned battle start time in a
 
 SNAPSHOT -> Window ViewModel string property `payload`
 {
- version: '0.9.22', account_key: string, generated_at: unix seconds,
+ version: '0.9.23', account_key: string, generated_at: unix seconds,
  expected: {version: string, ...}, warnings: [string],
  appearance: {panel_css:string, footer_css:string, scroll_speed:number},
  recovery: {pending:int, in_flight:int, states:{status_label:int}},
  scopes: {
   launch: {label:'Since launch', started_at:seconds, pending:number,
-           summary:STATS, vehicles:[GROUP], maps:[GROUP], tiers:[GROUP], battles:[BATTLE_ROW]},
+           summary:SUMMARY_STATS, vehicles:[GROUP], maps:[GROUP], tiers:[GROUP], battles:[BATTLE_ROW]},
   manual: {label:'Since reset', started_at:seconds, pending:number,
-           summary:STATS, vehicles:[GROUP], maps:[GROUP], tiers:[GROUP], battles:[BATTLE_ROW]}
+           summary:SUMMARY_STATS, vehicles:[GROUP], maps:[GROUP], tiers:[GROUP], battles:[BATTLE_ROW]}
  }
 }
 STATS = {
@@ -105,6 +105,23 @@ STATS = {
 }
 SERIES = {min:number or null, avg:number or null, max:number or null,
           sum:number or null, count:int}
+SUMMARY_STATS = STATS plus {
+ currency_series: {
+  credits: {income:SERIES, costs:SERIES, net:SERIES,
+            income_base:SERIES, net_base:SERIES},
+  bonds: {income:SERIES, costs:SERIES, net:SERIES},
+  gold: {income:SERIES, costs:SERIES, net:SERIES}
+ }
+}
+Only scope.summary exposes currency_series; group and battle STATS remain unchanged.
+Each field's series uses its actual known completed-battle values: zero is included,
+missing values are excluded and pending battles do not contribute a sample.
+The incremental and projected summaries expose the same selected-period distributions.
+The summary finance heading selects sum (All), min, avg or max and updates figure
+nodes in place. Credit income/net Base values remain unavailable in every mode
+unless that field covers all observed battles. Costs stay a shared actual expense.
+Existing source actions keep their original metric/statistic and availability;
+changing the summary display mode does not retarget them to a different sample.
 MONEY = {income:number or null, costs:number or null, net:number or null,
          income_count:int, costs_count:int, net_count:int,
          breakdown:{repair:number or null, ammo:number or null,

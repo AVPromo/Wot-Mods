@@ -152,8 +152,15 @@ module.exports=async({browser,nativeHost,check})=>{
         check('Revision fixture changes the actual native result generation',revised.payload.scopes.timeline.data_revision!==before.payload.data_revision);
         revisedRating=revised.payload.scopes.timeline.maps.find(row=>row.id==='return-map-060').stats.wn8;
         await publish(revised.payload);await opened();}
-      const badge=await page.locator('.ss-battle-target .ss-battle-selection-banner').evaluate(banner=>{const button=banner.querySelector('.ss-battle-return'),label=banner.querySelector('.ss-battle-selection-label'),a=button.getBoundingClientRect(),b=label.getBoundingClientRect();return {tag:button.tagName,caption:button.getAttribute('aria-label'),left:a.right<=b.left+1,width:a.width,height:a.height};});
-      check('Selected result offers a keyboard-native Back box left of its label '+scenario.name,badge.tag==='BUTTON'&&badge.caption==='Back to source'&&badge.left&&badge.width>=18&&badge.height>=18);
+      const badge=await page.locator('.ss-battle-target .ss-battle-selection-banner').evaluate(banner=>{
+        const button=banner.querySelector('.ss-battle-return'),label=banner.querySelector('.ss-battle-selection-label'),
+          card=banner.closest('.ss-group'),more=card.querySelector('.ss-more-button'),a=button.getBoundingClientRect(),b=label.getBoundingClientRect(),
+          m=more&&more.getBoundingClientRect(),scale=parseFloat(getComputedStyle(document.documentElement).fontSize)||1,
+          placed=card.classList.contains('ss-card-border-more')?b.right<=a.left+scale&&m&&m.left-a.right>=2*scale&&
+            m.left-a.right<=24*scale&&Math.abs((a.top+a.bottom-m.top-m.bottom)/2)<=2*scale:a.right<=b.left+scale;
+        return {tag:button.tagName,caption:button.getAttribute('aria-label'),placed:!!placed,width:a.width,height:a.height};
+      });
+      check('Selected result offers a keyboard-native Back box beside its label in the scoped layout '+scenario.name,badge.tag==='BUTTON'&&badge.caption==='Back to source'&&badge.placed&&badge.width>=18&&badge.height>=18);
       if(keyboard)await page.locator('.ss-battle-target .ss-battle-return').press('Enter');else await page.locator('.ss-battle-target .ss-battle-return').click();
       await ready('maps');
       try{await page.waitForFunction(({identifier,offset})=>{const card=[...document.querySelectorAll('#ss-groups .ss-group')].find(node=>node.getAttribute('data-group-id')===identifier),scroll=document.getElementById('ss-scroll');return card&&Math.abs(card.getBoundingClientRect().top-scroll.getBoundingClientRect().top-offset)<=3;},{identifier:sourceCard,offset:before.offset},{timeout:5000});}catch(error){throw Error('Source anchor did not return: '+JSON.stringify({scenario:scenario.name,before,after:await geometry(sourceCard),bridge:await page.evaluate(()=>({errors:__returnBridgeErrors,commands:__grzCommands.filter(command=>['page','sort','battle_select'].includes(command.action)).slice(-8),state:GRZSessionStats.getState()}))}));}

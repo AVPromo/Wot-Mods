@@ -107,7 +107,8 @@ class StagedLoadingTests(unittest.TestCase):
         self.assertTrue(service.ready, service.last_error)
         self.assertTrue({'history', 'storage', 'indexes', 'receipts'}.issubset(phases), phases)
         self.assertEqual(service.snapshot()['scopes']['manual']['summary'],
-                         aggregate_stats(list(service._state['battles'].values()), service.expected_table))
+                         aggregate_stats(list(service._state['battles'].values()), service.expected_table,
+                                         include_currency_series=True))
 
     def test_new_results_before_and_during_index_build_are_preserved(self):
         self.seed()

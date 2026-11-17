@@ -1,0 +1,170 @@
+/* Floating-window headers use logical widths, including retained feed cards. */
+const fs=require('fs'),path=require('path');
+const frames=(page,count=8)=>page.evaluate(count=>new Promise(resolve=>{
+  function next(){if(--count)requestAnimationFrame(next);else resolve();}requestAnimationFrame(next);
+}),count);
+module.exports=async({browser,nativeHost,check})=>{
+  const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
+  for(const scale of [1,2]){
+    const page=await nativeHost(browser,{initialViewport:{width:3840,height:2800},viewport:{width:3840,height:2800,scale}});
+    try{
+      await page.evaluate(()=>{window.__responsiveHeaderFixture=JSON.parse(model.payload);});
+      let sequence=0;
+      async function publish(language,width,{paged=false,fresh=false}={}){
+        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh})=>{
+          const payload=JSON.parse(JSON.stringify(__responsiveHeaderFixture)),scope=payload.scopes.launch;
+          payload.account_key='synthetic-responsive-header-'+scale+'-'+language;payload.window_size=[width,1100];
+          payload.viewport={width:3840,height:2800,scale};payload.localization={language,messages};
+          payload.appearance={window_settings:{maximized:false,background_transparency:15,restored_width:width,restored_height:1100}};
+          scope.period_id='responsive-header-period';scope.data_revision='header-'+sequence;
+          for(const group of ['maps','vehicles','tiers','battles']){
+            const sample=scope[group][0];scope[group]=[0,1].map(index=>{
+              const item=JSON.parse(JSON.stringify(sample)),stats=item.stats,total=index?8:7;
+              item.id=(fresh?'fresh-':'')+'responsive-'+group+'-'+index;item.name=group==='maps'?(index?'Klondike':'Cliff'):'Synthetic vehicle '+index;
+              if(group==='maps')item.visual={kind:'map',src:'img://gui/maps/icons/map/small/synthetic-header.png',alt:'Synthetic map'};
+              Object.assign(stats,{battles:total,observed_battles:total,wn8:index?1676:1601,wn8_count:total,win_rate:42.9});
+              const values={xp_base:[132,549,1403],xp_received:[426,2372,8737],battle_wn8:[245,2288,6779],credits_net_base:[1000,index?5481:6343,9444]};
+              item.extrema_battles={};
+              for(const [metric,[min,avg,max]]of Object.entries(values)){
+                stats[metric]={count:metric==='credits_net_base'?3:total,min,avg,max,sum:avg*total};item.extrema_battles[metric]={};
+                for(const statistic of ['min','max'])item.extrema_battles[metric][statistic]={id:'responsive-result-'+index,metric,statistic,
+                  value:stats[metric][statistic],name:'Synthetic vehicle',map:'Cliff',started_at:1794000000};
+              }
+              stats.free_xp={count:total,min:10,avg:100,max:200,sum:index?3228:929};
+              stats.currencies={credits:{income_base:null,income_base_count:3,net_base:null,net_base_count:3,
+                income:445295,income_count:total,costs:375711,costs_count:total,net:69584,net_count:total},
+                bonds:{income:65,income_count:total,costs:0,costs_count:total,net:65,net_count:total}};
+              item.battle_list={page:0,pages:1,total:1,page_size:10,items:[{id:'responsive-result-'+index,name:'Synthetic vehicle',map:'Cliff',started_at:1794000000,outcome:'win',wn8:1601}]};
+              return item;
+            });
+            scope.ordering[group]={metric:group==='battles'?'off':'credits_net_base',statistic:'avg',direction:'desc',chronology:'newest'};
+            scope.pagination[group]={page:0,pages:paged&&group==='maps'?2:1,total:paged&&group==='maps'?4:2,page_size:2};
+          }
+          payload.scopes.timeline=JSON.parse(JSON.stringify(scope));
+          payload.scopes.timeline.from_point=payload.scopes.timeline.to_point='';payload.scopes.timeline.time_points=[];
+          model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
+          document.getElementById('ss-scope-manual').click();document.getElementById('ss-group-maps').click();
+        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh});await frames(page);
+      }
+      async function resize(width,height=1100){
+        await page.evaluate(({width,height})=>{
+          const grip=document.getElementById('ss-resize-grip'),box=grip.getBoundingClientRect();
+          grip.dispatchEvent(new MouseEvent('mousedown',{button:0,clientX:box.left+1,clientY:box.top+1,bubbles:true,cancelable:true}));
+          const request=__grzCommands.filter(command=>command.action==='resize_begin').pop();
+          if(!request)throw Error('Expected an owned native resize gesture');
+          GRZSessionStats.update({resize_gesture:{token:request.token,width,height,active:true}});
+          GRZSessionStats.update({resize_gesture:{token:request.token,width,height,active:false}});
+        },{width,height});await frames(page,10);
+      }
+      async function audit(){return page.evaluate(scale=>{
+        const rect=node=>{const b=node.getBoundingClientRect();return {left:b.left/scale,right:b.right/scale,top:b.top/scale,bottom:b.bottom/scale,width:b.width/scale,height:b.height/scale};},
+          inside=(a,b)=>a.left>=b.left-1&&a.right<=b.right+1&&a.top>=b.top-1&&a.bottom<=b.bottom+1,
+          overlap=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1,
+          ink=node=>{const range=document.createRange();range.selectNodeContents(node);return [...range.getClientRects()].filter(b=>b.width>0&&b.height>0)
+            .map(b=>({left:b.left/scale,right:b.right/scale,top:b.top/scale,bottom:b.bottom/scale}));};
+        const panel=rect(document.getElementById('grz-session-stats')),titlebar=rect(document.getElementById('ss-titlebar')),timeline=rect(document.getElementById('ss-timeline')),
+          controls=['#ss-time-point-controls','.ss-background-control','.ss-language-row'].map(selector=>rect(document.querySelector(selector))),
+          language=rect(document.querySelector('#ss-language .ss-select-trigger')),actions=rect(document.getElementById('ss-title-actions')),
+          compactTitle=panel.width>=550&&panel.width<700,stackedTitle=compactTitle&&panel.width<594,
+          rowsOK=!compactTitle||(Math.abs(actions.height-(stackedTitle?60:30))<=0.5&&
+            (stackedTitle||Math.max(...controls.map(box=>box.top))-Math.min(...controls.map(box=>box.top))<=0.5)&&
+            rect(document.getElementById('ss-time-point-name')).width>=119.5),
+          topOK=controls.every(box=>inside(box,titlebar)&&!overlap(box,timeline))&&controls.every((box,index)=>controls.slice(index+1).every(other=>!overlap(box,other)))&&
+            language.width>=85&&language.height>=28&&inside(language,titlebar)&&rowsOK;
+        const two=document.getElementById('ss-groups').classList.contains('ss-two-columns'),cards=[...document.querySelectorAll('#ss-groups .ss-group')].map(card=>{
+          const bounds=rect(card),header=rect(card.querySelector('.ss-group-header')),name=card.querySelector('.ss-group-name'),identity=rect(name),
+            title=card.querySelector('.ss-group-title'),titleBox=rect(title),titleInk=ink(title),stats=card.querySelector('.ss-group-stats'),more=card.querySelector('.ss-more-button'),
+            button=more&&rect(more),expectedDock=!two&&bounds.width<680,docked=card.classList.contains('ss-card-border-more'),failures=[];
+          if(identity.width<72||!titleInk.length||titleInk.some(part=>!inside(part,titleBox)))failures.push('squeezed-identity');
+          if(['Cliff','Klondike'].includes(title.textContent)&&titleInk.some(part=>Math.abs(part.top-titleInk[0].top)>1))failures.push('vertical-short-name');
+          if(!inside(identity,header))failures.push('identity-outside-header');
+          if(more){
+            if(docked!==expectedDock)failures.push('dock-scope');
+            if(expectedDock){
+              if(getComputedStyle(more).position!=='absolute'||Math.abs(button.width-82)>0.5||Math.abs(button.height-20)>0.5||
+                Math.abs((button.top+button.bottom)/2-bounds.top)>2||Math.abs(bounds.right-button.right-6)>2||header.top<button.bottom+2)failures.push('border-dock');
+              if(stats&&identity.bottom>rect(stats).top+1)failures.push('identity-statistics-overlap');
+            }else if(getComputedStyle(more).position==='absolute'||!inside(button,header))failures.push('ordinary-action-moved');
+            if(!ink(more.querySelector('.ss-control-label')).every(part=>inside(part,button)))failures.push('clipped-action');
+          }
+          const banner=card.querySelector('.ss-battle-selection-banner'),back=card.querySelector('.ss-battle-return'),label=card.querySelector('.ss-battle-selection-label');
+          let selected=null;
+          if(banner&&back&&label){const b=rect(banner),a=rect(back),l=rect(label);
+            selected={text:label.textContent,backLabel:back.getAttribute('aria-label'),contained:inside(a,b)&&inside(l,b),
+              order:docked?l.right<=a.left+1:a.right<=l.left+1,
+              adjacent:!docked||(button.left-a.right>=2&&button.left-a.right<=24&&Math.abs((a.top+a.bottom-button.top-button.bottom)/2)<=2&&!overlap(b,button))};
+          }
+          return {id:card.getAttribute('data-group-id'),title:title.textContent,bounds,header,identity,button,expectedDock,docked,failures,selected,
+            more:more&&more.textContent,expanded:more&&more.getAttribute('aria-expanded')};
+        });
+        return {titlebar,timeline,controls,language,actions,rowsOK,topOK,two,cards};
+      },scale);}
+      const valid=result=>result.topOK&&result.cards.length>=2&&result.cards.every(card=>!card.failures.length),
+        selectedValid=(result,messages)=>valid(result)&&result.cards.some(card=>card.selected&&card.selected.contained&&card.selected.order&&card.selected.adjacent&&
+          card.selected.text===messages['battle.selected']&&card.selected.backLabel===messages['battle.return']);
+      for(const [language,messages]of Object.entries(languages)){
+        for(const width of [600,780]){
+          await publish(language,width);const result=await audit();
+          check('Language controls stay enclosed above Timeline and both short map identities remain readable '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(result),valid(result));
+          const more=page.locator('#ss-groups .ss-more-button').first();await more.evaluate(node=>{window.__headerMore=node;window.__headerMoreParent=node.parentNode;});
+          await more.click();await frames(page);const open=await audit();
+          check('Localized More/Less preserves its node, parent and scoped border position '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(open),valid(open)&&
+            open.cards[0].more===messages['more.less']&&open.cards[0].expanded==='true'&&await more.evaluate(node=>node===__headerMore&&node.parentNode===__headerMoreParent));
+          await more.click();await frames(page);
+        }
+        await page.locator('#ss-groups .ss-metric-battle-link[data-ss-source-metric="xp_received"][data-ss-extreme="max"]').first().click();
+        await page.evaluate(()=>{
+          const request=__grzCommands.filter(command=>command.action==='battle_select').pop(),payload=JSON.parse(model.payload),scope=payload.scopes[request.scope],sample=scope.battles[0];
+          scope.battles=[{...sample,id:request.id},{...sample,id:'responsive-neighbor'}];scope.pagination.battles={page:0,pages:1,total:2,page_size:2};
+          scope.battle_focus={id:request.id,request_id:request.request_id};model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
+        });await frames(page,12);
+        await page.evaluate(()=>{window.__selectedHeaderCard=document.querySelector('#ss-groups .ss-battle-target');window.__selectedHeaderMore=__selectedHeaderCard.querySelector('.ss-more-button');window.__selectedHeaderParent=__selectedHeaderMore.parentNode;});
+        for(const width of [600,780,1320]){
+          await resize(width);const result=await audit();
+          check('Back remains beside Selected while only narrow single-column More uses the border '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(result),selectedValid(result,messages)&&
+            await page.evaluate(()=>document.querySelector('#ss-groups .ss-battle-target')===__selectedHeaderCard&&__selectedHeaderCard.querySelector('.ss-more-button')===__selectedHeaderMore&&__selectedHeaderMore.parentNode===__selectedHeaderParent));
+          if(width===600){
+            const more=page.locator('#ss-groups .ss-battle-target .ss-more-button');await more.click();await frames(page);const open=await audit();
+            check('Selected, Back and localized Less coexist without moving their shared border controls '+language+'/'+scale+'x: '+JSON.stringify(open),
+              selectedValid(open,messages)&&open.cards.some(card=>card.selected&&card.expanded==='true'&&card.more===messages['more.less']));
+            await more.click();await frames(page);
+            if(language==='en'){
+              const before=await audit();await resize(600,900);const shorter=await audit();
+              check('A height-only resize preserves the selected card and border actions at '+scale+'x: '+JSON.stringify(shorter),selectedValid(shorter,messages)&&
+                await page.evaluate(()=>document.querySelector('#ss-groups .ss-battle-target')===__selectedHeaderCard)&&
+                shorter.cards.every((card,index)=>Math.abs(card.bounds.width-before.cards[index].bounds.width)<=0.25&&
+                  Math.abs(card.bounds.height-before.cards[index].bounds.height)<=0.25&&
+                  Math.abs((card.button.top-card.bounds.top)-(before.cards[index].button.top-before.cards[index].bounds.top))<=0.25));
+              await resize(600);
+            }
+          }
+        }
+      }
+      await publish('en',600);await page.evaluate(()=>{window.__retainedHeaderCards=[...document.querySelectorAll('#ss-groups .ss-group')];window.__retainedHeaderParents=__retainedHeaderCards.map(card=>card.querySelector('.ss-more-button').parentNode);});
+      for(const width of [550,640,700,1320,1800,600]){
+        await resize(width);const result=await audit();
+        check('The same map headers recover correct rows and action scope through live resize at '+width+'/'+scale+'x: '+JSON.stringify(result),valid(result)&&
+          await page.evaluate(()=>[...document.querySelectorAll('#ss-groups .ss-group')].every((card,index)=>card===__retainedHeaderCards[index]&&card.querySelector('.ss-more-button').parentNode===__retainedHeaderParents[index])));
+      }
+      await publish('en',600,{paged:true});await page.evaluate(()=>{window.__firstHeaderFeedCard=document.querySelector('#ss-groups .ss-group');});
+      await page.locator('#ss-page-next').click();await frames(page);
+      await page.evaluate(()=>{
+        const request=__grzCommands.filter(command=>command.action==='page'&&command.group==='maps').pop(),payload=JSON.parse(model.payload),scope=payload.scopes.timeline;
+        scope.maps=scope.maps.map((item,index)=>({...item,id:'appended-responsive-'+index,name:index?'Klondike':'Cliff'}));
+        scope.pagination.maps={page:1,pages:2,total:4,page_size:2,request_id:request.request_id};model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
+      });await frames(page,12);const appended=await audit();
+      check('First cards in both infinite-feed pages retain full identities and docked actions at '+scale+'x: '+JSON.stringify(appended),valid(appended)&&appended.cards.length===4&&
+        await page.evaluate(()=>document.querySelector('#ss-groups .ss-group')===__firstHeaderFeedCard));
+      await publish('en',600,{fresh:true});const fresh=await audit();
+      check('A new snapshot lays out the first Cliff header correctly at '+scale+'x: '+JSON.stringify(fresh),valid(fresh)&&fresh.cards[0].id==='fresh-responsive-maps-0');
+      const squeezed=await page.addStyleTag({content:'#ss-groups .ss-group:first-child .ss-group-name { flex:0 0 8rem !important; width:8rem !important; }'});
+      check('The first-card guard rejects a letter-wide map identity at '+scale+'x',!valid(await audit()));
+      await squeezed.evaluate(node=>node.remove());await frames(page);
+      check('Removing the squeezed identity restores the complete first map name at '+scale+'x',valid(await audit()));
+      const droppedLanguage=await page.addStyleTag({content:'.ss-language-row { transform:translateY(30rem) !important; }'});
+      check('The title-control guard rejects Language dropping toward Timeline at '+scale+'x',!valid(await audit()));
+      await droppedLanguage.evaluate(node=>node.remove());await frames(page);
+      check('Restoring Language recovers the enclosed one-row controls at '+scale+'x',valid(await audit()));
+    }finally{await page.close();}
+  }
+};

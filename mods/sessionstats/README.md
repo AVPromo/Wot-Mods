@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.22 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.23 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -85,6 +85,14 @@ WN8, win rate or individual battles. Credit sums mark the existing finance total
 XP sums show an explicit total in the header, with missing-value coverage.
 A compact summary table shows total base XP, total received XP and Free XP in three
 horizontal columns, with metric availability in the existing overview help.
+The existing summary finance heading offers **All**, **Min**, **Avg** and **Max**.
+It updates the displayed credit, Bond and Gold figures in place using real
+per-field battle distributions. Incomplete Base-credit figures stay unavailable
+in every mode; source controls retain their existing actions.
+Narrow title controls use separate rows when required. Card identity width is
+assigned before the first layout, avoiding a narrow vertical text column.
+In a single card column below 680 logical pixels, **More/Less** sits on the card
+border, beside the selected battle's **Back** control when present.
 The repeated visible x/y captions are removed. Performance tables and battle
 cards always show both Base XP and Received XP; the display selector is removed.
 Adjacent aggregate performance tables keep their natural row heights; financial
@@ -114,7 +122,8 @@ unknown outcomes stay last. More: [sorting](docs/SORTING_AND_TIERS.md),
 [0.9.19 native finance column allocation](docs/UI_REFINEMENTS_0.9.19.md), and
 [0.9.20 single-line captions and balanced wide tables](docs/UI_REFINEMENTS_0.9.20.md), and
 [0.9.21 centered battle data and aligned finance columns](docs/UI_REFINEMENTS_0.9.21.md), and
-[0.9.22 concise group help and centered statistics](docs/UI_REFINEMENTS_0.9.22.md).
+[0.9.22 concise group help and centered statistics](docs/UI_REFINEMENTS_0.9.22.md), and
+[0.9.23 narrow controls and summary finance modes](docs/UI_REFINEMENTS_0.9.23.md).
 
 Summary Min/Max arrows also open results on another page when **Battles** is
 already selected, including in a full-history Timeline range. **Back**, beside

@@ -81,7 +81,15 @@ module.exports=async({browser,nativeHost,check})=>{
                 return [...range.getClientRects()].every(part=>part.left>=box.left-1&&part.right<=box.right+1&&part.top>=box.top-1&&part.bottom<=box.bottom+1);});
               const header=card.querySelector('.ss-group-header'),headerBox=header.getBoundingClientRect();
               const contained=nodes=>nodes.filter(node=>node.getBoundingClientRect().width>0).every(node=>{
-                const box=node.getBoundingClientRect();return box.left>=headerBox.left-1&&box.right<=headerBox.right+1&&box.top>=headerBox.top-1&&box.bottom<=headerBox.bottom+1;
+                const box=node.getBoundingClientRect();
+                if(card.classList.contains('ss-card-border-more')&&node.classList.contains('ss-more-button')){
+                  const unit=parseFloat(getComputedStyle(document.documentElement).fontSize)||1,range=document.createRange();range.selectNodeContents(node);
+                  return box.left>=cardBox.left-unit&&box.right<=cardBox.right+unit&&Math.abs((box.top+box.bottom)/2-cardBox.top)<=2*unit&&
+                    Math.abs(cardBox.right-box.right-6*unit)<=2*unit&&Math.abs(box.width-82*unit)<=0.5*unit&&
+                    Math.abs(box.height-20*unit)<=0.5*unit&&headerBox.top>=box.bottom+2*unit&&
+                    [...range.getClientRects()].every(part=>part.left>=box.left-unit&&part.right<=box.right+unit&&part.top>=box.top-unit&&part.bottom<=box.bottom+unit);
+                }
+                return box.left>=headerBox.left-1&&box.right<=headerBox.right+1&&box.top>=headerBox.top-1&&box.bottom<=headerBox.bottom+1;
               });
               const separate=nodes=>{const boxes=nodes.map(node=>node.getBoundingClientRect()).filter(box=>box.width>0&&box.height>0);
                 return boxes.every((a,index)=>boxes.slice(index+1).every(b=>Math.min(a.right,b.right)-Math.max(a.left,b.left)<=1||Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)<=1));};

@@ -134,7 +134,12 @@ module.exports = async ({browser,nativeHost,check}) => {
       const selectors=['.ss-group-thumb:not(.ss-battle-map-thumb)','.ss-group-name','.ss-battle-outcome','.ss-battle-map-visual','.ss-more-button'];
       const nodes=selectors.map(selector=>({selector,node:group.querySelector(selector)}));
       const boxes=nodes.map(({selector,node})=>{const r=node&&node.getBoundingClientRect();return {selector,left:r&&r.left,top:r&&r.top,right:r&&r.right,bottom:r&&r.bottom,width:r&&r.width,height:r&&r.height};});
-      for(const box of boxes)if(!(box.width>0&&box.height>0)||box.left<panel.left-1||box.right>panel.right+1||box.top<header.top-1||box.bottom>header.bottom+1){failures.push({kind:'visual-bounds',box});}
+      for(const box of boxes){
+        const docked=box.selector==='.ss-more-button'&&group.classList.contains('ss-card-border-more'),card=group.getBoundingClientRect();
+        const vertical=docked?Math.abs(box.top-card.top+9)<=1&&Math.abs(box.height-20)<=1&&
+          Math.abs(card.right-box.right-7)<=1&&box.bottom<=header.top+1:box.top>=header.top-1&&box.bottom<=header.bottom+1;
+        if(!(box.width>0&&box.height>0)||box.left<panel.left-1||box.right>panel.right+1||!vertical){failures.push({kind:'visual-bounds',box,docked});}
+      }
       for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){
         const a=boxes[i],b=boxes[j];if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1){failures.push({kind:'overlap',a,b});}
       }

@@ -63,7 +63,12 @@ module.exports=async({browser,nativeHost,check})=>{
           badgeFits:[captionBox,numberBox,iconBox].filter(Boolean).every(part=>inside(part,badgeBox))&&rangeBoxes(number).every(line=>inside(line,numberBox)),
           partial:!!icon&&getComputedStyle(icon).backgroundImage.includes('img://gui/maps/icons/library/alertIcon.png'),
           headerFits:[box(identity),box(stats),...kpis,badgeBox].every(part=>inside(part,headerBox)),
-          moreFits:!!more&&moreBox.width>=40&&moreBox.height>=20&&inside(moreBox,headerBox)&&rangeBoxes(more).every(line=>inside(line,moreBox)),
+          moreFits:!!more&&rangeBoxes(more).every(line=>inside(line,moreBox))&&
+            (card.classList.contains('ss-card-border-more')?
+              moreBox.left>=cardBox.left-1&&moreBox.right<=cardBox.right+1&&
+              Math.abs((moreBox.top+moreBox.bottom)/2-cardBox.top)<=2&&Math.abs(cardBox.right-moreBox.right-6)<=2&&
+              Math.abs(moreBox.width-82)<=1&&Math.abs(moreBox.height-20)<=1&&headerBox.top-moreBox.bottom>=2:
+              moreBox.width>=40&&moreBox.height>=20&&inside(moreBox,headerBox)),
           tablesFit:inside(performance,cardBox)&&inside(economy,cardBox),performance,economy,readabilityFailures,
           tablesReadable:figures.length>=9&&readabilityFailures.length===0,
           two:document.getElementById('ss-groups').classList.contains('ss-two-columns')};

@@ -207,7 +207,7 @@ class Totals(object):
                 self.actual[key].change(actual[key], direction)
                 self.expected[key].change(expected[key], direction)
 
-    def snapshot(self):
+    def snapshot(self, include_currency_series=False):
         result = dict(self.counts)
         count = result['battles']
         result['win_rate'] = result['wins'] * 100.0 / count if count else None
@@ -217,8 +217,12 @@ class Totals(object):
         for metric, field in _CREDIT_METRICS:
             result[metric] = self.money['credits'][field].snapshot()
         result['currencies'] = {}
+        if include_currency_series:
+            result['currency_series'] = {}
         for currency, fields in self.money.items():
             values = {'breakdown': {}, 'breakdown_counts': {}}
+            if include_currency_series:
+                result['currency_series'][currency] = {}
             for key, series in fields.items():
                 if key in _BREAKDOWN:
                     values['breakdown'][key] = series.sum()
@@ -226,6 +230,8 @@ class Totals(object):
                 else:
                     values[key] = series.sum()
                     values[key + '_count'] = series.count
+                    if include_currency_series:
+                        result['currency_series'][currency][key] = series.snapshot()
                     if key in ('income_base', 'net_base'):
                         values[key + '_complete'] = bool(series.count) and series.count == result['observed_battles']
                         if not values[key + '_complete']:
@@ -562,7 +568,7 @@ class ScopeIndex(object):
     def snapshot(self, label, started_at, pages=None, orders=None, map_pages=None, vehicle_pages=None):
         pages, orders = pages or {}, orders or {}
         result = {'label': label, 'started_at': started_at, 'pending': self.pending,
-                  'summary': self.totals.snapshot(), 'pagination': {}, 'ordering': {},
+                  'summary': self.totals.snapshot(include_currency_series=True), 'pagination': {}, 'ordering': {},
                   'extrema_battles': self._extrema_battles(),
                   'period_id': self.identifier, 'data_revision': self.data_revision}
         for kind in ('vehicles', 'maps', 'battles', 'tiers'):
