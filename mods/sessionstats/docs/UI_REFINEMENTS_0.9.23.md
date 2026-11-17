@@ -24,3 +24,21 @@ Base-credit income and net remain dashes in all four modes rather than showing
 a known subset as a complete selected-period value. Settled Costs remain one
 shared expense for the Base/Received credit pair.
 
+
+## Regression execution
+
+The UI matrix keeps all 47 feature suites and the parent contract checks.
+Independent feature phases run in two isolated Node processes, each with its
+own browser and report. Scheduling hints balance work without selecting or
+omitting tests; original order is retained within each assigned group.
+The parent validates assignment and report completeness and fails on missing
+results, duplicate suites, worker errors or browser errors. All language, width,
+scale and navigation transitions inside each suite remain intact.
+
+The pinned browser runtime, global timeout, two reproducibility builds and
+release audits retain their existing configuration. This change addresses the
+full browser matrix exceeding its 900-second budget as coverage grew.
+
+The complete local six-suite browser benchmark passed in 554.4 seconds,
+including 538.1 seconds for the main contract. These are local measurements;
+canonical CI uses its pinned container and is validated independently.

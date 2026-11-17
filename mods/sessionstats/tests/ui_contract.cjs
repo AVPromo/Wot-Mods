@@ -218,18 +218,161 @@ async function nativeHost(browser, options) {
 // Keep independent feature regressions visible in one run; each assertion
 // still fails the job after the remaining suites have produced diagnostics.
 const featureFailures=[];
+const featureResults=[];
+const {assertManifest,coverageMatches,runFeaturePool}=require('./ui-feature-pool.cjs');
 async function runFeatureSuite(file,browser) {
   const started=Date.now(),before=checks.length;
   const previousFeature=activeFeature;activeFeature=file;
+  let failure=null;
   console.log('UI feature started: '+file);
   try {
     await require(file)({browser,nativeHost,check});
     console.log('UI feature passed: '+file+' ('+(checks.length-before)+' checks, '+(Date.now()-started)+' ms)');
-  } catch(error) { featureFailures.push(file+': '+error.message); console.error(file,error); }
-  finally {activeFeature=previousFeature;}
+  } catch(error) { failure=String(error.message||error);featureFailures.push(file+': '+failure);console.error(file,error); }
+  finally {featureResults.push({file,passed:failure===null,checks:checks.length-before,error:failure});activeFeature=previousFeature;}
 }
 
+
+async function runFeatureBatch(files){
+  try{
+    const reports=await runFeaturePool(files,{script:__filename,reportDirectory:qaDirectory,hints:FEATURE_DURATION_HINTS});
+    for(const report of reports){
+      checks.push(...report.checks);errors.push(...report.errors);
+      featureFailures.push(...report.featureFailures);featureResults.push(...report.features);
+    }
+  }catch(error){
+    featureFailures.push('parallel feature batch: '+error.message);console.error(error);
+  }
+}
+
+async function runAssignedFeatures(reportPath,files){
+  assertManifest(files);
+  assert(path.isAbsolute(reportPath),'The parent must supply an absolute report path');
+  let browser,completed=false;
+  try{
+    browser=await chromium.launch({executablePath:process.env.GRZ_CHROME,headless:true,args:['--no-sandbox']});
+    for(const file of files)await runFeatureSuite(file,browser);
+    completed=true;
+  }catch(error){featureFailures.push('worker: '+String(error.message||error));console.error(error);}
+  finally{
+    if(browser)try{await browser.close();}catch(error){errors.push(String(error));}
+    fs.rmSync(qaDirectory,{recursive:true,force:true});
+    const report={schema_version:1,completed,features:featureResults,checks,errors,featureFailures};
+    fs.writeFileSync(reportPath+'.tmp',JSON.stringify(report)+'\n');
+    fs.renameSync(reportPath+'.tmp',reportPath);
+  }
+  if(!completed||featureFailures.length||errors.length)process.exitCode=1;
+}
+
+// Scheduling hints only balance workers; every declared feature still runs.
+const FEATURE_PHASES = [
+  [
+    "./ui-connection.cjs",
+    "./ui-postbattle.cjs",
+    "./ui-language.cjs",
+    "./ui-sorting.cjs",
+    "./ui-filter-ux.cjs",
+    "./ui-filter-layout-stable.cjs",
+    "./ui-filter-position.cjs",
+    "./ui-chronology.cjs",
+    "./ui-chronology-labels.cjs",
+    "./ui-sort-details.cjs",
+    "./ui-dual-xp.cjs",
+    "./ui-sort-layout-stable.cjs",
+    "./ui-help-click.cjs",
+    "./ui-scroll-state.cjs",
+    "./ui-pagination.cjs",
+    "./ui-bidirectional-pages.cjs",
+    "./ui-feed-anchor.cjs",
+    "./ui-outcomes.cjs",
+    "./ui-loading.cjs",
+    "./ui-empty-state.cjs",
+    "./ui-notices.cjs",
+    "./ui-coverage-once.cjs"
+  ],
+  [
+    "./ui-timeline-details.cjs",
+    "./ui-wide-cards.cjs",
+    "./ui-window-settings.cjs",
+    "./ui-transparency-steps.cjs",
+    "./ui-scrollbar.cjs",
+    "./ui-titlebar-locales.cjs",
+    "./ui-map-battles.cjs",
+    "./ui-map-language.cjs",
+    "./ui-switch-map.cjs",
+    "./ui-wn8-colors.cjs",
+    "./ui-vehicle-battles.cjs",
+    "./ui-history-inplace.cjs",
+    "./ui-detail-widths.cjs",
+    "./ui-compact-details.cjs",
+    "./ui-version.cjs",
+    "./ui-custom-date-source.cjs",
+    "./ui-custom-dates.cjs",
+    "./ui-clock-hours-source.cjs",
+    "./ui-clock-hours.cjs",
+    "./ui-mission-progress.cjs",
+    "./ui-upper-layout.cjs",
+    "./ui-summary-xp-total.cjs",
+    "./ui-resize-input.cjs",
+    "./ui-retained-raf.cjs"
+  ]
+];
+const FEATURE_DURATION_HINTS = {
+  "./ui-connection.cjs": 3,
+  "./ui-postbattle.cjs": 2,
+  "./ui-language.cjs": 3,
+  "./ui-sorting.cjs": 150,
+  "./ui-filter-ux.cjs": 40,
+  "./ui-filter-layout-stable.cjs": 15,
+  "./ui-filter-position.cjs": 38,
+  "./ui-chronology.cjs": 5,
+  "./ui-chronology-labels.cjs": 21,
+  "./ui-sort-details.cjs": 24,
+  "./ui-dual-xp.cjs": 13,
+  "./ui-sort-layout-stable.cjs": 59,
+  "./ui-help-click.cjs": 4,
+  "./ui-scroll-state.cjs": 5,
+  "./ui-pagination.cjs": 58,
+  "./ui-bidirectional-pages.cjs": 6,
+  "./ui-feed-anchor.cjs": 1,
+  "./ui-outcomes.cjs": 25,
+  "./ui-loading.cjs": 1,
+  "./ui-empty-state.cjs": 2,
+  "./ui-notices.cjs": 11,
+  "./ui-coverage-once.cjs": 21,
+  "./ui-timeline-details.cjs": 22,
+  "./ui-wide-cards.cjs": 25,
+  "./ui-window-settings.cjs": 17,
+  "./ui-transparency-steps.cjs": 9,
+  "./ui-scrollbar.cjs": 6,
+  "./ui-titlebar-locales.cjs": 11,
+  "./ui-map-battles.cjs": 38,
+  "./ui-map-language.cjs": 11,
+  "./ui-switch-map.cjs": 15,
+  "./ui-wn8-colors.cjs": 3,
+  "./ui-vehicle-battles.cjs": 49,
+  "./ui-history-inplace.cjs": 3,
+  "./ui-detail-widths.cjs": 21,
+  "./ui-compact-details.cjs": 91,
+  "./ui-version.cjs": 2,
+  "./ui-custom-date-source.cjs": 1,
+  "./ui-custom-dates.cjs": 44,
+  "./ui-clock-hours-source.cjs": 1,
+  "./ui-clock-hours.cjs": 3,
+  "./ui-mission-progress.cjs": 2,
+  "./ui-upper-layout.cjs": 56,
+  "./ui-summary-xp-total.cjs": 10,
+  "./ui-resize-input.cjs": 1,
+  "./ui-retained-raf.cjs": 1
+};
+
 (async function () {
+  if(process.argv[2]==='--feature-worker'){
+    assert(process.argv.length===5,'Feature workers require a report and exact manifest');
+    await runAssignedFeatures(process.argv[3],JSON.parse(process.argv[4]));return;
+  }
+  assert(process.argv.length===2,'Unknown browser QA arguments');
+  await require('./ui-feature-pool-test.cjs')(check);
   const browser = await chromium.launch({executablePath:process.env.GRZ_CHROME,headless:true,args:['--no-sandbox']});
   try {
   await runFeatureSuite('./ui-locale-screenshots.cjs',browser);
@@ -643,28 +786,7 @@ async function runFeatureSuite(file,browser) {
       __grzRemovedCallbacks.join(',')===(mode==='throw-once'?'71':''),callback));
     await degraded.close();
   }
-  await runFeatureSuite('./ui-connection.cjs',browser);
-  await runFeatureSuite('./ui-postbattle.cjs',browser);
-  await runFeatureSuite('./ui-language.cjs',browser);
-  await runFeatureSuite('./ui-sorting.cjs',browser);
-  await runFeatureSuite('./ui-filter-ux.cjs',browser);
-  await runFeatureSuite('./ui-filter-layout-stable.cjs',browser);
-  await runFeatureSuite('./ui-filter-position.cjs',browser);
-  await runFeatureSuite('./ui-chronology.cjs',browser);
-  await runFeatureSuite('./ui-chronology-labels.cjs',browser);
-  await runFeatureSuite('./ui-sort-details.cjs',browser);
-  await runFeatureSuite('./ui-dual-xp.cjs',browser);
-  await runFeatureSuite('./ui-sort-layout-stable.cjs',browser);
-  await runFeatureSuite('./ui-help-click.cjs',browser);
-  await runFeatureSuite('./ui-scroll-state.cjs',browser);
-  await runFeatureSuite('./ui-pagination.cjs',browser);
-  await runFeatureSuite('./ui-bidirectional-pages.cjs',browser);
-  await runFeatureSuite('./ui-feed-anchor.cjs',browser);
-  await runFeatureSuite('./ui-outcomes.cjs',browser);
-  await runFeatureSuite('./ui-loading.cjs',browser);
-  await runFeatureSuite('./ui-empty-state.cjs',browser);
-  await runFeatureSuite('./ui-notices.cjs',browser);
-  await runFeatureSuite('./ui-coverage-once.cjs',browser);
+  await runFeatureBatch(FEATURE_PHASES[0]);
   const loading=await nativeHost(browser,{pendingDom:true});
   check('Loading panel owns a DOM-ready listener before model binding',await loading.evaluate(()=>
     !GRZSessionStats.getState().nativeBound && __grzEngineOn.join(',')==='self.onDomBuilt'));
@@ -896,30 +1018,9 @@ async function runFeatureSuite(file,browser) {
   check('Legacy payload without localization restores English',
     await localized.title()==='Session statistics' && await localized.locator('html').getAttribute('lang')==='en');
   await localized.close();
-  await runFeatureSuite('./ui-timeline-details.cjs',browser);
-  await runFeatureSuite('./ui-wide-cards.cjs',browser);
-  await runFeatureSuite('./ui-window-settings.cjs',browser);
-  await runFeatureSuite('./ui-transparency-steps.cjs',browser);
-  await runFeatureSuite('./ui-scrollbar.cjs',browser);
-  await runFeatureSuite('./ui-titlebar-locales.cjs',browser);
-  await runFeatureSuite('./ui-map-battles.cjs',browser);
-  await runFeatureSuite('./ui-map-language.cjs',browser);
-  await runFeatureSuite('./ui-switch-map.cjs',browser);
-  await runFeatureSuite('./ui-wn8-colors.cjs',browser);
-  await runFeatureSuite('./ui-vehicle-battles.cjs',browser);
-  await runFeatureSuite('./ui-history-inplace.cjs',browser);
-  await runFeatureSuite('./ui-detail-widths.cjs',browser);
-  await runFeatureSuite('./ui-compact-details.cjs',browser);
-  await runFeatureSuite('./ui-version.cjs',browser);
-  await runFeatureSuite('./ui-custom-date-source.cjs',browser);
-  await runFeatureSuite('./ui-custom-dates.cjs',browser);
-  await runFeatureSuite('./ui-clock-hours-source.cjs',browser);
-  await runFeatureSuite('./ui-clock-hours.cjs',browser);
-  await runFeatureSuite('./ui-mission-progress.cjs',browser);
-  await runFeatureSuite('./ui-upper-layout.cjs',browser);
-  await runFeatureSuite('./ui-summary-xp-total.cjs',browser);
-  await runFeatureSuite('./ui-resize-input.cjs',browser);
-  await runFeatureSuite('./ui-retained-raf.cjs',browser);
+  await runFeatureBatch(FEATURE_PHASES[1]);
+  check('Every independent feature suite reported exactly once',coverageMatches(
+    ['./ui-locale-screenshots.cjs',...FEATURE_PHASES.flat()],featureResults.map(result=>result.file)));
   check('All independent feature suites passed'+(featureFailures.length ? ': '+featureFailures.join('; ') : ''),featureFailures.length===0);
   check('No browser JavaScript errors: '+JSON.stringify(errors),errors.length===0);
   const report={passed:checks.length,checks,errors,overflow,textOverflow,largeTextOverflow,live_gameface_tested:false,
