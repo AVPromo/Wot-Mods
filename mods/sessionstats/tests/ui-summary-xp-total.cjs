@@ -53,7 +53,8 @@ module.exports=async({browser,nativeHost,check})=>{
           });
           const tables=[...summary.querySelectorAll('.ss-summary-details > .ss-performance,.ss-summary-details > .ss-economy')].map(section=>{
             const header=section.querySelector('.ss-metric-head,.ss-money-head'),cell=header.querySelector('.ss-summary-table-heading'),
-              title=cell?.querySelector('.ss-detail-title'),text=title?.querySelector('.ss-table-heading-text'),
+              title=cell?.querySelector('.ss-detail-title'),mode=title?.querySelector('#ss-summary-finance-statistic .ss-select-trigger'),
+              text=mode?.querySelector('.ss-control-label')||title?.querySelector('.ss-table-heading-text'),
               body=section.querySelector('.ss-metric-row,.ss-money-row');
             if(!cell||!title||!text)return {valid:false};
             const box=cell.getBoundingClientRect(),titleBox=title.getBoundingClientRect(),headerBox=header.getBoundingClientRect(),
@@ -61,7 +62,9 @@ module.exports=async({browser,nativeHost,check})=>{
             const firstNumber=header.querySelector('.ss-metric-number,.ss-money-value'),numberRange=document.createRange();numberRange.selectNodeContents(firstNumber);
             const numberBox=numberRange.getBoundingClientRect(),sameRow=numberBox.top<titleBox.bottom;
             const limit=sameRow?numberBox.left-scale:box.right;
-            const fits=titleBox.left>=box.left-1&&titleBox.right<=box.right+1&&
+            const modeBox=mode?.getBoundingClientRect(),modeFits=!modeBox||(modeBox.left>=box.left-1&&modeBox.right<=limit+0.5&&
+              modeBox.top>=titleBox.top-1&&modeBox.bottom<=titleBox.bottom+1);
+            const fits=modeFits&&titleBox.left>=box.left-1&&titleBox.right<=box.right+1&&
               [...range.getClientRects()].every(r=>r.left>=box.left-1&&r.right<=box.right+1&&r.right<=limit+0.5&&r.top>=titleBox.top-1&&r.bottom<=titleBox.bottom+1);
             const info=title.querySelector('.ss-info-button'),infoBox=info?.getBoundingClientRect();
             const hit=infoBox&&document.elementFromPoint((infoBox.left+infoBox.right)/2,(infoBox.top+infoBox.bottom)/2);
@@ -69,7 +72,7 @@ module.exports=async({browser,nativeHost,check})=>{
               bodyRows=body.classList.contains('ss-credit-pair') ? ['base','received'].map(basis=>
                 ['credits_income_'+basis,'credits_costs','credits_net_'+basis].map(metric=>body.querySelector('.ss-money-value[data-ss-metric="'+metric+'"]').getBoundingClientRect())) :
                 [[...body.querySelectorAll('.ss-metric-number,.ss-money-value')].map(node=>node.getBoundingClientRect())];
-            return {valid:true,text:text.textContent,coverage:header.querySelectorAll('.ss-cell-coverage').length,
+            return {valid:true,text:text.textContent,modeLabel:mode?.getAttribute('aria-label'),modeRole:mode?.getAttribute('role'),coverage:header.querySelectorAll('.ss-cell-coverage').length,
               outside:[...section.children].filter(node=>node.classList.contains('ss-detail-title')).length,
               fits:fits&&infoBox&&infoBox.left>=box.left-1&&infoBox.right<=box.right+1&&infoBox.right<=limit+0.5&&headerBox.bottom<=body.getBoundingClientRect().top+1,
               aligned:bodyRows.every(columns=>headingColumns.length===columns.length&&headingColumns.every((column,index)=>Math.abs(column.left-columns[index].left)<=scale&&Math.abs(column.width-columns[index].width)<=scale)),
@@ -92,9 +95,10 @@ module.exports=async({browser,nativeHost,check})=>{
           audit.totals.every(item=>Math.abs(item.width-audit.totals[0].width)<=1&&Math.abs(item.left-item.labelLeft)<=1&&Math.abs(item.right-item.labelRight)<=1));
         check('Horizontal totals remove duplicate WN8 coverage and the separate Free XP footer: '+caption,
           audit.redundantWN8===0&&audit.separateFooter===0&&audit.totals.every(item=>item.bottom<=audit.rootBottom+1));
-        check('Overview table names replace header counts with contained titles and explicit help: '+caption+': '+JSON.stringify(audit.tables),
+        check('Overview headings keep contained captions or finance controls and explicit help: '+caption+': '+JSON.stringify(audit.tables),
           audit.tables.length===2&&audit.tables.every((table,index)=>table.valid&&table.fits&&table.aligned&&table.reachable&&table.outside===0&&table.coverage===0&&
-            table.text===messages[index?'finance.period':'performance.period']&&table.help));
+            (index?table.modeRole==='combobox'&&table.modeLabel===messages['finance.period']+': '+messages['finance.statistic']&&
+              table.text===messages['finance.statistic_all']:table.modeRole===undefined&&table.text===messages['performance.period'])&&table.help));
       }
       for(const metric of ['xp_base','xp_received','free_xp'])for(const [count,sum,expected] of [[2,0,'0'],[0,0,'—'],[0,null,'—']]){
         await page.evaluate(({metric,count,sum})=>{const payload=JSON.parse(model.payload);
