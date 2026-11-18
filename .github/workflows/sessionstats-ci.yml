@@ -71,6 +71,9 @@ jobs:
       - name: Restore or compile verified CPython 2.7.18
         if: steps.source.outputs.enabled == 'true'
         uses: ./.github/actions/python27
+      - name: Generate current Session Stats preview
+        if: steps.source.outputs.enabled == 'true'
+        run: bash scripts/sessionstats/validate.sh preview
       - parallel:
           - name: Test Session Stats on Python 3
             if: steps.source.outputs.enabled == 'true'
@@ -78,12 +81,9 @@ jobs:
           - name: Test Session Stats on Python 2.7
             if: steps.source.outputs.enabled == 'true'
             run: bash scripts/sessionstats/validate.sh python27
-      - name: Generate current Session Stats preview
-        if: steps.source.outputs.enabled == 'true'
-        run: bash scripts/sessionstats/validate.sh preview
-      - name: Run complete pinned browser QA
-        if: steps.source.outputs.enabled == 'true'
-        run: bash scripts/sessionstats/validate.sh browser
+          - name: Run complete pinned browser QA
+            if: steps.source.outputs.enabled == 'true'
+            run: bash scripts/sessionstats/validate.sh browser
       - name: Build twice and verify all six release assets
         if: steps.source.outputs.enabled == 'true'
         run: bash scripts/sessionstats/validate.sh build

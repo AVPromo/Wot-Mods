@@ -13,7 +13,7 @@ RELEASE = (ROOT / '.github/workflows/wotmods-release.yml').read_text()
 COMPILER = (ROOT / '.github/actions/python27/action.yml').read_text()
 VALIDATE = (ROOT / 'scripts/sessionstats/validate.sh').read_text()
 CACHE_PIN = 'caa296126883cff596d87d8935842f9db880ef25'
-PHASES = ['python3', 'python27', 'preview', 'browser', 'build', 'integration', 'privacy']
+PHASES = ['preview', 'python3', 'python27', 'browser', 'build', 'integration', 'privacy']
 
 
 def job(text, name):
@@ -54,14 +54,14 @@ class CiOptimizationContracts(unittest.TestCase):
         self.assertIn('needs: [plan, updates]', job(RELEASE, 'build'))
         self.assertIn('needs: [plan, updates, build]', job(RELEASE, 'publish'))
 
-    def test_native_parallelism_waits_for_both_full_python_phases(self):
+    def test_native_parallelism_waits_for_both_python_suites_and_browser_qa(self):
         parallel = STATS.split('      - parallel:\n', 1)[1].split('\n      - name:', 1)[0]
         names = re.findall(r'^          - name: (.+)$', parallel, re.MULTILINE)
-        self.assertEqual(len(names), 2)
-        self.assertEqual(len(set(names)), 2)
+        self.assertEqual(len(names), 3)
+        self.assertEqual(len(set(names)), 3)
         self.assertEqual(re.findall(r'run: bash scripts/sessionstats/validate\.sh (\w+)', parallel),
-                         ['python3', 'python27'])
-        self.assertEqual(parallel.count("if: steps.source.outputs.enabled == 'true'"), 2)
+                         ['python3', 'python27', 'browser'])
+        self.assertEqual(parallel.count("if: steps.source.outputs.enabled == 'true'"), 3)
         self.assertNotIn('continue-on-error', parallel)
         self.assertNotIn('parallel:', COMPILER)
         self.assertNotIn('strategy:', job(STATS, 'sessionstats'))
@@ -80,6 +80,7 @@ class CiOptimizationContracts(unittest.TestCase):
             self.assertIn("if: steps.source.outputs.enabled == 'true'", step)
         self.assertLess(STATS.index('uses: ./.github/actions/python27'),
                         STATS.index('      - parallel:'))
+        self.assertLess(STATS.index('validate.sh preview'), STATS.index('      - parallel:'))
         self.assertLess(STATS.index('validate.sh privacy'),
                         STATS.index('scripts/release_installers.py package pr-artifact-sessionstats'))
         self.assertLess(STATS.index('scripts/release_installers.py package pr-artifact-sessionstats'),
