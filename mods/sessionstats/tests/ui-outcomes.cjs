@@ -151,7 +151,7 @@ module.exports = async ({browser,nativeHost,check}) => {
     }
     return {passed:panel.width===550&&groups.length===3&&failures.length===0,panelWidth:panel.width,groups,failures};
   });
-  check('Vehicle, readable outcome, map and actions fit without overlap at the real 550px native minimum'+
+  check('Vehicle, readable outcome, map and actions fit without overlap at a viewport-capped 550px window'+
     (minimumGeometry.passed?'':': '+JSON.stringify(minimumGeometry)),minimumGeometry.passed);
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   const mapNames={en:["Himmelsdorf","Empire's Border","Mannerheim Line"],pl:['Himmelsdorf','Granica imperium','Linia Mannerheima'],

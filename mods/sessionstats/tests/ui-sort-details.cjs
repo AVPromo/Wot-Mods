@@ -10,7 +10,7 @@ module.exports=async ({browser,nativeHost,check})=>{
       await page.evaluate(({scale,language,messages})=>{
         const payload=JSON.parse(model.payload),scope=payload.scopes.launch;
         payload.account_key='synthetic-sort-'+language+'-'+scale;payload.window_size=[550,1000];
-        payload.viewport={width:3840,height:2300,scale};payload.localization={language,messages};
+        payload.viewport={width:550*scale+20,height:2300,scale};payload.localization={language,messages};
         payload.scopes.timeline=JSON.parse(JSON.stringify(payload.scopes.manual));payload.scopes.timeline.time_points=[];
         scope.period_id='synthetic-sort-period';
         for(const group of ['vehicles','maps','tiers']) {

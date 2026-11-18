@@ -3906,6 +3906,22 @@
         }
         return docked;
     }
+    function layoutAggregateHeadline(card, headline, width, docked) {
+        var hasSortValue = !!headline.querySelector('.ss-group-sort-value');
+        // The three KPI slots need 194rem. A separate sort badge needs another
+        // 196rem. Leave the rest to the thumbnail, name and vehicle metadata.
+        var statsWidth = 194 + (hasSortValue ? 196 : 0);
+        var inlineDocked = docked && width - statsWidth >= 176;
+        var stacked = !inlineDocked && (docked || width + 14 < (hasSortValue ? 680 : 500));
+        card.classList[stacked ? 'add' : 'remove']('ss-compact-headline');
+        card.classList[inlineDocked ? 'add' : 'remove']('ss-inline-docked-headline');
+        card.classList[width + 14 >= 700 ? 'add' : 'remove']('ss-wide-headline');
+        var identity = card.querySelector('.ss-group-identity');
+        var identityWidth = stacked ? width + 'rem' : inlineDocked ? (width - statsWidth) + 'rem' : '';
+        var headlineWidth = stacked ? width + 'rem' : inlineDocked ? statsWidth + 'rem' : '';
+        if (identity.style.width !== identityWidth) { identity.style.width = identityWidth; }
+        if (headline.style.width !== headlineWidth) { headline.style.width = headlineWidth; }
+    }
     function layoutBattleCards() {
         layoutTitleControls();
         if (!state.cardPages || !state.cardPages.length) { return; }
@@ -3952,36 +3968,27 @@
             page.key = layoutKey;
         });
         var owned = [], cards = state.groupCards || [], total = state.renderedFeed ? state.renderedFeed.total : state.list.length;
+        var logicalWidth = Math.min(width, cardWidth), contentWidth = Math.max(1, logicalWidth - 14);
         cards.forEach(function (card, index) {
-            var borderControls = layoutCardBorderControls(card, Math.min(width, cardWidth), wide);
+            var borderControls = layoutCardBorderControls(card, logicalWidth, wide);
             var headline = card.querySelector('.ss-group-stats');
-            if (headline) {
-                var hasSortValue = !!card.querySelector('.ss-group-sort-value');
-                var compactHeadline = borderControls || Math.min(width, cardWidth) < (hasSortValue ? 680 : 500);
-                if (card.classList.contains('ss-compact-headline') !== compactHeadline) {
-                    card.classList[compactHeadline ? 'add' : 'remove']('ss-compact-headline');
-                }
-                // Explicit block rows avoid percentage flex bases and wrapping
-                // against a transient native rectangle during live resizing.
-                var headlineWidth = compactHeadline ? Math.max(1, Math.min(width, cardWidth) - 14) + 'rem' : '';
-                if (headline.style.width !== headlineWidth) { headline.style.width = headlineWidth; }
-            }
+            if (headline) { layoutAggregateHeadline(card, headline, contentWidth, borderControls); }
             if (state.group === 'battles') {
                 // The card's assigned logical width is independent of its
                 // caption layout; changing the class cannot change this input.
-                var inlineCaptions = Math.min(width, cardWidth) >= 700;
+                var inlineCaptions = logicalWidth >= 700;
                 if (card.classList.contains('ss-battle-inline-captions') !== inlineCaptions) {
                     card.classList[inlineCaptions ? 'add' : 'remove']('ss-battle-inline-captions');
                 }
             }
             if (state.group !== 'battles') {
                 layoutAggregateCaptions(card);
-                layoutAggregateTables(card, Math.max(1, Math.min(width, cardWidth) - 14));
+                layoutAggregateTables(card, contentWidth);
                 card.classList[wide && cardWidth >= 700 ? 'add' : 'remove']('ss-history-two-columns');
             } else {
-                layoutBattleTables(card, Math.max(1, Math.min(width, cardWidth) - 14));
+                layoutBattleTables(card, contentWidth);
             }
-            layoutMoreColumns(card, Math.max(1, Math.min(width, cardWidth) - 14));
+            layoutMoreColumns(card, contentWidth);
             card.setAttribute('aria-posinset', String(Number(card.getAttribute('data-list-index')) + 1));
             card.setAttribute('aria-setsize', String(total));
             if (index + 1 < cards.length) { card.setAttribute('aria-flowto', cards[index + 1].id); }
@@ -5066,7 +5073,7 @@
         var maximumWidth = Math.max(1, width - (state.bound && knownWidth ? 20 : 0)) / scale;
         var maximumHeight = Math.max(1, height - (state.bound && knownHeight ? 20 : 0)) / scale;
         return {maxWidth:maximumWidth, maxHeight:maximumHeight,
-            minWidth:Math.min(550, maximumWidth), minHeight:Math.min(730, maximumHeight)};
+            minWidth:Math.min(625, maximumWidth), minHeight:Math.min(730, maximumHeight)};
     }
     function scrollContentInset() {
         var scale = state.nativeScale || 1, inset = 38;

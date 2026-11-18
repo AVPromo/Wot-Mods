@@ -107,7 +107,7 @@ module.exports=async function ({browser,nativeHost,check}) {
           wn8:document.querySelector('#ss-summary .ss-kpi-value.ss-wn8').textContent,
         };
       },scale);
-      const expectedWidth=Math.max(550,width);
+      const expectedWidth=Math.max(625,width);
       const caption=expectedWidth+' logical pixels at '+(scale*100)+'% in a '+gameWidth+'px game';
       check('Upper controls and summary stay within the floating window: '+caption,
         Math.abs(audit.root.width-expectedWidth)<=1 && audit.overflow.length===0);

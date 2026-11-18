@@ -230,7 +230,7 @@ body { color:{{colors.body_text}}; font-family:Warhelios, Arial, sans-serif; fon
 .ss-close .ss-control-label:before { transform:rotate(45deg); }
 .ss-close .ss-control-label:after { transform:rotate(-45deg); }
 button:disabled { opacity:{{opacity.disabled_controls}}; }
-.ss-window { position:relative; display:flex; flex-direction:column; width:700rem; height:730rem; max-width:100%; max-height:100%; min-width:550rem; min-height:730rem; border:1rem solid {{colors.window_border}}; border-radius:{{radii.window}}rem; }
+.ss-window { position:relative; display:flex; flex-direction:column; width:700rem; height:730rem; max-width:100%; max-height:100%; min-width:625rem; min-height:730rem; border:1rem solid {{colors.window_border}}; border-radius:{{radii.window}}rem; }
 .ss-window-background { position:absolute; z-index:0; top:0; right:0; bottom:0; left:0; border-radius:{{radii.window}}rem; background:{{colors.window_background}}; background-image:url("session_stats_camo.png"); background-size:560rem 460rem; background-repeat:repeat; box-shadow:inset 0 1rem 1rem {{colors.window_shadow_1}}, inset 0 0 28rem {{colors.window_shadow_2}}; pointer-events:none; }
 /* Positioned flow children paint above the dedicated background without
    creating new stacking contexts for their existing menus and tooltips. */
@@ -744,6 +744,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-aggregate .ss-group-kpi { display:flex; flex:0 0 62rem; flex-direction:column; align-items:center; justify-content:center; width:62rem; min-width:0; margin-top:0; padding:2rem; }
 .ss-aggregate .ss-group-count { flex-basis:60rem; width:60rem; }
 .ss-aggregate .ss-group-wn8-kpi { flex-basis:72rem; width:72rem; }
+.ss-aggregate.ss-wide-headline .ss-group-wn8-kpi[data-wn8-kind="combined"] { flex-basis:104rem; width:104rem; }
 .ss-aggregate .ss-group-kpi .ss-kpi-label { flex:0 0 auto; width:100%; min-width:0; height:auto; min-height:0; font-size:12rem; line-height:14rem; }
 .ss-aggregate .ss-group-kpi .ss-kpi-value { display:block; flex:0 0 auto; width:100%; min-width:0; height:auto; min-height:0; margin-top:1rem; font-size:20rem; line-height:23rem; white-space:nowrap; }
 .ss-aggregate .ss-group-count .ss-kpi-value { font-size:18rem; white-space:normal; overflow-wrap:break-word; }
@@ -776,17 +777,18 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-extreme-cell.ss-sort-active-value .ss-extreme-link-cue { background:{{colors.extreme_link_hover_background}}; }
 .ss-group-stats > .ss-map-more-button { flex:0 0 72rem; align-self:center; width:72rem; min-width:72rem; margin-left:4rem; padding:3rem 4rem; font-size:11rem; line-height:16rem; }
 .ss-group-stats > .ss-map-more-button .ss-control-label { font-size:11rem; line-height:16rem; }
-.ss-aggregate.ss-compact-headline .ss-group-header { display:block; }
-.ss-aggregate.ss-compact-headline .ss-group-identity { width:100%; }
+.ss-aggregate.ss-compact-headline .ss-group-header { flex-direction:column; }
+.ss-aggregate.ss-compact-headline .ss-group-identity,
+.ss-aggregate.ss-inline-docked-headline .ss-group-identity { flex:0 0 auto; min-height:36rem; }
 .ss-aggregate.ss-compact-headline .ss-group-stats { justify-content:flex-end; max-width:100%; flex-wrap:wrap; margin-top:3rem; }
-.ss-compact-headline .ss-group-sort-host { flex:0 0 196rem; width:196rem; max-width:100%; }
-.ss-compact-headline .ss-group-sort-host .ss-group-sort-value { width:100%; }
-.ss-compact-headline .ss-group-sort-caption { min-width:0; max-width:100%; }
-.ss-compact-headline .ss-group-sort-caption-text { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.ss-compact-headline .ss-group-sort-host, .ss-inline-docked-headline .ss-group-sort-host { flex:0 0 196rem; width:196rem; max-width:100%; }
+.ss-compact-headline .ss-group-sort-host .ss-group-sort-value, .ss-inline-docked-headline .ss-group-sort-host .ss-group-sort-value { width:100%; }
+.ss-compact-headline .ss-group-sort-caption, .ss-inline-docked-headline .ss-group-sort-caption { min-width:0; max-width:100%; }
+.ss-compact-headline .ss-group-sort-caption-text, .ss-inline-docked-headline .ss-group-sort-caption-text { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .ss-more-panel { display:flex; flex-wrap:wrap; align-items:flex-start; padding:5rem 0 2rem; border-top:1rem solid {{colors.group_tabs_border_bottom}}; font-size:13rem; line-height:18rem; overflow-wrap:break-word; }
 .ss-more-panel > p { width:100%; margin:3rem 5rem; }
 .ss-more-title { margin:4rem 5rem; color:{{colors.session_tab_active_text}}; font-size:13rem; line-height:18rem; }
-.ss-more-mission { display:block; width:100%; margin:0 0 6rem; padding:6rem 7rem; border:1rem solid {{colors.details_separator_border_top}}; border-radius:{{radii.table_row}}rem; background:{{colors.table_row_background}}; }
+.ss-more-mission { display:block; width:100%; margin:0 0 6rem; padding:6rem 7rem; border:1rem solid {{colors.details_separator_border_top}}; border-radius:{{radii.table_row}}rem; background:{{colors.table_header_background_end}}; }
 .ss-more-caption { color:{{colors.period_text}}; font-size:12rem; line-height:16rem; }
 /* Map history stays a small native flex list. Each owned jump action remains
    separate from the row's name, date, rating and result text. */
@@ -829,8 +831,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 /* The narrow border actions share the card's positioning context. */
 .ss-group.ss-card-border-more { padding-top:13rem; }
 .ss-card-border-more > .ss-more-button { position:absolute; z-index:4; top:-10rem; right:6rem; width:82rem; min-width:82rem; max-width:82rem; height:20rem; min-height:20rem; margin:0; padding:0 5rem; }
-.ss-card-border-more .ss-battle-selection-banner { right:92rem; max-width:60%; height:20rem; padding-top:0; padding-bottom:0; flex-direction:row-reverse; white-space:nowrap; }
-.ss-card-border-more .ss-battle-selection-label { flex:0 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ss-card-border-more .ss-battle-selection-banner { right:92rem; width:184rem; max-width:60%; height:20rem; padding-top:0; padding-bottom:0; flex-direction:row-reverse; white-space:nowrap; }
+.ss-card-border-more .ss-battle-selection-label { flex:1 1 145rem; width:145rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ss-card-border-more .ss-battle-return { margin-left:5rem; margin-right:0; }
 .ss-battle-return { display:block; position:relative; flex:0 0 20rem; width:20rem; min-width:20rem; height:18rem; min-height:18rem; padding:0; margin:0 5rem 0 0; border:0; border-radius:{{radii.extreme_link}}rem; background:{{colors.extreme_link_background}}; color:{{colors.extreme_link_text}}; cursor:pointer; }
 .ss-battle-return:hover, .ss-battle-return:focus { background:{{colors.extreme_link_hover_background}}; outline:1rem solid {{colors.session_tab_marker_background}}; outline-offset:0; }
@@ -892,7 +894,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-more-mission-row:last-child { margin-bottom:0; }
 .ss-more-mission-row .ss-more-mission { min-width:0; max-width:100%; margin-bottom:0; }
 .ss-more-mission:last-child { margin-bottom:0; }
-.ss-more-mission.ss-more-mission-even { background:{{colors.table_row_following_background}}; }
+.ss-more-mission.ss-more-mission-even { background:{{colors.table_row_hover_background}}; }
 .ss-more-table.ss-more-missions { border:0; background:{{colors.close_background}}; }
 .ss-more-table .ss-more-mission-name { display:block; min-width:0; width:100%; padding:0; }
 .ss-more-mission-name strong { display:block; }

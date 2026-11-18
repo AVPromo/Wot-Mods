@@ -22,7 +22,7 @@ import time
 LOG = logging.getLogger('grz.sessionstats')
 LAYOUT_PATH = ('mods', 'grz', 'sessionstats', 'views', 'SessionStats')
 LOGICAL_SIZE = (700, 620)
-MIN_LOGICAL_SIZE = (550, 730)
+MIN_LOGICAL_SIZE = (625, 730)
 MAX_DIMENSION = 32768
 DIAGNOSTIC_STAGES = ('dom_ready', 'model_bound', 'layout_ready')
 

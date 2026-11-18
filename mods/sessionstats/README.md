@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.24 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.25 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -306,7 +306,7 @@ next available column in sorted order, so consecutive battles fill the space
 beside a tall card and their axis markers retain chronology. With all details
 closed, cards use their usual alternating layout. Refreshing or resizing preserves open cards;
 switching accounts clears their open state.
-The window has a minimum of 550 × 730 logical pixels when the game viewport can fit it.
+The window has a minimum of 625 × 730 logical pixels when the game viewport can fit it.
 A smaller viewport temporarily caps the displayed surface without discarding
 saved restored-size preferences. A visible right-hand scrollbar shows position
 and supports dragging, track clicks and keyboard navigation.

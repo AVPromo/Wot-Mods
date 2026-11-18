@@ -51,7 +51,10 @@ module.exports=async({browser,nativeHost,check})=>{
           if(options.pending)item.stats.observed_battles=6;
           if(options.noSources)delete item.extrema_battles;
           if(options.name)item.name=options.name;
-          if(options.width){payload.account_key+='-profile-'+sequence;payload.window_size=[options.width,1100];}
+          if(options.width){
+            payload.account_key+='-profile-'+sequence;payload.window_size=[options.width,1100];
+            if(options.width<625)payload.viewport={...payload.viewport,width:options.width*payload.viewport.scale+20};
+          }
           if(options.count!==undefined)item.stats.battles=item.stats.observed_battles=options.count;
           if(options.empty){
             const stats=item.stats;stats.battles=stats.wins=stats.losses=stats.draws=stats.wn8_count=0;
@@ -91,6 +94,7 @@ module.exports=async({browser,nativeHost,check})=>{
           const result={header:header.height/scale,card:card.getBoundingClientRect().height/scale,
             identityWidth:name.width/scale,identityUsed:(Math.max(...used.map(rect=>rect.right))-name.left)/scale,
             kpiWidths:[...card.querySelectorAll('.ss-group-kpi')].map(node=>node.getBoundingClientRect().width/scale),
+            wideCombined:card.querySelector('.ss-group-wn8-kpi').getAttribute('data-wn8-kind')==='combined',
             content:Math.max(name.height,stats.height)/scale,badge:null};
           if(badge){
             const caption=badge.querySelector('.ss-group-sort-caption'),value=badge.querySelector('.ss-group-sort-number'),box=badge.getBoundingClientRect();
@@ -111,8 +115,9 @@ module.exports=async({browser,nativeHost,check})=>{
         },scale);
         check('The headline reserves only its actual content height '+metric+'/'+statistic+'/'+scale,
           geometry.header>=geometry.content&&geometry.header<=geometry.content+3);
-        check('The familiar KPI columns retain compact widths while the identity takes spare space '+metric+'/'+statistic+'/'+scale,
-          geometry.kpiWidths.length===3&&geometry.kpiWidths.every((width,index)=>Math.abs(width-[60,62,72][index])<=0.5));
+        check('Core KPI columns stay compact and the wide Combined WN8 caption gets extra width '+metric+'/'+statistic+'/'+scale,
+          geometry.kpiWidths.length===3&&geometry.kpiWidths.slice(0,2).every((width,index)=>Math.abs(width-[60,62][index])<=0.5)&&
+          (geometry.wideCombined?geometry.kpiWidths[2]>=86&&geometry.kpiWidths[2]<=110:Math.abs(geometry.kpiWidths[2]-72)<=0.5));
         check('KPI labels and figures stay close together at their natural height '+metric+'/'+statistic+'/'+scale,await naturalKPIBoxes(page));
         if(geometry.badge){
           const b=geometry.badge;

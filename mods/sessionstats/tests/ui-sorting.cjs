@@ -87,7 +87,7 @@ module.exports=async ({browser,nativeHost,check})=>{
   check('Chronological ordering is independent when metric sorting is off',await page.evaluate(()=>__grzCommands.filter(c=>c.action==='sort').pop().chronology==='oldest'));
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   // These viewports constrain the actual native panel to 300 and 320 pixels,
-  // independently of its preferred 550-pixel minimum.
+  // independently of its preferred 625-pixel minimum.
   for(const width of [320,340,744]) {
     await page.setViewportSize({width,height:820});
     for(const [language,messages] of Object.entries(languages)) {

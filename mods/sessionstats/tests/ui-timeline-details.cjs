@@ -390,7 +390,7 @@ module.exports = async function ({browser, nativeHost, check}) {
 
   for(const testCase of [{window:700,card:500,label:'500px battle card'},
     {window:320,viewport:340,label:'320px window constrained by a small game viewport'}]) {
-    // The 550rem floor yields to the real game area. A saved narrow preference
+    // The 625rem floor yields to the real game area. A saved narrow preference
     // on a wide viewport must no longer manufacture an inaccessible 320px UI.
     const gameWidth=testCase.viewport || 1600;
     const narrowMore=await nativeHost(browser,{
@@ -641,7 +641,7 @@ module.exports = async function ({browser, nativeHost, check}) {
     });
     const horizontal=/[ew]/.test(edge),native=edge==='w' || edge==='s';
     const requestedWidth=horizontal ? 700 : 430,requestedHeight=horizontal ? 330 : 620;
-    const width=Math.max(550,requestedWidth),height=Math.max(730,requestedHeight);
+    const width=Math.max(625,requestedWidth),height=Math.max(730,requestedHeight);
     await small.evaluate(({width,height}) => {
       const payload=JSON.parse(model.payload);payload.window_size=[width,height];
       model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();

@@ -19,7 +19,7 @@ module.exports=async({browser,nativeHost,check})=>{
         await page.evaluate(({language,messages,width,scale})=>{
           const payload=JSON.parse(model.payload),scope=payload.scopes.launch;
           payload.account_key='synthetic-stable-sort-'+language;payload.localization={language,messages};
-          payload.viewport={width:3840,height:2400,scale};payload.window_size=[width,950];
+          payload.viewport={width:width===550 ? width*scale+20 : 3840,height:2400,scale};payload.window_size=[width,950];
           payload.appearance={window_settings:{background_transparency:0,maximized:false,restored_width:width,restored_height:950}};
           for(const group of ['maps','vehicles','tiers']){
             const sample=scope[group][0];scope[group]=[0,1].map(index=>{

@@ -179,7 +179,7 @@ class WindowCompatibilityTests(unittest.TestCase):
                 held[0] = False
                 self.timer.fire(self.window._resize_callback_id)
                 payload = json.loads(self.window._model._payload)['resize_gesture']
-                self.assertEqual((payload['width'], payload['height']), (550, 730))
+                self.assertEqual((payload['width'], payload['height']), (625, 730))
             self.window.close()
 
     def test_native_minimum_caps_to_a_smaller_game_viewport(self):
@@ -203,8 +203,9 @@ class WindowCompatibilityTests(unittest.TestCase):
         self.window._preferred_size = (470, 400)
         self.window._reported_size = None
         viewport = {'width': 1800, 'height': 1200, 'scale': 1}
-        self.assertEqual(self.window._fallback_size(viewport), (550, 730))
+        self.assertEqual(self.window._fallback_size(viewport), (625, 730))
         self.assertEqual(self.window._preferred_size, (470, 400))
+        self.assertEqual(self.window._fallback_size({'width': 3600, 'height': 2400, 'scale': 2}), (1250, 1460))
         self.assertEqual(self.window._fallback_size({'width': 1000, 'height': 1000, 'scale': 2}), (980, 980))
         self.assertEqual(self.window._preferred_size, (470, 400))
 

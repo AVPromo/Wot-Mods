@@ -17,6 +17,7 @@ module.exports=async({browser,nativeHost,check})=>{
       const payload=JSON.parse(JSON.stringify(__extremaBase)),scope=payload.scopes.launch;
       payload.window_size=[options.width||1200,1050];scope.data_revision='permanent-extrema-'+revision;
       if(options.scale)payload.viewport={width:3600,height:2600,scale:options.scale};
+      if(options.width===550)payload.viewport.width=550*(payload.viewport.scale||1)+20;
       // Native logical size is account-owned and intentionally survives snapshots.
       // Give each width case a fresh owner so its requested size is actually used.
       if(options.width)payload.account_key='DEMO:extrema-layout-'+revision;

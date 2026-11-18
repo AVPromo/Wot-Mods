@@ -1,27 +1,36 @@
 /* Floating-window headers use logical widths, including retained feed cards. */
 const fs=require('fs'),path=require('path');
+const {spawnSync}=require('child_process');
+const root=path.join(__dirname,'..');
 const frames=(page,count=8)=>page.evaluate(count=>new Promise(resolve=>{
   function next(){if(--count)requestAnimationFrame(next);else resolve();}requestAnimationFrame(next);
 }),count);
 module.exports=async({browser,nativeHost,check})=>{
   const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
+  // The game applies the generated Python stylesheet over the fallback.
+  const compiled=spawnSync(process.env.GRZ_PYTHON3||'python3',['-c',
+    "from grz_session_stats.appearance import build_presentation, default_config; print(build_presentation(default_config())['panel_css'])"],
+    {cwd:root,encoding:'utf8',env:{...process.env,PYTHONPATH:path.join(root,'src')}});
+  if(compiled.status!==0)throw Error('Unable to compile native appearance: '+compiled.stderr);
   for(const scale of [1,2]){
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2800},viewport:{width:3840,height:2800,scale}});
     try{
       await page.evaluate(()=>{window.__responsiveHeaderFixture=JSON.parse(model.payload);});
       let sequence=0;
-      async function publish(language,width,{paged=false,fresh=false,largeFinance=false}={}){
-        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh,largeFinance})=>{
+      async function publish(language,width,{paged=false,fresh=false,largeFinance=false,selectedGroup='maps'}={}){
+        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh,largeFinance,selectedGroup,panelCSS})=>{
           const payload=JSON.parse(JSON.stringify(__responsiveHeaderFixture)),scope=payload.scopes.launch;
           payload.account_key='synthetic-responsive-header-'+scale+'-'+language;payload.window_size=[width,1100];
-          payload.viewport={width:3840,height:2800,scale};payload.localization={language,messages};
-          payload.appearance={window_settings:{maximized:false,background_transparency:15,restored_width:width,restored_height:1100}};
+          payload.viewport={width:width<625?width*scale+20:3840,height:2800,scale};payload.localization={language,messages};
+          payload.appearance={panel_css:panelCSS,window_settings:{maximized:false,background_transparency:15,restored_width:width,restored_height:1100}};
           scope.period_id='responsive-header-period';scope.data_revision='header-'+sequence;
           for(const group of ['maps','vehicles','tiers','battles']){
             const sample=scope[group][0];scope[group]=[0,1].map(index=>{
               const item=JSON.parse(JSON.stringify(sample)),stats=item.stats,total=index?8:7;
               item.id=(fresh?'fresh-':'')+'responsive-'+group+'-'+index;item.name=group==='maps'?(index?'Klondike':'Cliff'):'Synthetic vehicle '+index;
               if(group==='maps')item.visual={kind:'map',src:'img://gui/maps/icons/map/small/synthetic-header.png',alt:'Synthetic map'};
+              if(group==='vehicles'||group==='battles')item.visual={kind:'vehicle',src:'img://gui/maps/icons/vehicle/contour/synthetic-header.png',alt:'Synthetic vehicle'};
+              if(group==='battles')item.map_visual={kind:'map',src:'img://gui/maps/icons/map/small/synthetic-header.png',alt:'Synthetic map'};
               Object.assign(stats,{battles:total,observed_battles:total,wn8:index?1676:1601,wn8_count:total,win_rate:42.9});
               const values={xp_base:[132,549,1403],xp_received:[426,2372,8737],battle_wn8:[245,2288,6779],credits_net_base:[1000,index?5481:6343,9444]};
               if(largeFinance)values.credits_income_received=[123456789,234567890,345678901];
@@ -44,8 +53,9 @@ module.exports=async({browser,nativeHost,check})=>{
           payload.scopes.timeline=JSON.parse(JSON.stringify(scope));
           payload.scopes.timeline.from_point=payload.scopes.timeline.to_point='';payload.scopes.timeline.time_points=[];
           model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
-          document.getElementById('ss-scope-manual').click();document.getElementById('ss-group-maps').click();
-        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh,largeFinance});await frames(page);
+          document.getElementById('ss-scope-manual').click();document.getElementById('ss-group-'+selectedGroup).click();
+        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh,largeFinance,selectedGroup,panelCSS:compiled.stdout.trim()});
+        await frames(page);
       }
       async function resize(width,height=1100){
         await page.evaluate(({width,height})=>{
@@ -79,12 +89,24 @@ module.exports=async({browser,nativeHost,check})=>{
             button=more&&rect(more),expectedDock=!two&&bounds.width<680,docked=card.classList.contains('ss-card-border-more'),failures=[];
           if(identity.width<72||!titleInk.length||titleInk.some(part=>!inside(part,titleBox)))failures.push('squeezed-identity');
           if(['Cliff','Klondike'].includes(title.textContent)&&titleInk.some(part=>Math.abs(part.top-titleInk[0].top)>1))failures.push('vertical-short-name');
-          if(!inside(identity,header))failures.push('identity-outside-header');
-          let sortNumber=null;
+          const image=card.querySelector('.ss-group-header .ss-group-thumb'),xp=card.querySelector('.ss-group-header .ss-free-xp');
+          const imageBox=image&&rect(image),xpBox=xp&&rect(xp);
+          if(!inside(header,bounds)||!inside(identity,header)||[imageBox,xpBox].filter(Boolean).some(box=>!inside(box,header)||
+              box.top<bounds.top+2||box.width<=0||box.height<=0))failures.push('identity-outside-header');
+          let sortNumber=null,inline=null,combined=null;
           if(stats){
             const statsBox=rect(stats),kpis=[...stats.querySelectorAll('.ss-group-kpi')].map(rect);
+            const identityBox=rect(card.querySelector('.ss-group-identity'));
+            inline=identityBox.right<=statsBox.left+1&&overlapY(identityBox,statsBox);
+            if(!inline&&identityBox.bottom>statsBox.top+1)failures.push('identity-statistics-overlap');
             if(kpis.length!==3||kpis.some(box=>!inside(box,statsBox))||!inside(statsBox,header)||
               kpis.slice(1).some((box,index)=>box.left<kpis[index].right-1||!overlapY(box,kpis[index])))failures.push('statistics-stacked-or-outside');
+            const wn8=stats.querySelector('[data-wn8-kind="combined"] .ss-kpi-label');
+            if(wn8){
+              const labelBox=rect(wn8),labelInk=ink(wn8);
+              combined={text:wn8.textContent,visible:wn8.scrollWidth<=wn8.clientWidth+1&&labelInk.length>0&&
+                labelInk.every(part=>inside(part,labelBox)&&Math.abs(part.top-labelInk[0].top)<=1)};
+            }
             const badge=stats.querySelector('.ss-group-sort-value');
             if(badge){
               const badgeBox=rect(badge),caption=badge.querySelector('.ss-group-sort-caption-text'),value=badge.querySelector('.ss-group-sort-number');
@@ -104,32 +126,33 @@ module.exports=async({browser,nativeHost,check})=>{
             if(expectedDock){
               if(more.parentNode!==card||getComputedStyle(more).position!=='absolute'||Math.abs(button.width-82)>0.5||Math.abs(button.height-20)>0.5||
                 Math.abs((button.top+button.bottom)/2-bounds.top)>2||Math.abs(bounds.right-button.right-6)>2||header.top<button.bottom+2)failures.push('border-dock');
-              if(stats&&identity.bottom>rect(stats).top+1)failures.push('identity-statistics-overlap');
             }else if(!card.querySelector('.ss-group-header').contains(more)||getComputedStyle(more).position==='absolute'||!inside(button,header))failures.push('ordinary-action-moved');
             if(!ink(more.querySelector('.ss-control-label')).every(part=>inside(part,button)))failures.push('clipped-action');
           }
           const banner=card.querySelector('.ss-battle-selection-banner'),back=card.querySelector('.ss-battle-return'),label=card.querySelector('.ss-battle-selection-label');
           let selected=null;
           if(banner&&back&&label){const b=rect(banner),a=rect(back),l=rect(label);
-            selected={text:label.textContent,backLabel:back.getAttribute('aria-label'),contained:inside(a,b)&&inside(l,b),
+            const labelInk=ink(label);
+            selected={text:label.textContent,backLabel:back.getAttribute('aria-label'),contained:inside(a,b)&&inside(l,b)&&
+              b.left>=bounds.left-1&&b.right<=bounds.right+1&&label.scrollWidth<=label.clientWidth+1&&labelInk.length>0&&
+              labelInk.every(part=>inside(part,l)&&Math.abs(part.top-labelInk[0].top)<=1),
               order:docked?l.right<=a.left+1:a.right<=l.left+1,
               adjacent:!docked||(button.left-a.right>=2&&button.left-a.right<=24&&Math.abs((a.top+a.bottom-button.top-button.bottom)/2)<=2&&!overlap(b,button))};
             if(docked){
-              const labelInk=ink(label),visuals=[...card.querySelectorAll('.ss-battle-outcome,.ss-battle-map-visual')].map(rect);
-              if(labelInk.length===0||labelInk.some(part=>Math.abs(part.top-labelInk[0].top)>1||!inside(part,l))||
-                visuals.some(visual=>[b,button].some(control=>overlap(control,visual))))failures.push('selection-overlaps-battle-header');
+              const visuals=[...card.querySelectorAll('.ss-battle-outcome,.ss-battle-map-visual')].map(rect);
+              if(visuals.length!==2||visuals.some(visual=>[b,button].some(control=>overlap(control,visual))))failures.push('selection-overlaps-battle-header');
             }
           }
-          return {id:card.getAttribute('data-group-id'),title:title.textContent,bounds,header,identity,button,expectedDock,docked,failures,selected,sortNumber,
+          return {id:card.getAttribute('data-group-id'),title:title.textContent,bounds,header,identity,button,expectedDock,docked,failures,selected,sortNumber,inline,combined,imageBox,xpBox,
             more:more&&more.textContent,expanded:more&&more.getAttribute('aria-expanded')};
         });
-        return {titlebar,timeline,controls,language,actions,rowsOK,topOK,two,cards};
+        return {panel,titlebar,timeline,controls,language,actions,rowsOK,topOK,two,cards};
       },scale);}
       const valid=result=>result.topOK&&result.cards.length>=2&&result.cards.every(card=>!card.failures.length),
         selectedValid=(result,messages)=>valid(result)&&result.cards.some(card=>card.selected&&card.selected.contained&&card.selected.order&&card.selected.adjacent&&
           card.selected.text===messages['battle.selected']&&card.selected.backLabel===messages['battle.return']);
       for(const [language,messages]of Object.entries(languages)){
-        for(const width of [600,780]){
+        for(const width of [625,780]){
           await publish(language,width);const result=await audit();
           check('Language controls stay enclosed above Timeline and both short map identities remain readable '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(result),valid(result));
           const more=page.locator('#ss-groups .ss-more-button').first();await more.evaluate(node=>{window.__headerMore=node;window.__headerMoreParent=node.parentNode;});
@@ -145,40 +168,49 @@ module.exports=async({browser,nativeHost,check})=>{
           scope.battle_focus={id:request.id,request_id:request.request_id};model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
         });await frames(page,12);
         await page.evaluate(()=>{window.__selectedHeaderCard=document.querySelector('#ss-groups .ss-battle-target');window.__selectedHeaderMore=__selectedHeaderCard.querySelector('.ss-more-button');});
-        for(const width of (language==='en'?[480,600,780,1320]:[600,780,1320])){
+        for(const width of [625,780,1320]){
           await resize(width);const result=await audit();
           check('Back remains beside Selected while only narrow single-column More uses the border '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(result),selectedValid(result,messages)&&
             await page.evaluate(()=>document.querySelector('#ss-groups .ss-battle-target')===__selectedHeaderCard&&__selectedHeaderCard.querySelector('.ss-more-button')===__selectedHeaderMore));
-          if(width===600){
+          if(width===625){
             const more=page.locator('#ss-groups .ss-battle-target .ss-more-button');await more.click();await frames(page);const open=await audit();
             check('Selected, Back and localized Less coexist without moving their shared border controls '+language+'/'+scale+'x: '+JSON.stringify(open),
               selectedValid(open,messages)&&open.cards.some(card=>card.selected&&card.expanded==='true'&&card.more===messages['more.less']));
             await more.click();await frames(page);
             if(language==='en'){
-              const before=await audit();await resize(600,900);const shorter=await audit();
+              const before=await audit();await resize(625,900);const shorter=await audit();
               check('A height-only resize preserves the selected card and border actions at '+scale+'x: '+JSON.stringify(shorter),selectedValid(shorter,messages)&&
                 await page.evaluate(()=>document.querySelector('#ss-groups .ss-battle-target')===__selectedHeaderCard)&&
                 shorter.cards.every((card,index)=>Math.abs(card.bounds.width-before.cards[index].bounds.width)<=0.25&&
                   Math.abs(card.bounds.height-before.cards[index].bounds.height)<=0.25&&
                   Math.abs((card.button.top-card.bounds.top)-(before.cards[index].button.top-before.cards[index].bounds.top))<=0.25));
-              await resize(600);
+              await resize(625);
             }
           }
         }
       }
-      await publish('en',600);await page.evaluate(()=>{window.__retainedHeaderCards=[...document.querySelectorAll('#ss-groups .ss-group')];window.__retainedHeaderActions=__retainedHeaderCards.map(card=>card.querySelector('.ss-more-button'));});
-      for(const width of [550,640,700,1320,1800,600]){
+      await publish('en',625);await page.evaluate(()=>{window.__retainedHeaderCards=[...document.querySelectorAll('#ss-groups .ss-group')];window.__retainedHeaderActions=__retainedHeaderCards.map(card=>card.querySelector('.ss-more-button'));});
+      for(const width of [550,640,700,1320,1800,625]){
         await resize(width);const result=await audit();
         check('The same map headers recover correct rows and action scope through live resize at '+width+'/'+scale+'x: '+JSON.stringify(result),valid(result)&&
           await page.evaluate(()=>[...document.querySelectorAll('#ss-groups .ss-group')].every((card,index)=>card===__retainedHeaderCards[index]&&card.querySelector('.ss-more-button')===__retainedHeaderActions[index])));
+        check('The normal viewport honors the 625px floor during resize at '+width+'/'+scale+'x',
+          Math.abs(result.panel.width-Math.max(625,width))<=1);
       }
-      for(const width of [360,480,600]){
-        await publish('ru',width,{largeFinance:true});const result=await audit();
+      for(const width of [360,480,625]){
+        await publish('ru',width,{largeFinance:true,selectedGroup:'vehicles'});const result=await audit();
         const failures=result.cards.flatMap(card=>card.failures);
         check('Narrow aggregate headers contain all KPIs and a long localized finance statistic at '+width+'/'+scale+'x: '+JSON.stringify(failures),
-          result.cards.length===2&&failures.length===0&&result.cards.every(card=>card.sortNumber==='234567890'));
+          Math.abs(result.panel.width-width)<=1&&result.cards.length===2&&failures.length===0&&
+          result.cards.every(card=>card.sortNumber==='234567890'&&card.imageBox&&card.xpBox&&card.inline===(width===625)));
       }
-      await publish('en',600,{paged:true});await page.evaluate(()=>{window.__firstHeaderFeedCard=document.querySelector('#ss-groups .ss-group');});
+      for(const language of ['en','es']){
+        await publish(language,1800,{selectedGroup:'vehicles'});const result=await audit();
+        check('Wide vehicle cards show the full localized Combined WN8 caption at '+language+'/'+scale+'x: '+JSON.stringify(result.cards),
+          valid(result)&&result.two&&result.cards.every(card=>card.bounds.width>=700&&card.inline&&card.imageBox&&
+            card.combined&&card.combined.visible&&card.combined.text===languages[language]['metric.combined_wn8']));
+      }
+      await publish('en',625,{paged:true});await page.evaluate(()=>{window.__firstHeaderFeedCard=document.querySelector('#ss-groups .ss-group');});
       await page.locator('#ss-page-next').click();await frames(page);
       await page.evaluate(()=>{
         const request=__grzCommands.filter(command=>command.action==='page'&&command.group==='maps').pop(),payload=JSON.parse(model.payload),scope=payload.scopes.timeline;
@@ -187,7 +219,7 @@ module.exports=async({browser,nativeHost,check})=>{
       });await frames(page,12);const appended=await audit();
       check('First cards in both infinite-feed pages retain full identities and docked actions at '+scale+'x: '+JSON.stringify(appended),valid(appended)&&appended.cards.length===4&&
         await page.evaluate(()=>document.querySelector('#ss-groups .ss-group')===__firstHeaderFeedCard));
-      await publish('en',600,{fresh:true});const fresh=await audit();
+      await publish('en',625,{fresh:true});const fresh=await audit();
       check('A new snapshot lays out the first Cliff header correctly at '+scale+'x: '+JSON.stringify(fresh),valid(fresh)&&fresh.cards[0].id==='fresh-responsive-maps-0');
       const squeezed=await page.addStyleTag({content:'#ss-groups .ss-group:first-child .ss-group-name { flex:0 0 8rem !important; width:8rem !important; }'});
       check('The first-card guard rejects a letter-wide map identity at '+scale+'x',!valid(await audit()));

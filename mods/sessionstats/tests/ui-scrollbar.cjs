@@ -114,11 +114,16 @@ function assertScrollbarSource(source=shipped()){
   state.nativeScale=1.5;context.resizeNative();
   assert.deepStrictEqual(nativeSizes[nativeSizes.length-1],[1050,880],'A fractional scale change keeps the physical height within the same parent cap');
   root.getBoundingClientRect=oldRootRect;state.nativeScale=1;state.payload.viewport={width:1800,height:1200};
-  context.setLogicalSize(1,1,'se');assert.strictEqual(state.logicalSize.width,550);assert.strictEqual(state.logicalSize.height,730);
+  context.setLogicalSize(1,1,'se');assert.strictEqual(state.logicalSize.width,625);assert.strictEqual(state.logicalSize.height,730);
   state.nativeScale=2;state.payload.viewport={width:1000,height:1000};size=context.resizePanelDimensions();
   assert.strictEqual(size.width,490);assert.strictEqual(size.height,490,'A smaller scaled viewport overrides minimum display size safely');
   state.nativeScale=1;state.payload.viewport={width:1,height:1};window.innerWidth=1;window.innerHeight=1;
   size=context.resizePanelDimensions();assert.strictEqual(size.height,730,'An unknown first native viewport is not a smaller game window');
+  state.nativeScale=2;state.payload.viewport={width:3600,height:2400};
+  state.logicalSize={width:550,height:730};root.getBoundingClientRect=()=>({top:0,width:1100,height:1460});
+  context.resizeNative();
+  assert.deepStrictEqual(nativeSizes[nativeSizes.length-1],[1250,1460],'A saved legacy width expands to the new minimum at 200 percent');
+  assert.strictEqual(state.logicalSize.width,550,'Applying the new minimum leaves the legacy preference untouched');
 }
 const frames=page=>page.evaluate(()=>new Promise(resolve=>{let left=10;function next(){if(--left)requestAnimationFrame(next);else resolve();}requestAnimationFrame(next);}));
 module.exports=async({browser,nativeHost,check})=>{
@@ -158,7 +163,7 @@ module.exports=async({browser,nativeHost,check})=>{
       await page.mouse.move(panel.x+40*scale,panel.y+40*scale);await page.mouse.up();await frames(page);
       const minimum=await page.locator('#grz-session-stats').boundingBox();
       check('Mouse resizing cannot shrink the window below the compact screenshot dimensions'+label,
-        Math.abs(minimum.width-550*scale)<=1&&Math.abs(minimum.height-730*scale)<=1);
+        Math.abs(minimum.width-625*scale)<=1&&Math.abs(minimum.height-730*scale)<=1);
       const saves=await page.evaluate(()=>__grzCommands.filter(command=>command.action==='window_settings').length);
       const small={width:500*scale+20,height:600*scale+20,scale};await page.setViewportSize({width:small.width,height:small.height});
       await page.evaluate(viewport=>{const payload=JSON.parse(model.payload);payload.viewport=viewport;model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();},small);await frames(page);
@@ -168,7 +173,7 @@ module.exports=async({browser,nativeHost,check})=>{
       await page.setViewportSize({width:viewport.width,height:viewport.height});await page.evaluate(viewport=>{const payload=JSON.parse(model.payload);
         payload.viewport=viewport;model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();},viewport);await frames(page);
       check('Growing the viewport restores the minimum without rewriting preferences'+label,await page.evaluate(({scale,saves})=>{
-        const box=document.getElementById('grz-session-stats').getBoundingClientRect();return Math.abs(box.width-550*scale)<=1&&Math.abs(box.height-730*scale)<=1&&
+        const box=document.getElementById('grz-session-stats').getBoundingClientRect();return Math.abs(box.width-625*scale)<=1&&Math.abs(box.height-730*scale)<=1&&
           __grzCommands.filter(command=>command.action==='window_settings').length===saves;
       },{scale,saves}));
       await page.locator('#ss-maximize').click();await frames(page);

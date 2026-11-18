@@ -16,7 +16,7 @@ module.exports=async({browser,nativeHost,check})=>{
         await page.evaluate(({language,messages,width,scale,options,sequence})=>{
           const payload=JSON.parse(JSON.stringify(__aggregateResponsiveFixture)),scope=payload.scopes.launch;
           payload.account_key='synthetic-aggregate-responsive-'+scale+'-'+sequence;
-          payload.viewport={width:3840,height:2560,scale};payload.window_size=[width,1100];
+          payload.viewport={width:width<625?width*scale+20:3840,height:2560,scale};payload.window_size=[width,1100];
           payload.localization={language,messages};
           payload.appearance={window_settings:{background_transparency:0,maximized:false,restored_width:width,restored_height:1100}};
           if(options.base)payload.appearance.card_widths={maps:options.base};
@@ -44,6 +44,9 @@ module.exports=async({browser,nativeHost,check})=>{
         const icon=badge.querySelector('.ss-sort-partial-icon'),captionLines=rangeBoxes(caption),lineTops=[];
         for(const line of captionLines)if(!lineTops.some(top=>Math.abs(top-line.top)<1))lineTops.push(line.top);
         const cardBox=box(card),headerBox=box(header),badgeBox=box(badge),captionBox=box(caption),numberBox=box(number),iconBox=icon&&box(icon);
+        const identityBox=box(identity),statsBox=box(stats),captionStyle=getComputedStyle(caption);
+        const inline=identityBox.right<=statsBox.left+1&&
+          Math.min(identityBox.bottom,statsBox.bottom)-Math.max(identityBox.top,statsBox.top)>1;
         const performance=box(card.querySelector('.ss-performance')),economy=box(card.querySelector('.ss-economy'));
         const readabilityFailures=[];
         const figures=[...card.querySelectorAll('.ss-metric-row .ss-table-text,.ss-money-row .ss-cell-value')];
@@ -58,8 +61,10 @@ module.exports=async({browser,nativeHost,check})=>{
         }
         const more=card.querySelector('.ss-map-more-button'),moreBox=more&&box(more);
         const group=box(document.getElementById('ss-groups'));
-        return {card:cardBox,group,header:headerBox,identity:box(identity),stats:box(stats),kpis,badge:badgeBox,
+        return {card:cardBox,group,header:headerBox,identity:identityBox,stats:statsBox,kpis,badge:badgeBox,inline,
           captionLines:lineTops.length,captionText:caption.textContent,captionFits:captionLines.length>0&&captionLines.every(line=>inside(line,captionBox)),
+          captionHelp:captionStyle.textOverflow==='ellipsis'&&captionStyle.overflowX==='hidden'&&caption.scrollWidth>caption.clientWidth&&
+            badge.getAttribute('data-ss-help')===badge.getAttribute('aria-label')&&badge.getAttribute('aria-controls')==='ss-help-tooltip',
           badgeFits:[captionBox,numberBox,iconBox].filter(Boolean).every(part=>inside(part,badgeBox))&&rangeBoxes(number).every(line=>inside(line,numberBox)),
           partial:!!icon&&getComputedStyle(icon).backgroundImage.includes('img://gui/maps/icons/library/alertIcon.png'),
           headerFits:[box(identity),box(stats),...kpis,badgeBox].every(part=>inside(part,headerBox)),
@@ -73,17 +78,18 @@ module.exports=async({browser,nativeHost,check})=>{
           tablesReadable:figures.length>=9&&readabilityFailures.length===0,
           two:document.getElementById('ss-groups').classList.contains('ss-two-columns')};
       },scale);}
-      for(const [language,messages]of Object.entries(languages))for(const width of [550,863,1200,1600]){
+      for(const [language,messages]of Object.entries(languages))for(const width of [550,625,863,1200,1600]){
         await publish(language,messages,width);const value=await geometry(),caption=language+'/'+scale+'x/'+width;
-        check('Aggregate KPI columns keep compact 60/62/72 widths '+caption+': '+JSON.stringify(value.kpis),
-          value.kpis.length===3&&value.kpis.every((box,index)=>Math.abs(box.width-[60,62,72][index])<=1)&&
+        check('Aggregate KPI columns stay compact, with extra room for Combined WN8 on wide cards '+caption+': '+JSON.stringify(value.kpis),
+          value.kpis.length===3&&value.kpis.slice(0,2).every((box,index)=>Math.abs(box.width-[60,62][index])<=1)&&
+          (value.card.width>=700?value.kpis[2].width>=86&&value.kpis[2].width<=110:Math.abs(value.kpis[2].width-72)<=1)&&
           value.kpis.slice(1).every((box,index)=>box.left-value.kpis[index].right>=-1&&box.left-value.kpis[index].right<=8));
-        check('The full sorting caption and warning remain on one contained line '+caption+': '+JSON.stringify({lines:value.captionLines,caption:value.captionText,badge:value.badge}),
-          value.captionLines===1&&value.captionFits&&value.badgeFits&&value.partial&&value.headerFits&&value.moreFits&&value.tablesFit);
+        check('Sorting caption, number and warning remain contained, with full hover text for clipped captions '+caption+': '+JSON.stringify({lines:value.captionLines,caption:value.captionText,badge:value.badge}),
+          value.captionLines===1&&(value.captionFits||width===625&&value.captionHelp)&&value.badgeFits&&value.partial&&value.headerFits&&value.moreFits&&value.tablesFit);
         if(width===863)check('Default single-column maps use the 720px cap and horizontal tables '+caption+': '+JSON.stringify(value),
           !value.two&&Math.abs(value.card.width-720)<=1&&value.economy.left>=value.performance.right-1&&Math.abs(value.economy.top-value.performance.top)<=1);
-        if(width===550)check('Small aggregates separate identity from compact statistics and retain readable paired or stacked tables '+caption+': '+JSON.stringify(value),
-          !value.two&&value.card.width<=value.group.width+1&&value.identity.bottom<=value.stats.top+1&&value.tablesReadable&&
+        if(width<=625)check('Narrow aggregates fit their identity and readable tables at the normal minimum and the smaller viewport fallback '+caption+': '+JSON.stringify(value),
+          !value.two&&value.card.width<=value.group.width+1&&(width===625?value.inline:value.identity.bottom<=value.stats.top+1)&&value.tablesReadable&&
           (value.economy.left>=value.performance.right-1&&Math.abs(value.economy.top-value.performance.top)<=1||
             value.economy.top>=value.performance.bottom-1));
       }
