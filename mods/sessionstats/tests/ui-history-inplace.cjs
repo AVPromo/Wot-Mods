@@ -5,17 +5,17 @@ const frames=page=>page.evaluate(()=>new Promise(resolve=>{let remaining=6;
 module.exports=async ({browser,nativeHost,check})=>{
   const page=await nativeHost(browser,{initialViewport:{width:1600,height:1200},viewport:{width:1600,height:1200,scale:1}});
   try {
-    for(const group of ['maps','vehicles']) {
-      await page.evaluate(group=>{
+    for(const group of ['maps','vehicles']) for(const width of [680,1100]) {
+      await page.evaluate(({group,width})=>{
         const payload=JSON.parse(model.payload),scope=payload.scopes.launch,sample=scope[group][0];
-        payload.account_key='synthetic-stable-history-'+group;payload.window_size=[1100,950];
+        payload.account_key='synthetic-stable-history-'+group+'-'+width;payload.window_size=[width,950];
         scope.period_id='synthetic-stable-period-'+group;
         scope[group]=Array.from({length:8},(_,index)=>({...sample,id:'history-'+index,name:'Synthetic group '+index}));
         scope[group].forEach(item=>delete item.battle_list);
         scope.pagination[group]={page:0,pages:1,total:8,page_size:40};
         delete scope.battle_focus;
         model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
-      },group);
+      },{group,width});
       await page.locator('#ss-scope-launch').click();await page.locator('#ss-group-'+group).click();await frames(page);
       await page.locator('[data-group-id="history-0"] .ss-map-more-button').click();await frames(page);
       await page.evaluate(()=>{
@@ -39,12 +39,13 @@ module.exports=async ({browser,nativeHost,check})=>{
         },{group,pageNumber,revision});await frames(page);
       }
       await publish(0);
-      check('Loading and full '+group+' history use the same nodes and reserved panel height',await page.evaluate(()=>{
+      check('Loading and full '+group+' history use the same nodes and reserved panel height at '+width+'rem',await page.evaluate(twoColumns=>{
         const n=__historyNodes,card=document.querySelector('[data-group-id="history-0"]');
         return card===n.card && n.panel===card.querySelector('.ss-map-battles') && n.body===card.querySelector('.ss-history-body') &&
-          Math.abs(n.panel.getBoundingClientRect().height-n.loadingHeight)<1 && n.body.getBoundingClientRect().height===460 &&
+          Math.abs(n.panel.getBoundingClientRect().height-n.loadingHeight)<1 &&
+          card.classList.contains('ss-history-two-columns')===twoColumns && n.body.getBoundingClientRect().height===(twoColumns ? 324 : 460) &&
           n.body.querySelectorAll('.ss-map-battle-row').length===10;
-      }));
+      },width===1100));
       await page.evaluate(()=>{
         const n=__historyNodes,scroll=document.getElementById('ss-scroll');
         n.body.scrollTop=Math.min(80,n.body.scrollHeight-n.body.clientHeight);
