@@ -1,4 +1,4 @@
-/* Compact aggregate statistics keep their width while the sort caption fits in full. */
+/* Compact aggregate statistics keep a single-line sort caption and a readable figure. */
 const fs=require('fs'),path=require('path');
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 module.exports=async({browser,nativeHost,check})=>{
@@ -63,7 +63,8 @@ module.exports=async({browser,nativeHost,check})=>{
         const group=box(document.getElementById('ss-groups'));
         return {card:cardBox,group,header:headerBox,identity:identityBox,stats:statsBox,kpis,badge:badgeBox,inline,
           captionLines:lineTops.length,captionText:caption.textContent,captionFits:captionLines.length>0&&captionLines.every(line=>inside(line,captionBox)),
-          captionHelp:captionStyle.textOverflow==='ellipsis'&&captionStyle.overflowX==='hidden'&&caption.scrollWidth>caption.clientWidth&&
+          captionHelp:captionStyle.whiteSpace==='nowrap'&&captionStyle.textOverflow==='ellipsis'&&captionStyle.overflowX==='hidden'&&
+            caption.scrollWidth>caption.clientWidth&&!!badge.getAttribute('data-ss-help')&&
             badge.getAttribute('data-ss-help')===badge.getAttribute('aria-label')&&badge.getAttribute('aria-controls')==='ss-help-tooltip',
           badgeFits:[captionBox,numberBox,iconBox].filter(Boolean).every(part=>inside(part,badgeBox))&&rangeBoxes(number).every(line=>inside(line,numberBox)),
           partial:!!icon&&getComputedStyle(icon).backgroundImage.includes('img://gui/maps/icons/library/alertIcon.png'),
@@ -85,11 +86,12 @@ module.exports=async({browser,nativeHost,check})=>{
           (value.card.width>=700?value.kpis[2].width>=86&&value.kpis[2].width<=110:Math.abs(value.kpis[2].width-72)<=1)&&
           value.kpis.slice(1).every((box,index)=>box.left-value.kpis[index].right>=-1&&box.left-value.kpis[index].right<=8));
         check('Sorting caption, number and warning remain contained, with full hover text for clipped captions '+caption+': '+JSON.stringify({lines:value.captionLines,caption:value.captionText,badge:value.badge}),
-          value.captionLines===1&&(value.captionFits||width===625&&value.captionHelp)&&value.badgeFits&&value.partial&&value.headerFits&&value.moreFits&&value.tablesFit);
+          value.badge.width<=132&&value.captionLines===1&&(value.captionFits||value.captionHelp)&&
+          value.badgeFits&&value.partial&&value.headerFits&&value.moreFits&&value.tablesFit);
         if(width===863)check('Default single-column maps use the 720px cap and horizontal tables '+caption+': '+JSON.stringify(value),
           !value.two&&Math.abs(value.card.width-720)<=1&&value.economy.left>=value.performance.right-1&&Math.abs(value.economy.top-value.performance.top)<=1);
         if(width<=625)check('Narrow aggregates fit their identity and readable tables at the normal minimum and the smaller viewport fallback '+caption+': '+JSON.stringify(value),
-          !value.two&&value.card.width<=value.group.width+1&&(width===625?value.inline:value.identity.bottom<=value.stats.top+1)&&value.tablesReadable&&
+          !value.two&&value.card.width<=value.group.width+1&&(value.inline||width<625&&value.identity.bottom<=value.stats.top+1)&&value.tablesReadable&&
           (value.economy.left>=value.performance.right-1&&Math.abs(value.economy.top-value.performance.top)<=1||
             value.economy.top>=value.performance.bottom-1));
       }

@@ -79,7 +79,8 @@
     function append(parent, child) { parent.appendChild(child); return child; }
     function clear(node) { while (node.firstChild) { node.removeChild(node.firstChild); } }
     var helpTarget = null, helpPending = null, helpTimer = null, helpPointer = null;
-    var helpTooltip = append(root, element('div', 'ss-help-tooltip'));
+    var helpTooltipAnchor = append(root, element('div', 'ss-help-tooltip-anchor'));
+    var helpTooltip = append(helpTooltipAnchor, element('div', 'ss-help-tooltip'));
     helpTooltip.id = 'ss-help-tooltip';
     helpTooltip.setAttribute('role', 'tooltip');
     helpTooltip.style.display = 'none';
@@ -178,17 +179,21 @@
         var bounds = root.getBoundingClientRect(), anchor = target.getBoundingClientRect();
         var scale = state.nativeScale, inset = 10 * scale, gap = 12 * scale;
         var width = Math.max(1, Math.min(320 * scale, bounds.width - inset * 2));
-        // Gameface can defer a newly shown element's measurements. Constrain
-        // this box using known panel bounds without measuring the tooltip.
+        // Bound the positioning container, then let the visible box take the
+        // width of its text. This does not need a fresh Gameface measurement.
         var anchorTop = Math.max(inset, Math.min(anchor.top - bounds.top, bounds.height - inset));
         var anchorBottom = Math.max(inset, Math.min(anchor.bottom - bounds.top, bounds.height - inset));
         var below = bounds.height - anchorBottom - gap - inset, above = anchorTop - gap - inset;
-        var left = Math.max(inset, Math.min(anchor.left - bounds.left, bounds.width - width - inset));
-        helpTooltip.style.width = width + 'px';
+        var anchorLeft = Math.max(inset, anchor.left - bounds.left);
+        var anchorRight = Math.min(bounds.width - inset, anchor.right - bounds.left);
+        var rightAligned = anchorLeft + width > bounds.width - inset && anchorRight - width >= inset;
+        var left = rightAligned ? anchorRight - width : Math.max(inset, Math.min(anchorLeft, bounds.width - width - inset));
+        helpTooltipAnchor.style.width = width + 'px';
+        helpTooltipAnchor.style.left = left + 'px';
+        helpTooltipAnchor.style.alignItems = rightAligned ? 'flex-end' : 'flex-start';
         helpTooltip.style.maxHeight = Math.max(1, Math.max(above, below)) + 'px';
-        helpTooltip.style.left = left + 'px';
-        helpTooltip.style.top = below >= above ? anchorBottom + gap + 'px' : 'auto';
-        helpTooltip.style.bottom = below >= above ? 'auto' : bounds.height - anchorTop + gap + 'px';
+        helpTooltipAnchor.style.top = below >= above ? anchorBottom + gap + 'px' : 'auto';
+        helpTooltipAnchor.style.bottom = below >= above ? 'auto' : bounds.height - anchorTop + gap + 'px';
     }
     function waitForHelp(event) {
         var target = helpAncestor(event.target);
@@ -2604,9 +2609,9 @@
                 ids.unshift(data.active_crucible);
             }
             var missionTable = rewardTable(missionBlock, 'ss-more-missions');
-            ids.forEach(function (id, index) {
+            ids.forEach(function (id) {
                 var mission = missions[id], kind = mission.kind || 'other';
-                var row = append(missionTable, element('div', 'ss-more-mission' + (index % 2 ? ' ss-more-mission-even' : '')));
+                var row = append(missionTable, element('div', 'ss-more-mission'));
                 row.setAttribute('role', 'row');
                 var label = t('more.kind.' + kind);
                 if (mission.operation) { label += ' · ' + mission.operation; }
@@ -3579,6 +3584,10 @@
                 creditMetric(metric) ? t('sort.' + canonicalMetric(metric) + '.caption') : t(metric === 'xp_base' ? 'sort.card_base_xp' : 'sort.card_received_xp');
             label = t('sort.metric_stat', [statistic, name]);
             value = netCreditMetric(metric) ? signed(cardSortValue(item, options)) : number(cardSortValue(item, options));
+            // Budget for the complete figure using the 16rem digit advance and
+            // horizontal insets. Translated captions never widen this slot.
+            card._ssSortWidth = Math.max(120, 18 + value.length * 9);
+            host.style.width = card._ssSortWidth + 'rem';
             clear(badge);
             var caption = append(badge, element('span', 'ss-group-sort-caption'));
             append(caption, element('span', 'ss-group-sort-caption-text', label));
@@ -3907,15 +3916,17 @@
         return docked;
     }
     function layoutAggregateHeadline(card, headline, width, docked) {
-        var hasSortValue = !!headline.querySelector('.ss-group-sort-value');
-        // The three KPI slots need 194rem. A separate sort badge needs another
-        // 196rem. Leave the rest to the thumbnail, name and vehicle metadata.
-        var statsWidth = 194 + (hasSortValue ? 196 : 0);
-        var inlineDocked = docked && width - statsWidth >= 176;
-        var stacked = !inlineDocked && (docked || width + 14 < (hasSortValue ? 680 : 500));
+        var wide = width + 14 >= 700;
+        var combined = wide && headline.querySelector('[data-wn8-kind="combined"]');
+        var statsWidth = (combined ? 226 : 194) + (card._ssSortWidth || 0);
+        var actionWidth = !docked && headline.querySelector('.ss-map-more-button') ? 76 : 0;
+        // Reserve the logical slots before the native layout publishes its
+        // next rectangle, leaving space for the image and vehicle metadata.
+        var stacked = width - statsWidth - actionWidth < 176;
+        var inlineDocked = docked && !stacked;
         card.classList[stacked ? 'add' : 'remove']('ss-compact-headline');
         card.classList[inlineDocked ? 'add' : 'remove']('ss-inline-docked-headline');
-        card.classList[width + 14 >= 700 ? 'add' : 'remove']('ss-wide-headline');
+        card.classList[wide ? 'add' : 'remove']('ss-wide-headline');
         var identity = card.querySelector('.ss-group-identity');
         var identityWidth = stacked ? width + 'rem' : inlineDocked ? (width - statsWidth) + 'rem' : '';
         var headlineWidth = stacked ? width + 'rem' : inlineDocked ? statsWidth + 'rem' : '';
@@ -3984,7 +3995,7 @@
             if (state.group !== 'battles') {
                 layoutAggregateCaptions(card);
                 layoutAggregateTables(card, contentWidth);
-                card.classList[wide && cardWidth >= 700 ? 'add' : 'remove']('ss-history-two-columns');
+                card.classList[logicalWidth >= 700 ? 'add' : 'remove']('ss-history-two-columns');
             } else {
                 layoutBattleTables(card, contentWidth);
             }
@@ -5041,16 +5052,22 @@
         state.diagnostics[stage] = true;
         invoke('diagnostic', {stage:stage, width:width || 0, height:height || 0, scale:state.nativeScale});
     }
-    function resizeNative() {
+    function resizeNative(requested) {
         if (!state.bound) { return; }
-        var rect = root.getBoundingClientRect(), bounds = windowSizeBounds();
-        // A stale pre-minimum native rectangle must not resize the Wulf
-        // surface below the dimensions already requested by the document.
-        var validWidth = hasNumber(rect.width) && rect.width >= bounds.minWidth * state.nativeScale - 0.5 && rect.width <= bounds.maxWidth * state.nativeScale + 0.5;
-        var validHeight = hasNumber(rect.height) && rect.height >= bounds.minHeight * state.nativeScale - 0.5 && rect.height <= bounds.maxHeight * state.nativeScale + 0.5;
-        var fallback = validWidth && validHeight ? null : resizePanelDimensions(rect);
-        var width = Math.max(1, Math.ceil(validWidth ? rect.width : fallback.width * state.nativeScale));
-        var height = Math.max(1, Math.ceil(validHeight ? rect.height : fallback.height * state.nativeScale));
+        var scale = state.nativeScale, width, height;
+        if (requested) {
+            // The previous Gameface rectangle can still be within bounds.
+            // An owned gesture already supplies the clamped logical size.
+            width = Math.max(1, Math.ceil(requested.width * scale));
+            height = Math.max(1, Math.ceil(requested.height * scale));
+        } else {
+            var rect = root.getBoundingClientRect(), bounds = windowSizeBounds();
+            var validWidth = hasNumber(rect.width) && rect.width >= bounds.minWidth * scale - 0.5 && rect.width <= bounds.maxWidth * scale + 0.5;
+            var validHeight = hasNumber(rect.height) && rect.height >= bounds.minHeight * scale - 0.5 && rect.height <= bounds.maxHeight * scale + 0.5;
+            var fallback = validWidth && validHeight ? null : resizePanelDimensions(rect);
+            width = Math.max(1, Math.ceil(validWidth ? rect.width : fallback.width * scale));
+            height = Math.max(1, Math.ceil(validHeight ? rect.height : fallback.height * scale));
+        }
         if (state.nativeWidth === width && state.nativeHeight === height) { return; }
         state.nativeWidth = width;
         state.nativeHeight = height;
@@ -5284,6 +5301,9 @@
             moveResize(notify);
         }
         state.resize = null;
+        if (drag.layoutTimer !== undefined && drag.layoutTimer !== null) {
+            window.clearTimeout(drag.layoutTimer);
+        }
         trackResizeOnStage(drag, false);
         requestResizeCursor(drag.grip, false);
         queueResize(true);
@@ -5538,17 +5558,50 @@
         root.style.width = displaySize.width + 'rem'; root.style.height = displaySize.height + 'rem';
         root.style.maxWidth = bounds.maxWidth * scale + 'px'; root.style.maxHeight = bounds.maxHeight * scale + 'px';
         root.style.minWidth = bounds.minWidth * scale + 'px'; root.style.minHeight = bounds.minHeight * scale + 'px';
+        var drag = state.resize;
+        if (drag && !force) {
+            if (drag.previewSize && drag.previewSize.width === displaySize.width &&
+                    drag.previewSize.height === displaySize.height) { return; }
+            drag.previewSize = displaySize;
+            // Resize the actual window on the next event-loop turn. Laying out
+            // every loaded card on each sample can block the native resize.
+            state.resizeQueued = false;
+            var gestureTicket = ++state.resizeMeasureToken;
+            window.setTimeout(function () {
+                if (state.destroyed || state.resize !== drag || gestureTicket !== state.resizeMeasureToken) { return; }
+                resizeNative(displaySize);
+                layoutResizeGrips();
+            }, 0);
+            if (drag.layoutTimer !== undefined && drag.layoutTimer !== null) {
+                window.clearTimeout(drag.layoutTimer);
+            }
+            // A pause in the drag still updates the content. Release bypasses
+            // this delay and flushes the latest size.
+            drag.layoutTimer = window.setTimeout(function () {
+                if (state.destroyed || state.resize !== drag || gestureTicket !== state.resizeMeasureToken) { return; }
+                drag.layoutTimer = null;
+                queueResize(true);
+            }, 160);
+            return;
+        }
         if (state.resizeQueued) { return; }
         state.resizeQueued = true;
         var ticket = ++state.resizeMeasureToken;
+        if (force && state.logicalSize) {
+            window.setTimeout(function () {
+                if (state.destroyed || ticket !== state.resizeMeasureToken) { return; }
+                resizeNative(resizePanelDimensions());
+            }, 0);
+        }
         function measure() {
             if (state.destroyed || ticket !== state.resizeMeasureToken) { return; }
             state.resizeQueued = false;
+            if (force && state.logicalSize) { resizeNative(resizePanelDimensions()); }
             layoutResizeGrips();
             layoutSummary();
             layoutFilterControls(force);
             layoutBattleCards();
-            resizeNative();
+            if (!force || !state.logicalSize) { resizeNative(state.logicalSize ? resizePanelDimensions() : null); }
             positionDatePicker();
             if (state.groupMinHeight) {
                 nodes.groups.style.minHeight = ''; state.groupMinHeight = false;

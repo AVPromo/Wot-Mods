@@ -1,4 +1,4 @@
-# Appearance and scrolling configuration — 0.9.25
+# Appearance and scrolling configuration — 0.9.26
 
 ## File placement and applying changes
 

@@ -78,5 +78,40 @@ module.exports=async({browser,nativeHost,check})=>{
     await active.locator('.ss-metric-battle-link').hover();
     check('Source help removes a sorting cell\'s ancestor native title as well as the action title',
       await active.getAttribute('title')===null&&await active.locator('.ss-metric-battle-link').getAttribute('title')===null);
+
+    await leave();
+    const edgeHelp=page.locator('#ss-test-edge-help');
+    await page.evaluate(()=>{
+      const target=document.createElement('button');
+      target.id='ss-test-edge-help';target.className='ss-hover-help';
+      target.style.cssText='position:absolute;right:14rem;bottom:14rem;width:36rem;height:20rem';
+      target.setAttribute('aria-controls','ss-help-tooltip');
+      document.getElementById('grz-session-stats').appendChild(target);
+    });
+    async function auditText(text){
+      await leave();
+      await edgeHelp.evaluate((target,text)=>target.setAttribute('data-ss-help',text),text);
+      await edgeHelp.focus();await frames(page);
+      return tooltip.evaluate(node=>{
+        const panel=node.closest('#grz-session-stats').getBoundingClientRect(),box=node.getBoundingClientRect(),
+          anchor=document.getElementById('ss-test-edge-help').getBoundingClientRect(),range=document.createRange();
+        range.selectNodeContents(node);
+        const ink=[...range.getClientRects()].filter(part=>part.width>0),inside=(part,owner)=>
+          part.left>=owner.left-1&&part.right<=owner.right+1&&part.top>=owner.top-1&&part.bottom<=owner.bottom+1;
+        return {width:box.width,height:box.height,text:node.textContent,lines:ink.length,
+          longest:Math.max(...ink.map(part=>part.width)),inside:inside(box,panel)&&ink.every(part=>inside(part,box)),
+          anchored:Math.abs(box.right-anchor.right)<=1&&Math.abs(anchor.top-box.bottom-12)<=1};
+      });
+    }
+    const short=await auditText('Combined WN8');
+    check('Short tooltip fits its text and stays anchored at the bottom-right edge: '+JSON.stringify(short),
+      short.text==='Combined WN8'&&short.lines===1&&short.width>=short.longest&&short.width<=short.longest+30&&short.inside&&short.anchored);
+    const multiline=await auditText('WN8\nFree XP');
+    check('Explicit help line breaks size the box to the longest line: '+JSON.stringify(multiline),
+      multiline.lines===2&&multiline.height>short.height&&multiline.width>=multiline.longest&&multiline.width<=multiline.longest+30&&multiline.inside);
+    const explanation='Battle statistics report confirmed results and the fields available in each result. '.repeat(6).trim();
+    const long=await auditText(explanation);
+    check('Long help wraps within its width cap and fits near the bottom-right edge: '+JSON.stringify(long),
+      long.text===explanation&&long.lines>2&&long.width>short.width&&long.width<=321&&long.inside&&long.anchored);
   }finally{await page.close();}
 };

@@ -677,7 +677,9 @@ class StatsWindow(object):
             left += anchor['size'][0] - size[0]
         if 'n' in anchor['corner']:
             top += anchor['size'][1] - size[1]
-        self._move((int(left), int(top)))
+        target = (int(left), int(top))
+        if self._window_position() != target:
+            self._move(target)
         if self._resize_gesture is None and size == anchor.get('target'):
             self._resize_anchor = None
 

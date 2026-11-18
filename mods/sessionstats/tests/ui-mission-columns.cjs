@@ -94,7 +94,8 @@ module.exports=async({browser,nativeHost,check})=>{
           await page.locator('.ss-battle .ss-more-button').click();await settled(page,scale,2100);
           const panel=page.locator('.ss-more-panel');
           const layout=await panel.evaluate((panel,scale)=>{
-            const bonus=panel.querySelector('.ss-more-bonus-block').getBoundingClientRect(),
+            const bonusBlock=panel.querySelector('.ss-more-bonus-block'),bonus=bonusBlock.getBoundingClientRect(),
+              missionBlock=panel.querySelector('.ss-more-columns .ss-more-mission-block'),
               continuation=panel.querySelector('.ss-more-mission-continuation'),
               first=[...panel.querySelectorAll('.ss-more-columns .ss-more-mission')],
               cards=[...panel.querySelectorAll('.ss-more-mission')];
@@ -102,13 +103,18 @@ module.exports=async({browser,nativeHost,check})=>{
             const bounds=continuation.getBoundingClientRect(),tail=[...continuation.querySelectorAll('.ss-more-mission')],
               [left,right]=tail.map(mission=>mission.getBoundingClientRect());
             window.__missionTail=continuation;window.__missionTailCards=tail;
+            const backdrop=node=>getComputedStyle(node).backgroundColor;
+            const sharedBackground=backdrop(missionBlock)===backdrop(continuation)&&backdrop(missionBlock)!==backdrop(bonusBlock)&&
+              cards.every(mission=>backdrop(mission)==='rgba(0, 0, 0, 0)');
             return {first:first.length,ordered:cards.every((mission,index)=>mission.querySelector('strong').textContent==='Ordered objective '+index),
+              sharedBackground,
               compacted:cards.length===8 && first.length+tail.length===8 && !!left && !!right &&
                 continuation.querySelector('.ss-more-title').textContent==='Missions' && bounds.top>=bonus.bottom-scale &&
                 left.left<bonus.right && Math.abs(left.top-right.top)<=scale && left.right<=right.left-scale && right.right<=bounds.right+scale};
           },scale);
           check('Wide More fits additional missions below '+(rich?'taller':'shorter')+' bonuses at'+scale*100+'%: '+JSON.stringify(layout),
             layout.compacted&&layout.ordered);
+          check('Mission tiles share their section background apart from the bonuses at '+scale*100+'%',layout.sharedBackground);
           splits.push(layout.first);
           await page.evaluate(()=>window.dispatchEvent(new Event('resize')));await settled(page,scale,2100);
           check('An unchanged wide More retains the same continuation and mission nodes at'+scale*100+'%',

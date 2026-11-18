@@ -93,7 +93,7 @@ module.exports=async({browser,nativeHost,check})=>{
           const imageBox=image&&rect(image),xpBox=xp&&rect(xp);
           if(!inside(header,bounds)||!inside(identity,header)||[imageBox,xpBox].filter(Boolean).some(box=>!inside(box,header)||
               box.top<bounds.top+2||box.width<=0||box.height<=0))failures.push('identity-outside-header');
-          let sortNumber=null,inline=null,combined=null;
+          let sortNumber=null,sortWidth=null,inline=null,combined=null;
           if(stats){
             const statsBox=rect(stats),kpis=[...stats.querySelectorAll('.ss-group-kpi')].map(rect);
             const identityBox=rect(card.querySelector('.ss-group-identity'));
@@ -112,12 +112,13 @@ module.exports=async({browser,nativeHost,check})=>{
               const badgeBox=rect(badge),caption=badge.querySelector('.ss-group-sort-caption-text'),value=badge.querySelector('.ss-group-sort-number');
               const captionBox=rect(caption),captionStyle=getComputedStyle(caption),captionInk=ink(caption);
               sortNumber=value.textContent.replace(/\s/g,'');
+              sortWidth=badgeBox.width;
               const fullHelp=badge.getAttribute('data-ss-help');
-              const readableCaption=captionInk.length>0&&(captionInk.every(part=>inside(part,captionBox))||
-                captionStyle.textOverflow==='ellipsis'&&captionStyle.overflowX==='hidden'&&caption.scrollWidth>caption.clientWidth&&
+              const readableCaption=captionInk.length>0&&captionInk.every(part=>Math.abs(part.top-captionInk[0].top)<=1)&&(captionInk.every(part=>inside(part,captionBox))||
+                captionStyle.whiteSpace==='nowrap'&&captionStyle.textOverflow==='ellipsis'&&captionStyle.overflowX==='hidden'&&caption.scrollWidth>caption.clientWidth&&
                 fullHelp&&fullHelp===badge.getAttribute('aria-label')&&badge.getAttribute('aria-controls')==='ss-help-tooltip');
               if(!inside(badgeBox,statsBox)||kpis.some(box=>overlap(box,badgeBox))||!inside(captionBox,badgeBox)||
-                !readableCaption||!ink(value).length||ink(value).some(part=>!inside(part,badgeBox)))failures.push('clipped-statistic-badge');
+                !readableCaption||ink(value).length!==1||ink(value).some(part=>!inside(part,badgeBox)))failures.push('clipped-statistic-badge');
             }
           }
           if(more){
@@ -143,7 +144,7 @@ module.exports=async({browser,nativeHost,check})=>{
               if(visuals.length!==2||visuals.some(visual=>[b,button].some(control=>overlap(control,visual))))failures.push('selection-overlaps-battle-header');
             }
           }
-          return {id:card.getAttribute('data-group-id'),title:title.textContent,bounds,header,identity,button,expectedDock,docked,failures,selected,sortNumber,inline,combined,imageBox,xpBox,
+          return {id:card.getAttribute('data-group-id'),title:title.textContent,bounds,header,identity,button,expectedDock,docked,failures,selected,sortNumber,sortWidth,inline,combined,imageBox,xpBox,
             more:more&&more.textContent,expanded:more&&more.getAttribute('aria-expanded')};
         });
         return {panel,titlebar,timeline,controls,language,actions,rowsOK,topOK,two,cards};
@@ -202,7 +203,18 @@ module.exports=async({browser,nativeHost,check})=>{
         const failures=result.cards.flatMap(card=>card.failures);
         check('Narrow aggregate headers contain all KPIs and a long localized finance statistic at '+width+'/'+scale+'x: '+JSON.stringify(failures),
           Math.abs(result.panel.width-width)<=1&&result.cards.length===2&&failures.length===0&&
-          result.cards.every(card=>card.sortNumber==='234567890'&&card.imageBox&&card.xpBox&&card.inline===(width===625)));
+          result.cards.every(card=>card.sortNumber==='234567890'&&card.sortWidth<=132&&card.imageBox&&card.xpBox&&card.inline===(width===625)));
+        if(width===625){
+          await page.evaluate(()=>{
+            const payload=JSON.parse(model.payload);
+            for(const scope of ['launch','timeline'])payload.scopes[scope].ordering.vehicles.metric='off';
+            model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
+          });await frames(page);
+          const unsorted=await audit();
+          check('A long localized finance caption keeps the identity and statistics on the same row at the normal minimum '+scale+'x: '+JSON.stringify(result.cards),
+            valid(unsorted)&&unsorted.cards.every((card,index)=>card.inline&&card.sortNumber===null&&
+              Math.abs(card.header.height-result.cards[index].header.height)<=1));
+        }
       }
       for(const language of ['en','es']){
         await publish(language,1800,{selectedGroup:'vehicles'});const result=await audit();

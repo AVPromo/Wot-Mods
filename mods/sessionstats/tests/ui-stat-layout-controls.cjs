@@ -100,16 +100,22 @@ module.exports=async({browser,nativeHost,check})=>{
             const caption=badge.querySelector('.ss-group-sort-caption'),value=badge.querySelector('.ss-group-sort-number'),box=badge.getBoundingClientRect();
             const ink=node=>{const range=document.createRange();range.selectNodeContents(node);return {box:range.getBoundingClientRect(),lines:[...range.getClientRects()]};};
             const title=ink(caption),number=ink(value),top=Math.min(title.box.top,number.box.top),bottom=Math.max(title.box.bottom,number.box.bottom);
-            const titleLines=ink(caption.querySelector('.ss-group-sort-caption-text')||caption).lines;
-            const icon=caption.querySelector('.ss-sort-partial-icon'),textBox=(caption.querySelector('.ss-group-sort-caption-text')||caption).getBoundingClientRect(),iconBox=icon&&icon.getBoundingClientRect();
-            result.badge={height:box.height/scale,captionLines:titleLines.length,
+            const text=caption.querySelector('.ss-group-sort-caption-text'),titleInk=ink(text).lines,textBox=text.getBoundingClientRect(),style=getComputedStyle(text);
+            const titleLines=new Set(titleInk.map(rect=>rect.top)).size;
+            const icon=caption.querySelector('.ss-sort-partial-icon'),iconBox=icon&&icon.getBoundingClientRect(),help=badge.getAttribute('data-ss-help');
+            const inside=(part,owner)=>part.left>=owner.left-scale&&part.right<=owner.right+scale&&part.top>=owner.top-scale&&part.bottom<=owner.bottom+scale;
+            const clipped=text.scrollWidth>text.clientWidth+1;
+            const ellipsis=clipped&&style.whiteSpace==='nowrap'&&style.overflowX==='hidden'&&style.textOverflow==='ellipsis'&&
+              help&&badge.getAttribute('aria-label')===help&&badge.getAttribute('aria-controls')==='ss-help-tooltip';
+            result.badge={width:box.width/scale,height:box.height/scale,captionLines:titleLines,clipped,
               partial:caption.querySelectorAll('.ss-sort-partial-icon').length===1&&!caption.textContent.includes('*'),
               iconAdjacent:!iconBox||(Math.abs((iconBox.left-textBox.right)/scale-4)<=0.5&&
                 Math.abs((iconBox.top+iconBox.bottom-textBox.top-textBox.bottom)/2)<=scale&&iconBox.right<=box.right+scale),
               captionHeight:caption.getBoundingClientRect().height/scale,valueHeight:value.getBoundingClientRect().height/scale,
               centered:Math.abs((top+bottom)/2-(box.top+box.bottom)/2)<=1.5*scale,
               separate:title.box.bottom<=number.box.top+scale,
-              fits:title.lines.concat(number.lines).every(rect=>rect.left>=box.left-scale&&rect.right<=box.right+scale&&rect.top>=box.top-scale&&rect.bottom<=box.bottom+scale)};
+              fits:inside(textBox,box)&&titleLines===1&&(titleInk.every(rect=>inside(rect,textBox))||ellipsis)&&
+                number.lines.length===1&&number.lines.every(rect=>inside(rect,box))};
           }
           return result;
         },scale);
@@ -122,10 +128,10 @@ module.exports=async({browser,nativeHost,check})=>{
         if(geometry.badge){
           const b=geometry.badge;
           check('The statistic frame fits its centered caption and value with small padding '+metric+'/'+statistic+'/'+scale+': '+JSON.stringify(b),
-            b.height>=b.captionHeight+b.valueHeight+5&&b.height<=b.captionHeight+b.valueHeight+7&&
+            b.width<=132&&b.height>=b.captionHeight+b.valueHeight+5&&b.height<=b.captionHeight+b.valueHeight+7&&
             b.centered&&b.separate&&b.fits&&b.iconAdjacent&&b.valueHeight<=20);
-          if(metric==='credits_costs')check('A short statistic caption uses one centered line at '+scale,b.captionLines===1);
-          if(metric==='credits_income_received')check('A longer statistic caption widens its own column without wrapping at '+scale,b.captionLines===1);
+          if(metric==='credits_costs')check('A short statistic caption uses one complete line at '+scale,b.captionLines===1&&!b.clipped);
+          if(metric==='credits_income_received')check('A longer statistic caption uses one line in a compact badge at '+scale,b.captionLines===1&&b.width<=132);
           if(options.partial)check('A partial statistic keeps its marker inside the centered block at '+scale,b.partial);
         }
         if(metric==='credits_costs'&&scale===1){
@@ -140,14 +146,20 @@ module.exports=async({browser,nativeHost,check})=>{
         const box=badge.getBoundingClientRect(),caption=badge.querySelector('.ss-group-sort-caption'),value=badge.querySelector('.ss-group-sort-number');
         const ink=node=>{const range=document.createRange();range.selectNodeContents(node);return [...range.getClientRects()];};
         const title=ink(caption),number=ink(value),text=title.concat(number),top=Math.min(...text.map(r=>r.top)),bottom=Math.max(...text.map(r=>r.bottom));
-        return {captionLines:ink(caption.querySelector('.ss-group-sort-caption-text')||caption).length,valueLines:number.length,
+        const captionText=caption.querySelector('.ss-group-sort-caption-text'),captionStyle=getComputedStyle(captionText),help=badge.getAttribute('data-ss-help');
+        const icon=caption.querySelector('.ss-sort-partial-icon');
+        const inside=(rect,owner)=>rect.left>=owner.left-scale&&rect.right<=owner.right+scale&&rect.top>=owner.top-scale&&rect.bottom<=owner.bottom+scale;
+        const captionFits=ink(captionText).every(rect=>inside(rect,captionText.getBoundingClientRect()))||
+          captionText.scrollWidth>captionText.clientWidth+1&&captionStyle.whiteSpace==='nowrap'&&captionStyle.textOverflow==='ellipsis'&&captionStyle.overflowX==='hidden'&&
+          help&&badge.getAttribute('aria-label')===help&&badge.getAttribute('aria-controls')==='ss-help-tooltip';
+        return {captionLines:new Set(ink(captionText).map(rect=>rect.top)).size,valueLines:number.length,
           partial:caption.querySelectorAll('.ss-sort-partial-icon').length===1&&!caption.textContent.includes('*'),height:box.height/scale,
           captionHeight:caption.getBoundingClientRect().height/scale,valueHeight:value.getBoundingClientRect().height/scale,
           value:value.textContent.replace(/\s/g,''),centered:Math.abs((top+bottom)/2-(box.top+box.bottom)/2)<=1.5*scale,
-          fits:text.every(rect=>rect.left>=box.left-scale&&rect.right<=box.right+scale&&rect.top>=box.top-scale&&rect.bottom<=box.bottom+scale)};
+          fits:captionFits&&icon&&inside(icon.getBoundingClientRect(),box)&&inside(caption.getBoundingClientRect(),box)&&number.every(rect=>inside(rect,box))};
       },scale);
-      check('A signed ten-digit value and partial warning remain fully visible in a content-sized badge at '+scale+': '+JSON.stringify(large),
-        large.captionLines>=1&&large.valueLines>=1&&large.partial&&large.value==='-1234567890'&&
+      check('A signed ten-digit value and partial warning remain fully visible in a compact badge at '+scale+': '+JSON.stringify(large),
+        large.captionLines===1&&large.valueLines===1&&large.partial&&large.value==='-1234567890'&&
         large.height>=large.captionHeight+large.valueHeight+5&&large.height<=large.captionHeight+large.valueHeight+7&&large.centered&&large.fits);
       await publish('credits_costs','max');
       async function tableGeometry(){return page.locator('#ss-groups .ss-group').evaluate((card,scale)=>{

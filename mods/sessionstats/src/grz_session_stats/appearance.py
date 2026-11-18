@@ -640,7 +640,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-title-controls-row.ss-title-controls-stacked .ss-title-actions { height:60rem; min-height:60rem; flex-wrap:wrap; align-content:flex-start; }
 .ss-title-controls-row.ss-title-controls-stacked .ss-time-point-controls { flex:0 0 244rem; width:244rem; }
 .ss-has-help { cursor:help; }
-.ss-help-tooltip { display:none; position:absolute; z-index:95; width:320rem; padding:9rem 11rem; border:1rem solid {{colors.confirmation_border}}; border-radius:{{radii.control}}rem; background:{{colors.window_background}}; color:{{colors.body_text}}; font-family:Warhelios, Arial, sans-serif; font-size:12rem; line-height:17rem; white-space:pre-line; overflow:hidden; box-shadow:0 3rem 14rem {{colors.title_text_shadow}}, inset 0 1rem {{colors.button_shadow_2}}; pointer-events:none; }
+.ss-help-tooltip-anchor { position:absolute; z-index:95; display:flex; flex-direction:column; align-items:flex-start; pointer-events:none; }
+.ss-help-tooltip { display:none; flex:0 0 auto; width:auto; max-width:100%; padding:9rem 11rem; border:1rem solid {{colors.confirmation_border}}; border-radius:{{radii.control}}rem; background:{{colors.window_background}}; color:{{colors.body_text}}; font-family:Warhelios, Arial, sans-serif; font-size:12rem; line-height:17rem; white-space:pre-line; overflow-wrap:break-word; overflow:hidden; box-shadow:0 3rem 14rem {{colors.title_text_shadow}}, inset 0 1rem {{colors.button_shadow_2}}; pointer-events:none; }
 .ss-info-button { display:flex; align-items:center; justify-content:center; flex:0 0 16rem; min-width:16rem; width:16rem; height:16rem; padding:0; margin:0 0 0 5rem; border:1rem solid {{colors.button_border}}; border-radius:{{radii.window}}rem; color:{{colors.button_text}}; background:{{colors.window_background}}; box-shadow:none; text-shadow:none; font-family:Warhelios, Arial, sans-serif; font-size:12rem; font-style:normal; font-weight:normal; line-height:14rem; cursor:help; }
 .ss-info-button:hover, .ss-info-button:focus, .ss-info-button[aria-expanded="true"] { outline:1rem solid {{colors.session_tab_marker_background}}; outline-offset:1rem; color:{{colors.button_hover_text}}; border-color:{{colors.session_tab_marker_background}}; background:{{colors.table_row_hover_background}}; box-shadow:0 0 5rem {{colors.session_tab_marker_background}}; }
 /* Gameface captions need an explicit text box and individual font properties;
@@ -751,11 +752,11 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-aggregate .ss-group-rate .ss-kpi-value { font-size:17rem; }
 .ss-group-sort-host { position:relative; display:flex; flex:0 0 auto; align-items:center; justify-content:center; width:auto; min-width:0; padding:0 3rem; text-align:center; }
 .ss-group-sort-host[data-ss-sort-display="empty"] { display:none; }
-.ss-group-sort-caption { display:flex; align-items:center; justify-content:center; width:auto; color:{{colors.list_meta_text}}; font-size:11rem; font-weight:normal; line-height:13rem; white-space:nowrap; }
-.ss-group-sort-caption-text { display:block; flex:0 0 auto; min-width:0; white-space:nowrap; }
+.ss-group-sort-caption { display:flex; align-items:center; justify-content:center; width:auto; min-width:0; max-width:100%; color:{{colors.list_meta_text}}; font-size:11rem; font-weight:normal; line-height:13rem; white-space:nowrap; }
+.ss-group-sort-caption-text { display:block; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ss-group-sort-caption > .ss-sort-partial-icon { flex:0 0 14rem; }
 .ss-group-sort-number { display:block; width:auto; margin:0; color:{{colors.kpi_value_text}}; font-size:16rem; line-height:19rem; white-space:nowrap; }
-.ss-group-sort-host .ss-group-sort-value { display:flex; flex:0 0 auto; flex-direction:column; align-items:center; justify-content:center; width:auto; height:auto; min-height:0; margin:0; padding:3rem 6rem; border:0; text-align:center; }
+.ss-group-sort-host .ss-group-sort-value { display:flex; flex:0 0 auto; flex-direction:column; align-items:center; justify-content:center; width:100%; height:auto; min-height:0; margin:0; padding:3rem 6rem; border:0; text-align:center; }
 .ss-group-sort-host .ss-group-sort-caption, .ss-group-sort-host .ss-group-sort-number { flex:0 0 auto; height:auto; min-height:0; text-align:center; }
 /* Paint numbers outside the button; explicit nonwrapping flex items reserve its lane. */
 .ss-metric-battle-link { display:block; min-width:0; width:100%; min-height:26rem; margin:0; padding:3rem 0; border:1rem solid {{colors.button_border}}; border-radius:{{radii.control}}rem; background:linear-gradient({{colors.button_background_start}},{{colors.button_background_middle}} 48%,{{colors.button_background_end}}); color:{{colors.button_text}}; font-family:Warhelios, Arial, sans-serif; font-size:14rem; font-weight:normal; line-height:20rem; text-align:center; cursor:pointer; }
@@ -781,14 +782,10 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-aggregate.ss-compact-headline .ss-group-identity,
 .ss-aggregate.ss-inline-docked-headline .ss-group-identity { flex:0 0 auto; min-height:36rem; }
 .ss-aggregate.ss-compact-headline .ss-group-stats { justify-content:flex-end; max-width:100%; flex-wrap:wrap; margin-top:3rem; }
-.ss-compact-headline .ss-group-sort-host, .ss-inline-docked-headline .ss-group-sort-host { flex:0 0 196rem; width:196rem; max-width:100%; }
-.ss-compact-headline .ss-group-sort-host .ss-group-sort-value, .ss-inline-docked-headline .ss-group-sort-host .ss-group-sort-value { width:100%; }
-.ss-compact-headline .ss-group-sort-caption, .ss-inline-docked-headline .ss-group-sort-caption { min-width:0; max-width:100%; }
-.ss-compact-headline .ss-group-sort-caption-text, .ss-inline-docked-headline .ss-group-sort-caption-text { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .ss-more-panel { display:flex; flex-wrap:wrap; align-items:flex-start; padding:5rem 0 2rem; border-top:1rem solid {{colors.group_tabs_border_bottom}}; font-size:13rem; line-height:18rem; overflow-wrap:break-word; }
 .ss-more-panel > p { width:100%; margin:3rem 5rem; }
 .ss-more-title { margin:4rem 5rem; color:{{colors.session_tab_active_text}}; font-size:13rem; line-height:18rem; }
-.ss-more-mission { display:block; width:100%; margin:0 0 6rem; padding:6rem 7rem; border:1rem solid {{colors.details_separator_border_top}}; border-radius:{{radii.table_row}}rem; background:{{colors.table_header_background_end}}; }
+.ss-more-mission { display:block; width:100%; margin:0 0 6rem; padding:6rem 7rem; border:1rem solid {{colors.details_separator_border_top}}; border-radius:{{radii.table_row}}rem; }
 .ss-more-caption { color:{{colors.period_text}}; font-size:12rem; line-height:16rem; }
 /* Map history stays a small native flex list. Each owned jump action remains
    separate from the row's name, date, rating and result text. */
@@ -866,7 +863,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-resize-e, .ss-resize-w { width:6rem; cursor:ew-resize; }
 .ss-more-columns { display:block; width:100%; min-width:0; }
 .ss-more-columns-paired { display:flex; flex-wrap:nowrap; align-items:flex-start; }
-.ss-more-mission-block { flex:0 0 auto; min-width:0; max-width:100%; width:100%; padding:0 0 4rem; }
+.ss-more-mission-block { flex:0 0 auto; min-width:0; max-width:100%; width:100%; padding:1rem 0 4rem; border-radius:{{radii.table_row}}rem; background:{{colors.table_header_background_end}}; }
 .ss-more-mission-continuation { flex:0 0 100%; margin-top:3rem; border-top:1rem solid {{colors.details_separator_border_top}}; }
 .ss-more-reward-block { flex:1 1 220rem; min-width:0; max-width:100%; padding:0 0 4rem; }
 /* The current point total stays beside its heading. Additional point sources
@@ -894,7 +891,6 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-more-mission-row:last-child { margin-bottom:0; }
 .ss-more-mission-row .ss-more-mission { min-width:0; max-width:100%; margin-bottom:0; }
 .ss-more-mission:last-child { margin-bottom:0; }
-.ss-more-mission.ss-more-mission-even { background:{{colors.table_row_hover_background}}; }
 .ss-more-table.ss-more-missions { border:0; background:{{colors.close_background}}; }
 .ss-more-table .ss-more-mission-name { display:block; min-width:0; width:100%; padding:0; }
 .ss-more-mission-name strong { display:block; }

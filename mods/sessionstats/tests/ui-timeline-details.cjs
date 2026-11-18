@@ -581,7 +581,7 @@ module.exports = async function ({browser, nativeHost, check}) {
 
   for(const edge of ['nw','ne','sw','se','n','e','s','w']) {
     const resize=await nativeHost(browser, {
-      initialViewport:{width:1600,height:1100},viewport:{width:1600,height:1100,scale:1},
+      initialViewport:{width:1600,height:1100},viewport:{width:1600,height:1100,scale:1},realTimers:true,
     });
     const horizontal=/[ew]/.test(edge),vertical=/[ns]/.test(edge);
     const x=edge.includes('w') ? 6 : edge.includes('e') ? 694 : 350;
@@ -637,7 +637,7 @@ module.exports = async function ({browser, nativeHost, check}) {
 
   for(const edge of ['e','w','n','s']) {
     const small=await nativeHost(browser, {
-      initialViewport:{width:1600,height:1100},viewport:{width:1600,height:1100,scale:1},
+      initialViewport:{width:1600,height:1100},viewport:{width:1600,height:1100,scale:1},realTimers:true,
     });
     const horizontal=/[ew]/.test(edge),native=edge==='w' || edge==='s';
     const requestedWidth=horizontal ? 700 : 430,requestedHeight=horizontal ? 330 : 620;
@@ -678,17 +678,26 @@ module.exports = async function ({browser, nativeHost, check}) {
   }
 
   const captured = await nativeHost(browser, {
-    initialViewport:{width:1600,height:1100},viewport:{width:1600,height:1100,scale:1},
+    initialViewport:{width:1600,height:1100},viewport:{width:1600,height:1100,scale:1},realTimers:true,
   });
   await captured.locator('#ss-resize-grip').dispatchEvent('pointerdown',{
     button:0,pointerId:91,clientX:694,clientY:724,
   });
-  await captured.evaluate(() => {
+  const livePreview = await captured.evaluate(() => new Promise(resolve => {
     window.__gestureToken = __grzCommands.filter(command => command.action === 'resize_begin').pop().token;
-    GRZSessionStats.update({resize_gesture:{token:__gestureToken,width:860,height:810,active:true}});
-  });
-  await captured.waitForFunction(() => __nativeSize[0] === 860 && __nativeSize[1] === 810);
+    const panel = document.getElementById('grz-session-stats'), groups = document.getElementById('ss-groups');
+    const stale = panel.getBoundingClientRect();
+    panel.getBoundingClientRect = () => stale;
+    GRZSessionStats.update({resize_gesture:{token:__gestureToken,width:1400,height:810,active:true}});
+    setTimeout(() => resolve({size:__nativeSize,wide:groups.classList.contains('ss-two-columns')}),0);
+  }));
+  check('An in-bounds stale DOM rectangle cannot delay the native shell until the card layout',
+    livePreview.size[0] === 1400 && livePreview.size[1] === 810 && !livePreview.wide);
+  await captured.waitForFunction(() => document.getElementById('ss-groups').classList.contains('ss-two-columns'));
+  check('Pausing while the pointer is still held applies the deferred card layout',
+    await captured.evaluate(() => __nativeSize[0] === 1400 && !__grzCommands.some(command => command.action === 'resize_end')));
   await captured.evaluate(() => {
+    delete document.getElementById('grz-session-stats').getBoundingClientRect;
     document.dispatchEvent(new PointerEvent('pointercancel',{pointerId:91,bubbles:true}));
     window.dispatchEvent(new Event('blur'));
     GRZSessionStats.update({resize_gesture:{token:__gestureToken,width:940,height:890,active:true}});

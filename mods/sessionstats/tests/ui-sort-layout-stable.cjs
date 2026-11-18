@@ -76,9 +76,22 @@ module.exports=async({browser,nativeHost,check})=>{
               });
               const field=document.querySelector('.ss-sort-statistic'),trigger=document.querySelector('#ss-sort-statistic .ss-select-trigger');
               const host=card.querySelector('.ss-group-sort-host');
-              const hostBox=host.getBoundingClientRect(),parts=host.querySelectorAll('.ss-group-sort-caption,.ss-group-sort-number,.ss-count-coverage');
-              const hostFits=[...parts].every(node=>{const box=node.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node);
-                return [...range.getClientRects()].every(part=>part.left>=box.left-1&&part.right<=box.right+1&&part.top>=box.top-1&&part.bottom<=box.bottom+1);});
+              const hostBox=host.getBoundingClientRect(),badge=host.querySelector('.ss-group-sort-value');
+              const inside=(part,owner)=>part.left>=owner.left-1&&part.right<=owner.right+1&&part.top>=owner.top-1&&part.bottom<=owner.bottom+1;
+              const ink=node=>{const range=document.createRange();range.selectNodeContents(node);return [...range.getClientRects()];};
+              let hostFits=true;
+              if(badge&&hostBox.width){
+                const badgeBox=badge.getBoundingClientRect(),caption=badge.querySelector('.ss-group-sort-caption-text'),number=badge.querySelector('.ss-group-sort-number');
+                const captionBox=caption.getBoundingClientRect(),captionInk=ink(caption),numberBox=number.getBoundingClientRect(),numberInk=ink(number);
+                const icon=badge.querySelector('.ss-sort-partial-icon'),style=getComputedStyle(caption),help=badge.getAttribute('data-ss-help');
+                const scale=parseFloat(getComputedStyle(document.documentElement).fontSize)||1;
+                const ellipsis=caption.scrollWidth>caption.clientWidth&&style.whiteSpace==='nowrap'&&style.overflowX==='hidden'&&style.textOverflow==='ellipsis'&&
+                  !!help&&badge.getAttribute('aria-label')===help&&badge.getAttribute('aria-controls')==='ss-help-tooltip'&&badge.getAttribute('title')===null;
+                hostFits=badgeBox.width<=132*scale&&inside(badgeBox,hostBox)&&inside(captionBox,badgeBox)&&inside(numberBox,badgeBox)&&
+                  (!icon||inside(icon.getBoundingClientRect(),badgeBox))&&new Set(captionInk.map(part=>part.top)).size===1&&
+                  (captionInk.every(part=>inside(part,captionBox))||ellipsis)&&
+                  numberInk.length===1&&numberInk.every(part=>inside(part,numberBox));
+              }
               const header=card.querySelector('.ss-group-header'),headerBox=header.getBoundingClientRect();
               const contained=nodes=>nodes.filter(node=>node.getBoundingClientRect().width>0).every(node=>{
                 const box=node.getBoundingClientRect();

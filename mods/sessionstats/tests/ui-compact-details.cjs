@@ -129,13 +129,27 @@ module.exports=async({browser,nativeHost,check})=>{
           return [...range.getClientRects()].some(text=>text.left<box.left-scale||text.right>box.right+scale||text.top<box.top-scale||text.bottom>box.bottom+scale);
         }).map(node=>node.textContent);
         window.__wideHistory={body,rows};
-        return {height:bounds.height/scale,overflow,columns:rows.length===10&&rects.every((b,index)=>index%2===0||
+        return {height:bounds.height/scale,width:panel.closest('.ss-group').getBoundingClientRect().width/scale,overflow,columns:rows.length===10&&rects.every((b,index)=>index%2===0||
           Math.abs(b.top-rects[index-1].top)<=scale&&rects[index-1].right<b.left&&b.right<=bounds.right),
           chronological:rows.every((row,index)=>row.getAttribute('data-battle-id')==='compact-'+index),
           actions:rows.every((row,index)=>row.querySelector('.ss-map-battle-open').getAttribute('data-battle-id')==='compact-'+index)};
       },scale);
       check('Ultra-wide '+group+' history fits ten ordered battles into five readable rows in '+language+' at '+(scale*100)+'%: '+JSON.stringify(layoutWide),
         layoutWide.columns && layoutWide.chronological && layoutWide.actions && layoutWide.height<330 && !layoutWide.overflow.length);
+      await page.setViewportSize({width:1100*scale,height:2400});
+      await page.evaluate(scale=>{
+        const data=JSON.parse(model.payload);data.viewport.width=1100*scale;
+        model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();
+      },scale);await frames(page);
+      const singleLane=await panel.evaluate((panel,scale)=>{
+        const body=panel.querySelector('.ss-history-body'),rows=[...body.querySelectorAll('.ss-map-battle-row')];
+        const card=panel.closest('.ss-group');
+        return {width:card.getBoundingClientRect().width/scale,oneLane:!document.getElementById('ss-groups').classList.contains('ss-two-columns'),
+          retained:body===__wideHistory.body&&rows.length===10&&rows.every((row,index)=>row===__wideHistory.rows[index]),
+          pairs:rows.every((row,index)=>index%2===0||Math.abs(row.getBoundingClientRect().top-rows[index-1].getBoundingClientRect().top)<=scale)};
+      },scale);
+      check('A same-width '+group+' card keeps paired history in one outer lane at '+(scale*100)+'%: '+JSON.stringify(singleLane),
+        singleLane.oneLane&&singleLane.retained&&singleLane.pairs&&Math.abs(singleLane.width-layoutWide.width)<=1);
       await page.setViewportSize({width:1400*scale,height:2400});
       await page.evaluate(scale=>{
         const data=JSON.parse(model.payload);data.viewport.width=1400*scale;
