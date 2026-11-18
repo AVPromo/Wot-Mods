@@ -14,7 +14,8 @@ from unittest.mock import patch
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-SCRIPT=ROOT/'source/build_wotmod.py'
+REPO_ROOT=ROOT.parents[1]
+SCRIPT=ROOT/'tools/build_wotmod.py'
 spec=importlib.util.spec_from_file_location('build_wotmod_v161', SCRIPT)
 build=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
@@ -124,7 +125,7 @@ class Tests(unittest.TestCase):
             self.assertIsNone(z.testzip())
 
     def test_18_no_runtime_python_dependencies_from_our_tooling(self):
-        code=(ROOT/'source/mod_staysharp_medkit.py').read_text()
+        code=(ROOT/'src/mod_staysharp_medkit.py').read_text()
         self.assertNotIn('from PIL import',code)
         self.assertNotIn('import numpy',code)
 
@@ -312,7 +313,7 @@ class Tests(unittest.TestCase):
 
     def test_28_new_release_installer_preserves_the_verified_audio_build(self):
         installer_spec = importlib.util.spec_from_file_location(
-            'audio_release_installers', ROOT / 'scripts/release_installers.py')
+            'audio_release_installers', REPO_ROOT / 'scripts/release_installers.py')
         installers = importlib.util.module_from_spec(installer_spec)
         installer_spec.loader.exec_module(installers)
         with tempfile.TemporaryDirectory(prefix='staysharp-installer-') as directory:
@@ -379,7 +380,7 @@ class Tests(unittest.TestCase):
         with zipfile.ZipFile(self.target) as archive:
             for name in ('__init__', 'hotkeys', 'settings', 'garage', 'views'):
                 with self.subTest(module=name):
-                    source = (ROOT / 'source/staysharp_medkit' / (name + '.py')).read_bytes()
+                    source = (ROOT / 'src/staysharp_medkit' / (name + '.py')).read_bytes()
                     filename = 'staysharp_medkit/%s.py' % name
                     data = archive.read('res/scripts/client/staysharp_medkit/%s.pyc' % name)
                     self.assertTrue(data.startswith(build.MAGIC_PY27))
@@ -392,9 +393,9 @@ class Tests(unittest.TestCase):
         with zipfile.ZipFile(self.target) as archive:
             for name in ('footer.js', 'footer.css', 'settings.html', 'settings.js', 'settings.css', 'settings_camo.png'):
                 self.assertEqual(archive.read('res/gui/gameface/mods/staysharp_medkit/' + name),
-                                 (ROOT / 'source/staysharp_medkit/ui' / name).read_bytes())
+                                 (ROOT / 'src/staysharp_medkit/ui' / name).read_bytes())
             self.assertEqual(archive.read('res/gui/gen_resources/grz.staysharp_medkit.json'),
-                             (ROOT / 'source/staysharp_medkit/ui/grz.staysharp_medkit.json').read_bytes())
+                             (ROOT / 'src/staysharp_medkit/ui/grz.staysharp_medkit.json').read_bytes())
 
     def test_33_runtime_allowlist_excludes_unreviewed_files(self):
         with tempfile.TemporaryDirectory(prefix='staysharp-reviewed-package-') as directory:
@@ -407,9 +408,9 @@ class Tests(unittest.TestCase):
             for name in ('footer.js', 'footer.css', 'settings.html', 'settings.js', 'settings.css'):
                 (ui / name).write_bytes(b'/* reviewed */')
             (ui / 'settings_camo.png').write_bytes(
-                (ROOT / 'source/staysharp_medkit/ui/settings_camo.png').read_bytes())
+                (ROOT / 'src/staysharp_medkit/ui/settings_camo.png').read_bytes())
             (ui / 'grz.staysharp_medkit.json').write_bytes(
-                (ROOT / 'source/staysharp_medkit/ui/grz.staysharp_medkit.json').read_bytes())
+                (ROOT / 'src/staysharp_medkit/ui/grz.staysharp_medkit.json').read_bytes())
             (package / 'unreviewed.py').write_bytes(b'raise RuntimeError()')
             (ui / 'unreviewed.js').write_bytes(b'throw new Error();')
             (ui / 'credentials.json').write_bytes(b'{}')
@@ -467,7 +468,7 @@ class Tests(unittest.TestCase):
         }])
 
     def test_38_unexpected_or_duplicate_registry_entries_are_rejected(self):
-        source = (ROOT / 'source/staysharp_medkit/ui/grz.staysharp_medkit.json').read_bytes()
+        source = (ROOT / 'src/staysharp_medkit/ui/grz.staysharp_medkit.json').read_bytes()
         registry = json.loads(source)
         invalid = [b'not JSON', json.dumps(registry * 2).encode('ascii')]
         for field, value in (('id', 'R.mods.other.views.Settings'),

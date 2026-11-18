@@ -11,7 +11,7 @@ import types
 import unittest
 from unittest.mock import Mock, patch
 
-SOURCE = Path(__file__).resolve().parents[1] / 'source/staysharp_medkit'
+SOURCE = Path(__file__).resolve().parents[1] / 'src/staysharp_medkit'
 PACKAGE = 'medkit_settings_tests_package'
 package = types.ModuleType(PACKAGE)
 package.__path__ = [str(SOURCE)]

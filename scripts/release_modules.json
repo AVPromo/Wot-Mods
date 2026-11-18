@@ -4,16 +4,17 @@
     {
       "id": "staysharp",
       "display_name": "Stay Sharp Medkit",
-      "base_version_file": "VERSION",
+      "base_version_file": "mods/staysharp/VERSION",
       "installer_prefix": "StaySharp-Medkit-v",
       "source_paths": [
-        "source/**",
-        "assets/**",
-        "VERSION",
-        "staysharp.medkit.example.json",
-        "CHANGELOG.md",
-        "docs/AUDIO.md",
-        "docs/INSTALACJA.md"
+        "mods/staysharp/src/**",
+        "mods/staysharp/tools/**",
+        "mods/staysharp/assets/**",
+        "mods/staysharp/VERSION",
+        "mods/staysharp/staysharp.medkit.example.json",
+        "mods/staysharp/CHANGELOG.md",
+        "mods/staysharp/docs/AUDIO.md",
+        "mods/staysharp/docs/INSTALACJA.md"
       ]
     },
     {

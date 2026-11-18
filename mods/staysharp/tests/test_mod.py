@@ -15,7 +15,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / 'source/mod_staysharp_medkit.py'
+SOURCE = ROOT / 'src/mod_staysharp_medkit.py'
 
 
 class Component:
@@ -330,7 +330,7 @@ class Tests(unittest.TestCase):
         self.patch=patch.dict(sys.modules,{'BigWorld':self.world,'GUI':self.gui,'constants':arena_module,
                  'ResMgr':self.resmgr,'SoundGroups':sound_groups,'gui':types.ModuleType('gui'),**packages})
         self.patch.start()
-        self.source_path=patch.object(sys,'path',[str(ROOT/'source')]+sys.path)
+        self.source_path=patch.object(sys,'path',[str(ROOT/'src')]+sys.path)
         self.source_path.start()
         spec=importlib.util.spec_from_file_location('mod_staysharp_v160',SOURCE)
         self.mod=importlib.util.module_from_spec(spec)

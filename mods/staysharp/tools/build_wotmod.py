@@ -19,7 +19,8 @@ import zipfile
 from xml.etree import ElementTree
 
 HERE = Path(__file__).resolve().parent
-SOURCE = HERE / 'mod_staysharp_medkit.py'
+SRC = HERE.parent / 'src'
+SOURCE = SRC / 'mod_staysharp_medkit.py'
 ASSETS = HERE.parent / 'assets'
 _audio_spec = importlib.util.spec_from_file_location('staysharp_audio_builder', HERE / 'build_audio_bank.py')
 audio = importlib.util.module_from_spec(_audio_spec)
@@ -118,7 +119,7 @@ def load_runtime_resources():
         raise ValueError('Invalid Gameface image names')
     if RESOURCE_REGISTRY != 'grz.%s.json' % PACKAGE_NAME:
         raise ValueError('Invalid Gameface registry name')
-    package = HERE / PACKAGE_NAME
+    package = SRC / PACKAGE_NAME
     resources = []
     for name in PACKAGE_MODULES:
         filename = '%s/%s.py' % (PACKAGE_NAME, name)

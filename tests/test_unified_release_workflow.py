@@ -202,12 +202,13 @@ class SinglePublisherTests(unittest.TestCase):
 
     def test_module_builder_does_not_cross_build_other_module(self):
         medkit, stats = BUILDER.split('  sessionstats)', 1)
-        self.assertIn('source/build_wotmod.py', medkit)
+        self.assertIn('mods/staysharp/tools/build_wotmod.py', medkit)
+        self.assertIn('discover -s mods/staysharp/tests', medkit)
         self.assertNotIn('scripts/sessionstats/validate.sh', medkit)
         self.assertIn('scripts/sessionstats/validate.sh', stats)
         self.assertIn('export PYTHON27=', stats)
         self.assertLess(stats.index('export PYTHON27='), stats.index('bash scripts/sessionstats/validate.sh'))
-        self.assertNotIn('source/build_wotmod.py', stats)
+        self.assertNotIn('mods/staysharp/tools/build_wotmod.py', stats)
         self.assertIn('scripts/privacy_audit.py --scan-dist', medkit)
         self.assertIn('scripts/sessionstats/release.py --verify-directory', stats)
 

@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const source = fs.readFileSync(path.join(__dirname, '../source/staysharp_medkit/ui/settings.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../src/staysharp_medkit/ui/settings.js'), 'utf8');
 function fixture(options = {}) {
     const nodes = {}, events = {}, actions = [], requests = [], timers = new Map();
     let nextTimer = 0, nativeReady = false, actual = {width:256, height:256};
