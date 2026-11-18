@@ -29,10 +29,12 @@ function sourceChecks(source=fs.readFileSync(path.join(__dirname,'../ui/session_
     currentScope:()=>({ordering:{maps:{chronology:'newest'},vehicles:{chronology:'newest'}}}),
     getOrder:scope=>scope.ordering[state.group],
     sameContext:()=>true,invoke:(action,args)=>{commands.push({action,...args});return true;},
-    battleOutcome:outcome=>outcome,date:()=> '09.11, 18:58',focusControl(){},selectMapBattle(){},invalidateCardFlow(){},queueResize(){}};
+    pinnedFilterHeight:()=>0,date:()=> '09.11, 18:58',focusControl(){},selectMapBattle(){},invalidateCardFlow(){},queueResize(){}};
   vm.createContext(context);
   function extract(startName,endName){const start=source.indexOf(startName),end=source.indexOf(endName,start);assert(start>=0 && end>start);return source.slice(start,end);}
   vm.runInContext(extract('    function wn8Color(value) {','    function headlineStat(')+
+    extract('    function battleOutcome(','    var defaultOrder = ')+
+    extract('    function nativeVisualSource(','    function appendBattleMap(')+
     extract('    var bonusLabels = {','    function missionProgress(')+
     extract('    function renderBattleMore(panel, battle) {','    function attachBattleMore(')+
     extract('    function attachMapMore(card, header, map) {','    function appendGroupBatch('),context);
@@ -68,19 +70,17 @@ function sourceChecks(source=fs.readFileSync(path.join(__dirname,'../ui/session_
     state.group=group;state.openMaps={};const card=append(documentRoot,new Node()),header=append(card,new Node());
     context.attachMapMore(card,header,{id:'synthetic-group'});header.querySelector('.ss-map-more-button').onclick();
     const body=card.querySelector('.ss-history-body'),previous=card.querySelector('.ss-map-page-previous'),next=card.querySelector('.ss-map-page-next');
-    assert(body.className.includes('ss-history-paged'),'Unknown history preserves the paging reservation');
     const item=index=>({id:'synthetic-'+index,name:'Synthetic Heavy',map:'Lakeville',started_at:1794000000-index*600,outcome:'win',wn8:1700});
     card._ssHistoryUpdate({id:'synthetic-group',battle_list:{page:0,pages:1,total:4,page_size:10,items:Array.from({length:4},(_,index)=>item(index))}});
-    assert(!body.className.includes('ss-history-paged'),'A known short single page releases the fixed viewport');
     assert.strictEqual(body.querySelectorAll('.ss-map-battle-row').length,4);
     assert(body.querySelectorAll('.ss-map-battle-wn8-value').every(node=>node.style.color==='#4c762e'),'Nested history values use the shipped WN8 text palette');
     assert(body.querySelectorAll('.ss-map-battle-wn8-label').every(node=>node.style.textShadow==='none'),'Nested history captions never receive numeric halos');
     assert(body.querySelector('.ss-map-battle-info').querySelector('.ss-map-battle-date'),'Name and date share the same flex identity');
     card._ssHistoryUpdate({id:'synthetic-group',battle_list:{page:0,pages:2,total:13,page_size:10,items:Array.from({length:10},(_,index)=>item(index))}});
-    assert(body.className.includes('ss-history-paged'),'A multi-page history reserves its stable viewport');next.onclick();
+    assert.strictEqual(body.querySelectorAll('.ss-map-battle-row').length,10);next.onclick();
     card._ssHistoryUpdate({id:'synthetic-group',battle_list:{page:1,pages:2,total:13,page_size:10,items:Array.from({length:3},(_,index)=>item(index+10))}});
     assert.strictEqual(card.querySelector('.ss-history-body'),body);assert.strictEqual(card.querySelector('.ss-map-page-previous'),previous);
-    assert.strictEqual(card.querySelector('.ss-map-page-next'),next);assert(body.className.includes('ss-history-paged'),'A partial last page keeps its reserved height');
+    assert.strictEqual(card.querySelector('.ss-map-page-next'),next);
     assert.strictEqual(body.querySelectorAll('.ss-map-battle-row').length,3);assert(!previous.disabled && next.disabled);
   }
 }
@@ -102,13 +102,13 @@ module.exports=async({browser,nativeHost,check})=>{
       await page.locator('#ss-group-'+group).click();await page.locator('.ss-map-more-button').click();await frames(page);
       const layout=await page.locator('.ss-map-battles').evaluate((panel,scale)=>{
         const body=panel.querySelector('.ss-history-body'),rows=[...body.querySelectorAll('.ss-map-battle-row')];
-        return {height:body.getBoundingClientRect().height/scale,paged:body.classList.contains('ss-history-paged'),
+        return {height:body.getBoundingClientRect().height/scale,overflow:getComputedStyle(body).overflowY,
           rows:rows.map(row=>{const name=row.querySelector('.ss-map-battle-name').getBoundingClientRect(),date=row.querySelector('.ss-map-battle-date').getBoundingClientRect();
             return {inline:name.right<=date.left+1 && Math.min(name.bottom,date.bottom)>Math.max(name.top,date.top),
               dateFont:parseFloat(getComputedStyle(row.querySelector('.ss-map-battle-date')).fontSize)/scale};})};
       },scale);
       check('Four '+group+' battles use compact rows with readable inline dates at '+(scale*100)+'%: '+JSON.stringify(layout),
-        !layout.paged && layout.height>0 && layout.height<240 && layout.rows.length===4 && layout.rows.every(row=>row.inline && row.dateFont>=13));
+        layout.overflow==='visible' && layout.height>0 && layout.height<240 && layout.rows.length===4 && layout.rows.every(row=>row.inline && row.dateFont>=13));
       const language=group==='maps'?(scale===1?'ru':'fr'):(scale===1?'de':'pl');
       await page.evaluate(({group,scale,language,messages})=>{
         const data=JSON.parse(model.payload),sample=data.scopes.launch[group][0];
@@ -116,7 +116,10 @@ module.exports=async({browser,nativeHost,check})=>{
         data.localization={language,messages};
         sample.battle_list={page:0,pages:2,total:13,page_size:10,
           items:Array.from({length:10},(_,index)=>({id:'compact-'+index,name:'Synthetic Long Vehicle Name '+index,map:'Synthetic Long Map Name '+index,
-            started_at:1794000000-index*600,outcome:index%2?'unknown':'win',wn8:1700+index}))};
+            started_at:1794000000-index*600,outcome:index%2?'unknown':'win',wn8:1700+index,
+            visual:index===0?(group==='vehicles'?{kind:'map',src:'img://gui/maps/icons/map/small/07_lakeville.png'}:
+              {kind:'vehicle',src:'img://gui/maps/icons/vehicle/uk-GB31_Conqueror_Gun.png'}):undefined,
+            outcome_visual:index<2?{kind:'outcome',src:'img://gui/maps/icons/library/BgBattleResultIconVictory-1.png'}:undefined}))};
         model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();
       },{group,scale,language,messages:languages[language]});
       await page.locator('.ss-map-more-button').click();await frames(page);
@@ -124,18 +127,25 @@ module.exports=async({browser,nativeHost,check})=>{
       const layoutWide=await panel.evaluate((panel,scale)=>{
         const body=panel.querySelector('.ss-history-body'),rows=[...body.querySelectorAll('.ss-map-battle-row')],rects=rows.map(row=>row.getBoundingClientRect());
         const bounds=body.getBoundingClientRect();
-        const overflow=[...body.querySelectorAll('.ss-map-battle-name,.ss-map-battle-date,.ss-map-battle-outcome,.ss-map-battle-wn8,.ss-map-battle-open .ss-control-label')].filter(node=>{
+        const overflow=[...body.querySelectorAll('.ss-map-battle-name,.ss-map-battle-date,.ss-outcome-label,.ss-map-battle-wn8,.ss-map-battle-open .ss-control-label')].filter(node=>{
           const box=node.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node);
           return [...range.getClientRects()].some(text=>text.left<box.left-scale||text.right>box.right+scale||text.top<box.top-scale||text.bottom>box.bottom+scale);
         }).map(node=>node.textContent);
+        function above(art,caption){return art.getBoundingClientRect().bottom<=caption.getBoundingClientRect().top+scale;}
+        const first=rows[0],name=first.querySelector('.ss-map-battle-name'),outcome=first.querySelector('.ss-outcome-label');
+        const images=above(first.querySelector('.ss-group-thumb'),name)&&above(first.querySelector('.ss-outcome-image'),outcome)&&
+          !rows[1].querySelector('.ss-group-thumb,.ss-outcome-image')&&!!rows[1].querySelector('.ss-outcome-label').textContent;
+        const captionStyle=['fontSize','fontWeight','lineHeight','textAlign'].every(key=>getComputedStyle(name)[key]===getComputedStyle(outcome)[key]);
         window.__wideHistory={body,rows};
-        return {height:bounds.height/scale,width:panel.closest('.ss-group').getBoundingClientRect().width/scale,overflow,columns:rows.length===10&&rects.every((b,index)=>index%2===0||
+        return {width:panel.closest('.ss-group').getBoundingClientRect().width/scale,overflow,images,captionStyle,
+          natural:getComputedStyle(body).overflowY==='visible'&&rects.every(rect=>rect.bottom<=bounds.bottom+scale),columns:rows.length===10&&rects.every((b,index)=>index%2===0||
           Math.abs(b.top-rects[index-1].top)<=scale&&rects[index-1].right<b.left&&b.right<=bounds.right),
           chronological:rows.every((row,index)=>row.getAttribute('data-battle-id')==='compact-'+index),
           actions:rows.every((row,index)=>row.querySelector('.ss-map-battle-open').getAttribute('data-battle-id')==='compact-'+index)};
       },scale);
       check('Ultra-wide '+group+' history fits ten ordered battles into five readable rows in '+language+' at '+(scale*100)+'%: '+JSON.stringify(layoutWide),
-        layoutWide.columns && layoutWide.chronological && layoutWide.actions && layoutWide.height<330 && !layoutWide.overflow.length);
+        layoutWide.columns && layoutWide.chronological && layoutWide.actions && layoutWide.natural &&
+        layoutWide.images && layoutWide.captionStyle && !layoutWide.overflow.length);
       await page.setViewportSize({width:1100*scale,height:2400});
       await page.evaluate(scale=>{
         const data=JSON.parse(model.payload);data.viewport.width=1100*scale;

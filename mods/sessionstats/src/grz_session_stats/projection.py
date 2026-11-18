@@ -560,7 +560,7 @@ class ScopeIndex(object):
             rows.append({'id': record['arena_id'],
                          'name': (record.get('vehicle_name') or message('unknown.vehicle'))[:256],
                          'map': (record.get('map_name') or message('unknown.map'))[:256],
-                         'map_id': record.get('map_id'),
+                         'vehicle_id': record.get('vehicle_id'), 'map_id': record.get('map_id'),
                          'started_at': record.get('started_at'), 'outcome': record.get('outcome'), 'wn8': item[1]})
         return {'items': rows, 'page': page, 'pages': pages, 'total': total, 'page_size': MAP_BATTLE_PAGE_SIZE,
                 'chronology': options['chronology']}

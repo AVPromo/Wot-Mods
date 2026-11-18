@@ -134,10 +134,26 @@ class WindowSettingsRuntimeTests(unittest.TestCase):
         command.update(values)
         self.window._model.onAction(command)
 
+    def settings_update(self):
+        payload = self.payload()
+        return payload.get('window_settings_update') or payload['appearance']
+
     def test_command_atomically_saves_and_acknowledges_without_mutating_history(self):
         before = copy.deepcopy(self.mod.active_service._state)
+        snapshots = []
+        original_snapshot = self.window._snapshot
+
+        def snapshot():
+            snapshots.append(True)
+            return original_snapshot()
+
+        self.window._snapshot = snapshot
         self.command(maximized='true', restored_width='900', restored_height='650', background_transparency='55')
-        data = self.payload()['appearance']
+        self.assertEqual(snapshots, [])
+        data = self.payload()['window_settings_update']
+        self.assertEqual(data['account_key'], 'EU:7')
+        self.assertEqual(self.window._preferred_size, (900, 650))
+        self.assertTrue(self.window._maximized)
         self.assertEqual(data['window_settings'], {'maximized': True, 'restored_width': 900,
             'restored_height': 650, 'background_transparency': 55})
         self.assertEqual(data['window_settings_result'], {'request_id': 'window-1', 'saved': True})
@@ -159,7 +175,7 @@ class WindowSettingsRuntimeTests(unittest.TestCase):
             self.command(background_transparency='80')
         finally:
             config_files._replace_file = replace
-        data = self.payload()['appearance']
+        data = self.settings_update()
         self.assertEqual(data['window_settings']['background_transparency'], 0)
         self.assertEqual(data['window_settings_result'], {'request_id': 'window-1', 'saved': False})
 
@@ -187,9 +203,9 @@ class WindowSettingsRuntimeTests(unittest.TestCase):
     def test_stale_and_invalid_commands_never_write_and_refresh_reloads_external_values(self):
         self.command(account_key='EU:other', maximized='true')
         self.command(maximized='1')
-        self.assertFalse(self.payload()['appearance']['window_settings_result']['saved'])
+        self.assertFalse(self.settings_update()['window_settings_result']['saved'])
         self.command(maximized='true', unexpected='discard')
-        self.assertFalse(self.payload()['appearance']['window_settings_result']['saved'])
+        self.assertFalse(self.settings_update()['window_settings_result']['saved'])
         with io.open(self.path, 'r', encoding='utf-8') as handle:
             self.assertEqual(json.load(handle), self.document)
         self.document['window'].update(maximized=True, restored_width=840, background_transparency=35)

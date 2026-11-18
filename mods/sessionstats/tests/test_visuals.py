@@ -294,6 +294,33 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(payload['scopes']['launch']['battles'][0]['map_visual'],
                          {'kind': 'map', 'src': 'img://' + MAP_PATH, 'alt': 'Karelia'})
 
+    def test_visible_and_detached_histories_receive_only_verified_local_art(self):
+        payload = snapshot()
+        scope = payload['scopes']['launch']
+        win_path = 'gui/maps/icons/library/BgBattleResultIconVictory-1.png'
+        self.fixture.files.add(win_path)
+        battle = {'id': ARENA_ID, 'vehicle_id': VEHICLE_ID, 'name': 'Conqueror GC',
+                  'map_id': '01_karelia', 'map': 'Karelia', 'outcome': 'win'}
+        missing = {'name': 'Conqueror GC', 'map': 'Karelia', 'outcome': 'loss',
+                   'visual': {'src': 'stale'}, 'outcome_visual': {'src': 'stale'}}
+        for group in ('vehicles', 'maps'):
+            scope[group][0]['battle_list'] = {'items': [dict(battle), dict(missing)]}
+        scope['battle_history'] = {'kind': 'vehicles', 'id': 'detached',
+                                   'battle_list': {'items': [dict(battle), dict(missing)]}}
+
+        enrich_snapshot(payload, resolver=self.fixture.resolver)
+
+        for history, art in ((scope['vehicles'][0]['battle_list'], MAP_PATH),
+                             (scope['maps'][0]['battle_list'], VEHICLE_PATH),
+                             (scope['battle_history']['battle_list'], MAP_PATH)):
+            known, unknown = history['items']
+            self.assertEqual(known['visual']['src'], 'img://' + art)
+            self.assertEqual(known['outcome_visual']['src'], 'img://' + win_path)
+            self.assertNotIn('visual', unknown)
+            self.assertNotIn('outcome_visual', unknown)
+            self.assertEqual(unknown['map'], 'Karelia')
+        self.assertEqual(self.fixture.paths_checked.count(win_path), 1)
+
     def test_battle_map_is_not_guessed_and_stale_maps_are_removed(self):
         payload = snapshot()
         row = payload['scopes']['launch']['battles'][0]

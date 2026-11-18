@@ -82,11 +82,11 @@ module.exports=async({browser,nativeHost,check})=>{
       for(const [language,messages]of Object.entries(languages))for(const width of [550,625,863,1200,1600]){
         await publish(language,messages,width);const value=await geometry(),caption=language+'/'+scale+'x/'+width;
         check('Aggregate KPI columns stay compact, with extra room for Combined WN8 on wide cards '+caption+': '+JSON.stringify(value.kpis),
-          value.kpis.length===3&&value.kpis.slice(0,2).every((box,index)=>Math.abs(box.width-[60,62][index])<=1)&&
+          value.kpis.length===3&&value.kpis.slice(0,2).every((box,index)=>Math.abs(box.width-[value.two&&value.card.width<700?48:60,62][index])<=1)&&
           (value.card.width>=700?value.kpis[2].width>=86&&value.kpis[2].width<=110:Math.abs(value.kpis[2].width-72)<=1)&&
           value.kpis.slice(1).every((box,index)=>box.left-value.kpis[index].right>=-1&&box.left-value.kpis[index].right<=8));
         check('Sorting caption, number and warning remain contained, with full hover text for clipped captions '+caption+': '+JSON.stringify({lines:value.captionLines,caption:value.captionText,badge:value.badge}),
-          value.badge.width<=132&&value.captionLines===1&&(value.captionFits||value.captionHelp)&&
+          value.badge.width<=(value.card.width>=700?190:132)&&value.captionLines===1&&(value.captionFits||value.captionHelp)&&
           value.badgeFits&&value.partial&&value.headerFits&&value.moreFits&&value.tablesFit);
         if(width===863)check('Default single-column maps use the 720px cap and horizontal tables '+caption+': '+JSON.stringify(value),
           !value.two&&Math.abs(value.card.width-720)<=1&&value.economy.left>=value.performance.right-1&&Math.abs(value.economy.top-value.performance.top)<=1);

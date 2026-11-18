@@ -87,7 +87,8 @@ module.exports=async({browser,nativeHost,check})=>{
                 const scale=parseFloat(getComputedStyle(document.documentElement).fontSize)||1;
                 const ellipsis=caption.scrollWidth>caption.clientWidth&&style.whiteSpace==='nowrap'&&style.overflowX==='hidden'&&style.textOverflow==='ellipsis'&&
                   !!help&&badge.getAttribute('aria-label')===help&&badge.getAttribute('aria-controls')==='ss-help-tooltip'&&badge.getAttribute('title')===null;
-                hostFits=badgeBox.width<=132*scale&&inside(badgeBox,hostBox)&&inside(captionBox,badgeBox)&&inside(numberBox,badgeBox)&&
+                const maxBadgeWidth=card.classList.contains('ss-ultra-wide-headline')?190:132;
+                hostFits=badgeBox.width<=maxBadgeWidth*scale&&inside(badgeBox,hostBox)&&inside(captionBox,badgeBox)&&inside(numberBox,badgeBox)&&
                   (!icon||inside(icon.getBoundingClientRect(),badgeBox))&&new Set(captionInk.map(part=>part.top)).size===1&&
                   (captionInk.every(part=>inside(part,captionBox))||ellipsis)&&
                   numberInk.length===1&&numberInk.every(part=>inside(part,numberBox));

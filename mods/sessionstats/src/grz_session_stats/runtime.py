@@ -350,6 +350,7 @@ class Runtime(object):
         self._postbattle_queries = {}
         self._appearance_override_path = appearance_path
         self.appearance_path = None
+        self._appearance_config = None
         self._presentation = {'panel_css': '', 'footer_css': '', 'scroll_speed': 1.0}
         self._window_settings_result = None
         self.services = {}
@@ -605,9 +606,8 @@ class Runtime(object):
         except Exception:
             return None
 
-    def _load_appearance(self):
-        # Read only on start, opening the panel or explicit Refresh. Never do
-        # file I/O in a render/animation frame or on every result-polling tick.
+    def _load_appearance(self, window_settings_only=False):
+        # Read on start, opening, explicit Refresh and after a settings save.
         try:
             from .appearance import load_config, build_presentation
             from .config_path import prepare_config_path
@@ -616,6 +616,12 @@ class Runtime(object):
                 path = prepare_config_path()
             self.appearance_path = path
             config = load_config(path)
+            if (window_settings_only and self._appearance_config is not None and
+                    all(config[key] == self._appearance_config.get(key) for key in config if key != 'window')):
+                self._appearance_config = config
+                self._presentation['window_settings'] = dict(config['window'])
+                self._presentation['window_settings_result'] = dict(self._window_settings_result)
+                return True
             from .date_locale import resolve_date_settings
             client_language = self._client_language()
             self._localizer = Localizer(config['language'],
@@ -625,10 +631,12 @@ class Runtime(object):
                                             client_language or config['language'], self._date_settings(), config['date_time']))
             self._presentation = build_presentation(config)
             self._instance_tab_enabled = config['sessions']['instance_tab']
+            self._appearance_config = config
         except Exception:
             # An unavailable optional configuration layer cannot stop result
             # collection. Static styles and the original wheel step remain.
             self._presentation = {'panel_css': '', 'footer_css': '', 'scroll_speed': 1.0}
+            self._appearance_config = None
             self._instance_tab_enabled = False
             from .date_locale import resolve_date_settings
             client_language = self._client_language()
@@ -642,6 +650,7 @@ class Runtime(object):
         if self.running and self.active_service is not None:
             self._ensure_installation_session()
         self._publish_appearance()
+        return False
 
     def _publish_appearance(self):
         if not self.running:
@@ -1715,8 +1724,11 @@ class Runtime(object):
             self._window_settings_result = {'request_id': request, 'saved': bool(saved)}
             # Re-read the actual file even after a rejected concurrent edit or
             # failed publication. The UI rolls back to persisted settings.
-            self._load_appearance()
-            self._window_call('refresh')
+            window_only = self._load_appearance(window_settings_only=True)
+            if (not window_only or not callable(getattr(self.window, 'publish_window_settings', None)) or
+                    not self._window_call('publish_window_settings', self.active_key,
+                                          self._presentation['window_settings'], self._window_settings_result)):
+                self._window_call('refresh')
         elif action == 'refresh':
             self._load_appearance()
             self._refresh_posted()

@@ -1,4 +1,4 @@
-GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.26 (persistent data schema unchanged)
+GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.27 (persistent data schema unchanged)
 Release date: 2026-11-17.
 
 Target: World of Tanks PC Wargaming EU 2.4.1.1, Python 2.7 runtime.
@@ -82,7 +82,7 @@ to current launch just because received now. Use returned battle start time in a
 
 SNAPSHOT -> Window ViewModel string property `payload`
 {
- version: '0.9.26', account_key: string, generated_at: unix seconds,
+ version: '0.9.27', account_key: string, generated_at: unix seconds,
  expected: {version: string, ...}, warnings: [string],
  appearance: {panel_css:string, footer_css:string, scroll_speed:number},
  recovery: {pending:int, in_flight:int, states:{status_label:int}},
@@ -93,6 +93,10 @@ SNAPSHOT -> Window ViewModel string property `payload`
            summary:SUMMARY_STATS, vehicles:[GROUP], maps:[GROUP], tiers:[GROUP], battles:[BATTLE_ROW]}
  }
 }
+An ordinary window preference save publishes `window_settings_update` with the
+account key, canonical window settings and request result. The view applies the
+matching acknowledgement in place. Other configuration changes discovered on
+disk go through the full snapshot path.
 STATS = {
  battles:int, observed_battles:int, missing_results:int, partial_results:int,
  wins:int, losses:int, draws:int, win_rate:number or null,
@@ -476,7 +480,9 @@ GROUP BATTLE HISTORY AND ACTIVE SORT VALUES
 set_vehicle_battles(scope, vehicle_id, page, period_id) follows set_map_battles.
 The vehicle_battles UI action carries account_key, scope, vehicle_id, zero-based
 page and period_id. Visible subscribed group rows expose battle_list with
-items {id, name, map, started_at, outcome, wn8}, page, pages, total, page_size.
+items {id, name, vehicle_id, map, map_id, started_at, outcome, wn8}, page, pages,
+total, page_size. Resolved local art may appear as visual and outcome_visual above
+their labels. The page expands to its rows inside the main window's scrollbar.
 Both group histories retain one chronological index and slice at most ten rows.
 Their direction follows the group chronology (oldest/last_asc ascending, otherwise
 descending), including when an advanced metric is active. battle_list includes chronology.

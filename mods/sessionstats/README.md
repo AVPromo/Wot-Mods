@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.26 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.27 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -299,6 +299,8 @@ background); text and controls retain their own opacity. Window controls save
 and `window.restored_height` to the same configuration, preserving unrelated
 fields. Restored dimensions use logical pixels. A smaller viewport temporarily
 clamps the surface without discarding the saved size.
+The view applies preference-only save replies in place, preserving the existing
+statistics and controls after a resize.
 
 Every two-column tab uses staggered cards connected to a dashed central axis.
 Several battle cards can keep More open together. Expanded battles use the
@@ -375,16 +377,17 @@ The grouping and sorting bar pins inside the scroll viewport. Filter changes
 retain the current pixel offset, rebuilding the loaded window atomically for
 a new ordering or index revision. New account histories start at the top.
 
-Map/vehicle history pagers update a capped ten-row viewport in place, including
-cards on an earlier loaded global page. Short single-page lists use their actual
-height; multiple pages retain a stable body height. Battle navigation waits for
+Map and vehicle history pagers update up to ten rows in place, including cards
+on an earlier loaded global page. The main scroll area shows all rows on the
+current page. Available game artwork appears above the history captions. Battle navigation waits for
 the exact card's geometry to settle, including results below a later page's
 divider; scrolling input immediately cancels that automatic correction. Its
 localized selected-battle badge is an absolute overlay that cannot resize cards
 or move neighboring rows. Navigation pulses its
 overlay for five seconds, then leaves it 30% transparent. The card's solid orange
 border remains visible through native focus/blur events and any background
-transparency setting. An explicit outside click or a changed view/period clears
+transparency setting. Resizing brings the selected battle back into view when
+needed. An outside click, keyboard focus moving away or a changed view clears
 the selection. Bonus source labels sit beside aligned resource values. Ordinary
 matrices retain their compact width; additional resource columns or long amounts
 can expand the matrix from 308 to 486 logical pixels. Remaining card width goes

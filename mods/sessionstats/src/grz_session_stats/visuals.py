@@ -478,9 +478,36 @@ def enrich_snapshot(payload, battle_records=None, resolver=None, map_preview_mod
                 cache[key] = None
         return copy.deepcopy(cache[key])
 
+    def outcome_visual(row):
+        outcome = row.get('outcome')
+        if outcome in ('win', 'loss', 'draw'):
+            image = visual('outcome', outcome, message('outcome.' + outcome))
+            if image is not None:
+                row['outcome_visual'] = image
+
+    def history_visuals(history, grouping):
+        if not isinstance(history, dict) or grouping not in ('maps', 'vehicles'):
+            return
+        items = history.get('items')
+        if not isinstance(items, list):
+            return
+        kind, caption = ('map', 'map') if grouping == 'vehicles' else ('vehicle', 'name')
+        for battle in items:
+            if not isinstance(battle, dict):
+                continue
+            battle.pop('visual', None)
+            battle.pop('outcome_visual', None)
+            image = visual(kind, battle.get(kind + '_id'), battle.get(caption))
+            if image is not None:
+                battle['visual'] = image
+            outcome_visual(battle)
+
     for scope in payload['scopes'].values():
         if not isinstance(scope, dict):
             continue
+        patch = scope.get('battle_history')
+        if isinstance(patch, dict):
+            history_visuals(patch.get('battle_list'), patch.get('kind'))
         for grouping in ('vehicles', 'maps', 'battles'):
             rows = scope.get(grouping)
             if not isinstance(rows, list):
@@ -492,10 +519,10 @@ def enrich_snapshot(payload, battle_records=None, resolver=None, map_preview_mod
                 row.pop('map_visual', None)
                 row.pop('outcome_visual', None)
                 row.pop('vehicle_meta', None)
-                if grouping == 'battles' and row.get('outcome') in ('win', 'loss', 'draw'):
-                    outcome = visual('outcome', row['outcome'], message('outcome.' + row['outcome']))
-                    if outcome is not None:
-                        row['outcome_visual'] = outcome
+                if grouping == 'battles':
+                    outcome_visual(row)
+                else:
+                    history_visuals(row.get('battle_list'), grouping)
                 if grouping == 'vehicles':
                     image = visual('vehicle', row.get('id'), row.get('name'))
                     metadata = vehicle_metadata(row.get('id'))

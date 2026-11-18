@@ -18,15 +18,18 @@ function assertSelectedBattleSource(source=fs.readFileSync(path.join(__dirname,'
     querySelectorAll(selector){return this.children.flatMap(child=>(child.classList.contains(selector.slice(1))?[child]:[]).concat(child.querySelectorAll(selector)));}
     querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
   }
+  const root=new Node(),body=new Node('body'),page=new Node('html');
   const card=new Node('div','ss-group ss-battle'),neighbor=new Node('div','ss-group ss-battle');
+  const grip=root.appendChild(new Node('button','ss-resize-grip')),outside=root.appendChild(new Node('button'));
   card.id='synthetic-selected';card.setAttribute('data-group-id','selected');neighbor.setAttribute('data-group-id','neighbor');
   const more=card.appendChild(new Node('button','ss-more-button','More'));
   const state={highlightedBattle:{id:'selected',context:{},until:Number.MAX_SAFE_INTEGER},targetSequence:1,targetTimer:123,groupCards:[card,neighbor]};
   let layoutChanges=0;
-  const context={state,Date,sameContext:()=>true,t:key=>key==='battle.selected'?'Selected battle':key,
+  const context={state,root,document:{body,documentElement:page},Date,sameContext:()=>true,t:key=>key==='battle.selected'?'Selected battle':key,
     element:(tag,className,text)=>new Node(tag,className,text),append:(parent,node)=>parent.appendChild(node),
-    cancelUITimer(){},invalidateCardFlow(){layoutChanges++;},queueResize(){}};
-  vm.createContext(context);vm.runInContext(['clearBattleTarget','paintBattleTarget','targetClick'].map(extract).join('\n'),context);
+    cancelUITimer(){},invalidateCardFlow(){layoutChanges++;},queueResize(){},window:{setTimeout(){}}};
+  vm.createContext(context);vm.runInContext(['clearBattleTarget','paintBattleTarget','renderedBattleTarget','isResizeControl',
+    'targetPointerDown','targetClick','targetTab','targetFocusIn'].map(extract).join('\n'),context);
   context.paintBattleTarget(card);context.paintBattleTarget(card);context.paintBattleTarget(neighbor);
   assert.strictEqual(card.querySelectorAll('.ss-battle-selection-banner').length,1,'Repeated paints retain one selected-battle banner');
   const banner=card.querySelector('.ss-battle-selection-banner');
@@ -37,7 +40,18 @@ function assertSelectedBattleSource(source=fs.readFileSync(path.join(__dirname,'
   assert.strictEqual(card.firstChild,banner,'Missing decorative outline cannot remove the visible textual cue');
   context.targetClick({target:more});assert.strictEqual(card.firstChild,banner,'More inside the selected card preserves its cue');
   context.paintBattleTarget(card);assert.strictEqual(card.querySelectorAll('.ss-battle-selection-banner').length,1);
-  context.targetClick({target:new Node('button')});
+  context.targetPointerDown({button:0,target:grip});context.targetClick({target:body});
+  context.targetClick({target:grip});
+  assert.strictEqual(card.firstChild,banner,'Resize grip clicks and retargeted release clicks preserve the cue');
+  context.targetFocusIn({target:outside});
+  assert.strictEqual(card.firstChild,banner,'An unsolicited native focus change retains the cue');
+  context.targetTab({key:'Tab'});context.targetFocusIn({target:more});
+  assert.strictEqual(card.firstChild,banner,'Tabbing within the selected card retains its cue');
+  const target=state.highlightedBattle;
+  context.targetTab({key:'Tab'});context.targetFocusIn({target:outside});
+  assert.strictEqual(state.highlightedBattle,null,'Tabbing to a different control dismisses the selection');
+  state.highlightedBattle=target;context.paintBattleTarget(card);
+  context.targetPointerDown({button:0,target:grip});context.targetPointerDown({button:0,target:root});context.targetClick({target:root});
   assert.strictEqual(card.querySelector('.ss-battle-selection-banner'),null,'An explicit outside click dismisses its text cue');
   assert.strictEqual(card.querySelector('.ss-battle-target-outline'),null);
   assert.strictEqual(card.getAttribute('aria-describedby'),null,'Dismissal removes only the owned description');

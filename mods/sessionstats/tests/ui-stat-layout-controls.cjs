@@ -128,10 +128,10 @@ module.exports=async({browser,nativeHost,check})=>{
         if(geometry.badge){
           const b=geometry.badge;
           check('The statistic frame fits its centered caption and value with small padding '+metric+'/'+statistic+'/'+scale+': '+JSON.stringify(b),
-            b.width<=132&&b.height>=b.captionHeight+b.valueHeight+5&&b.height<=b.captionHeight+b.valueHeight+7&&
+            b.width>=160&&b.width<=190&&b.height>=b.captionHeight+b.valueHeight+5&&b.height<=b.captionHeight+b.valueHeight+7&&
             b.centered&&b.separate&&b.fits&&b.iconAdjacent&&b.valueHeight<=20);
           if(metric==='credits_costs')check('A short statistic caption uses one complete line at '+scale,b.captionLines===1&&!b.clipped);
-          if(metric==='credits_income_received')check('A longer statistic caption uses one line in a compact badge at '+scale,b.captionLines===1&&b.width<=132);
+          if(metric==='credits_income_received')check('An ultra-wide card displays the complete longer statistic caption on one line at '+scale,b.captionLines===1&&!b.clipped);
           if(options.partial)check('A partial statistic keeps its marker inside the centered block at '+scale,b.partial);
         }
         if(metric==='credits_costs'&&scale===1){

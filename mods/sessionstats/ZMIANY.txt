@@ -1,5 +1,10 @@
 SESSION STATS — CHANGELOG
 
+0.9.27 • 2026-11-18
+• Show the full current history page in the main scroll area, with available game artwork above map and result captions.
+• Keep vehicle headers compact in ordinary two-column cards and give the sort label more width in ultra-wide cards.
+• Save the last window size without rebuilding the stats and keep the selected battle in view after resizing.
+
 0.9.26 • 2026-11-18
 • Base history columns on the card width and give each Missions section a shared background.
 • Fit help boxes to their text and reserve less space for the active sort badge.

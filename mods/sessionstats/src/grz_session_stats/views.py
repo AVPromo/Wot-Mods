@@ -257,22 +257,27 @@ class StatsWindow(object):
         payload['viewport'] = viewport
         appearance = payload.get('appearance')
         settings = appearance.get('window_settings') if isinstance(appearance, dict) else None
-        if isinstance(settings, dict):
-            restored = _dimensions((settings.get('restored_width'), settings.get('restored_height')))
-            signature = (settings.get('maximized') is True, restored)
-            if signature != self._window_settings_signature and restored is not None:
-                placement_changed = (self._window_settings_signature is None or self._maximized != signature[0])
-                self._window_settings_signature = signature
-                self._maximized = signature[0]
-                self._preferred_size = restored
-                if placement_changed:
-                    self._user_position = False
-                    self._center_signature = None
-                    self._resize_anchor = None
+        self._apply_window_settings(settings)
         if self._preferred_size is not None:
             payload['window_size'] = self._preferred_size
         self._published_viewport = viewport
         return json.dumps(payload, ensure_ascii=True, separators=(',', ':'), allow_nan=False)
+
+    def _apply_window_settings(self, settings):
+        if not isinstance(settings, dict):
+            return
+        restored = _dimensions((settings.get('restored_width'), settings.get('restored_height')))
+        signature = (settings.get('maximized') is True, restored)
+        if restored is None or signature == self._window_settings_signature:
+            return
+        placement_changed = self._window_settings_signature is None or self._maximized != signature[0]
+        self._window_settings_signature = signature
+        self._maximized = signature[0]
+        self._preferred_size = restored
+        if placement_changed:
+            self._user_position = False
+            self._center_signature = None
+            self._resize_anchor = None
 
     def _attach(self, event, callback):
         if event is None:
@@ -858,6 +863,16 @@ class StatsWindow(object):
                 live.setPayload(self._payload())
         except Exception:
             LOG.exception('Could not update the statistics view model.')
+
+    def publish_window_settings(self, account_key, settings, result):
+        if self._closing or not self.is_open() or self._model is None:
+            return False
+        self._apply_window_settings(settings)
+        payload = {'window_settings_update': {'account_key': account_key,
+                   'window_settings': settings, 'window_settings_result': result}}
+        with self._model.transaction() as live:
+            live.setPayload(json.dumps(payload, ensure_ascii=True, separators=(',', ':')))
+        return True
 
     def resize(self, width, height):
         if self._closing or not self.is_open():

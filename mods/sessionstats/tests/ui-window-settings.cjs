@@ -14,6 +14,11 @@ async function publish(page,settings,ack,account) {
     model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
   },{settings,ack,account});await frames(page);
 }
+async function acknowledge(page,command,settings,saved) {
+  await page.evaluate(({command,settings,saved})=>GRZSessionStats.update({window_settings_update:{
+    account_key:command.account_key,window_settings:settings,window_settings_result:{request_id:command.request_id,saved}
+  }}),{command,settings,saved});await frames(page);
+}
 async function paint(page) {
   return page.evaluate(()=>['#grz-session-stats','.ss-titlebar h1','.ss-group-title','.ss-metric-row .ss-metric-number'].map(selector=>{
     const css=getComputedStyle(document.querySelector(selector));
@@ -93,10 +98,16 @@ module.exports=async ({browser,nativeHost,check})=>{
     saved=await commands(page);const queued=saved[saved.length-1];
     check('The matching acknowledgement releases one queued latest edit',saved.length===3 && queued.background_transparency==='100' && queued.request_id!==first.request_id);
     server={...server,background_transparency:100};await publish(page,server,{request_id:queued.request_id,saved:true});
+    const statusBeforeSaveError=await page.locator('#ss-status').textContent();
     await slider.press('Home');await page.waitForTimeout(240);saved=await commands(page);first=saved[saved.length-1];
-    await publish(page,server,{request_id:first.request_id,saved:false});
+    await acknowledge(page,first,server,false);
     check('A failed save restores the authoritative setting and displays the save error',
       await slider.getAttribute('aria-valuenow')==='100' && await page.locator('#ss-status').textContent().then(text=>text.includes(catalogs.en['window.save_error'])));
+    await slider.press('Home');await page.waitForTimeout(240);saved=await commands(page);
+    server={...server,background_transparency:0};
+    await acknowledge(page,saved[saved.length-1],server,true);
+    check('A successful lightweight retry restores the pre-error status and saves the edit',
+      await slider.getAttribute('aria-valuenow')==='0' && await page.locator('#ss-status').textContent()===statusBeforeSaveError);
     await slider.press('Home');await page.waitForTimeout(240);saved=await commands(page);const stale=saved[saved.length-1];
     server={...defaults,background_transparency:30};await publish(page,server,null,'another-synthetic-account');
     await publish(page,server,{request_id:stale.request_id,saved:true});
@@ -178,7 +189,23 @@ module.exports=async ({browser,nativeHost,check})=>{
       await resized.mouse.up();await frames(resized);values=await commands(resized);const resizeSave=values[values.length-1];
       check('Regular resize release saves one final logical size at'+(scale*100)+'%',
         values.length===beforeResize+1 && resizeSave.maximized==='false' && resizeSave.restored_width==='740' && resizeSave.restored_height==='754');
-      await publish(resized,{...defaults,restored_width:740,restored_height:754},{request_id:resizeSave.request_id,saved:true});
+      const inPlace=await resized.evaluate(command=>{
+        const summary=document.querySelector('#ss-summary .ss-details');
+        const card=document.querySelector('#ss-groups .ss-group');
+        const width=__nativeSize[0], count=__grzHelperCalls.resize;
+        const settings={background_transparency:30,maximized:false,restored_width:740,restored_height:754};
+        const data={account_key:'wrong-account',window_settings:settings,window_settings_result:{request_id:command.request_id,saved:true}};
+        GRZSessionStats.update({window_settings_update:data});
+        const slider=document.getElementById('ss-background-transparency');
+        const ignored=slider.getAttribute('aria-valuenow')==='0';
+        data.account_key=command.account_key;
+        GRZSessionStats.update({window_settings_update:data});
+        return {ignored,applied:slider.getAttribute('aria-valuenow')==='30',
+          same:summary===document.querySelector('#ss-summary .ss-details')&&card===document.querySelector('#ss-groups .ss-group'),width,count};
+      },resizeSave);await frames(resized);
+      check('Resize acknowledgement preserves mounted statistics and avoids a second surface resize at '+scale+'x',
+        inPlace.ignored&&inPlace.applied&&inPlace.same&&await resized.evaluate(value=>
+          __nativeSize[0]===value.width&&__grzHelperCalls.resize===value.count,inPlace));
       const beforeKeyboard=(await commands(resized)).length;
       await resized.locator('#ss-resize-grip').focus();await resized.locator('#ss-resize-grip').press('ArrowRight');await frames(resized);
       values=await commands(resized);const keyboardSave=values[values.length-1];

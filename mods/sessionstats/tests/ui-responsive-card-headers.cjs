@@ -17,8 +17,8 @@ module.exports=async({browser,nativeHost,check})=>{
     try{
       await page.evaluate(()=>{window.__responsiveHeaderFixture=JSON.parse(model.payload);});
       let sequence=0;
-      async function publish(language,width,{paged=false,fresh=false,largeFinance=false,vehicleNames,selectedGroup='maps'}={}){
-        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh,largeFinance,vehicleNames,selectedGroup,panelCSS})=>{
+      async function publish(language,width,{paged=false,fresh=false,largeFinance=false,richVehicle=false,vehicleNames,selectedGroup='maps'}={}){
+        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh,largeFinance,richVehicle,vehicleNames,selectedGroup,panelCSS})=>{
           const payload=JSON.parse(JSON.stringify(__responsiveHeaderFixture)),scope=payload.scopes.launch;
           payload.account_key='synthetic-responsive-header-'+scale+'-'+language;payload.window_size=[width,1100];
           payload.viewport={width:width<625?width*scale+20:3840,height:2800,scale};payload.localization={language,messages};
@@ -33,29 +33,37 @@ module.exports=async({browser,nativeHost,check})=>{
               if(group==='vehicles'||group==='battles')item.visual={kind:'vehicle',src:'img://gui/maps/icons/vehicle/contour/synthetic-header.png',alt:'Synthetic vehicle'};
               if(group==='battles')item.map_visual={kind:'map',src:'img://gui/maps/icons/map/small/synthetic-header.png',alt:'Synthetic map'};
               Object.assign(stats,{battles:total,observed_battles:total,wn8:index?1676:1601,wn8_count:total,win_rate:42.9});
+              const vehicle=richVehicle&&group==='vehicles';
+              if(vehicle){
+                item.tier=9;
+                item.vehicle_meta={class:'mediumTank',elite:true,class_icon:{kind:'vehicle_class',src:'img://gui/maps/icons/vehicleTypes/24x24_metal/mediumTank_elite.png'},
+                  role:{key:'role_MT_universal',icon:{kind:'vehicle_role',src:'img://gui/maps/icons/roleExp/roles/24x24/role_MT_universal.png'}}};
+                Object.assign(stats,{battles:2,observed_battles:3,wn8_count:2});
+              }
               const values={xp_base:[132,549,1403],xp_received:[426,2372,8737],battle_wn8:[245,2288,6779],credits_net_base:[1000,index?5481:6343,9444]};
               if(largeFinance)values.credits_income_received=[123456789,234567890,345678901];
+              if(vehicle)values.credits_net_received=[77465,96055,116055];
               item.extrema_battles={};
               for(const [metric,[min,avg,max]]of Object.entries(values)){
                 stats[metric]={count:metric==='credits_net_base'?3:total,min,avg,max,sum:avg*total};item.extrema_battles[metric]={};
                 for(const statistic of ['min','max'])item.extrema_battles[metric][statistic]={id:'responsive-result-'+index,metric,statistic,
                   value:stats[metric][statistic],name:'Synthetic vehicle',map:'Cliff',started_at:1794000000};
               }
-              stats.free_xp={count:total,min:10,avg:100,max:200,sum:index?3228:929};
+              stats.free_xp={count:total,min:10,avg:100,max:200,sum:vehicle?1252:index?3228:929};
               stats.currencies={credits:{income_base:null,income_base_count:3,net_base:null,net_base_count:3,
                 income:445295,income_count:total,costs:375711,costs_count:total,net:69584,net_count:total},
                 bonds:{income:65,income_count:total,costs:0,costs_count:total,net:65,net_count:total}};
               item.battle_list={page:0,pages:1,total:1,page_size:10,items:[{id:'responsive-result-'+index,name:'Synthetic vehicle',map:'Cliff',started_at:1794000000,outcome:'win',wn8:1601}]};
               return item;
             });
-            scope.ordering[group]={metric:group==='battles'?'off':largeFinance?'credits_income_received':'credits_net_base',statistic:'avg',direction:'desc',chronology:'newest'};
+            scope.ordering[group]={metric:group==='battles'?'off':richVehicle&&group==='vehicles'?'credits_net_received':largeFinance?'credits_income_received':'credits_net_base',statistic:'avg',direction:'desc',chronology:'newest'};
             scope.pagination[group]={page:0,pages:paged&&group==='maps'?2:1,total:paged&&group==='maps'?4:2,page_size:2};
           }
           payload.scopes.timeline=JSON.parse(JSON.stringify(scope));
           payload.scopes.timeline.from_point=payload.scopes.timeline.to_point='';payload.scopes.timeline.time_points=[];
           model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
           document.getElementById('ss-scope-manual').click();document.getElementById('ss-group-'+selectedGroup).click();
-        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh,largeFinance,vehicleNames,selectedGroup,panelCSS:compiled.stdout.trim()});
+        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh,largeFinance,richVehicle,vehicleNames,selectedGroup,panelCSS:compiled.stdout.trim()});
         await frames(page);
       }
       async function resize(width,height=1100){
@@ -88,13 +96,19 @@ module.exports=async({browser,nativeHost,check})=>{
           const bounds=rect(card),header=rect(card.querySelector('.ss-group-header')),name=card.querySelector('.ss-group-name'),identity=rect(name),
             title=card.querySelector('.ss-group-title'),titleBox=rect(title),titleInk=ink(title),stats=card.querySelector('.ss-group-stats'),more=card.querySelector('.ss-more-button'),
             button=more&&rect(more),expectedDock=!two&&bounds.width<680,docked=card.classList.contains('ss-card-border-more'),failures=[];
-          if(identity.width<72||!titleInk.length||titleInk.some(part=>!inside(part,titleBox)))failures.push('squeezed-identity');
+          const titleFits=titleInk.every(part=>inside(part,titleBox)),titleStyle=getComputedStyle(title),
+            titleEllipsis=titleBox.width>20&&titleStyle.textOverflow==='ellipsis'&&titleStyle.overflowX==='hidden'&&titleStyle.whiteSpace==='nowrap'&&
+              title.getAttribute('data-ss-help')===title.textContent&&title.getAttribute('tabindex')==='0';
+          if(identity.width<72||!titleInk.length||(!titleFits&&!titleEllipsis))failures.push('squeezed-identity');
           if(['Cliff','Klondike'].includes(title.textContent)&&titleInk.some(part=>Math.abs(part.top-titleInk[0].top)>1))failures.push('vertical-short-name');
           const image=card.querySelector('.ss-group-header .ss-group-thumb'),xp=card.querySelector('.ss-group-header .ss-free-xp');
           const imageBox=image&&rect(image),xpBox=xp&&rect(xp);
           if(!inside(header,bounds)||!inside(identity,header)||[imageBox,xpBox].filter(Boolean).some(box=>!inside(box,header)||
               box.top<bounds.top+2||box.width<=0||box.height<=0))failures.push('identity-outside-header');
-          let sortNumber=null,sortWidth=null,inline=null,combined=null;
+          const headingExtras=[...name.querySelectorAll('.ss-group-heading > .ss-group-coverage,.ss-group-heading > .ss-info-button')],
+            metadata=name.querySelector('.ss-vehicle-meta'),twoIdentityRows=headingExtras.length===2&&headingExtras.every(node=>overlapY(rect(node),titleBox))&&
+              !!metadata&&!!xpBox&&overlapY(rect(metadata),xpBox)&&ink(xp.querySelector('strong')).every(part=>inside(part,xpBox));
+          let sortNumber=null,sortWidth=null,sortCaptionFits=null,inline=null,combined=null;
           if(stats){
             const statsBox=rect(stats),kpis=[...stats.querySelectorAll('.ss-group-kpi')].map(rect);
             const identityBox=rect(card.querySelector('.ss-group-identity'));
@@ -114,6 +128,7 @@ module.exports=async({browser,nativeHost,check})=>{
               const captionBox=rect(caption),captionStyle=getComputedStyle(caption),captionInk=ink(caption);
               sortNumber=value.textContent.replace(/\s/g,'');
               sortWidth=badgeBox.width;
+              sortCaptionFits=caption.scrollWidth<=caption.clientWidth+1;
               const fullHelp=badge.getAttribute('data-ss-help');
               const readableCaption=captionInk.length>0&&captionInk.every(part=>Math.abs(part.top-captionInk[0].top)<=1)&&(captionInk.every(part=>inside(part,captionBox))||
                 captionStyle.whiteSpace==='nowrap'&&captionStyle.textOverflow==='ellipsis'&&captionStyle.overflowX==='hidden'&&caption.scrollWidth>caption.clientWidth&&
@@ -145,7 +160,7 @@ module.exports=async({browser,nativeHost,check})=>{
               if(visuals.length!==2||visuals.some(visual=>[b,button].some(control=>overlap(control,visual))))failures.push('selection-overlaps-battle-header');
             }
           }
-          return {id:card.getAttribute('data-group-id'),title:title.textContent,bounds,header,identity,button,expectedDock,docked,failures,selected,sortNumber,sortWidth,inline,combined,imageBox,xpBox,
+          return {id:card.getAttribute('data-group-id'),title:title.textContent,titleFits,titleEllipsis,twoIdentityRows,bounds,header,identity,button,expectedDock,docked,failures,selected,sortNumber,sortWidth,sortCaptionFits,inline,combined,imageBox,xpBox,
             more:more&&more.textContent,expanded:more&&more.getAttribute('aria-expanded')};
         });
         return {panel,titlebar,timeline,controls,language,actions,rowsOK,topOK,two,cards};
@@ -228,6 +243,18 @@ module.exports=async({browser,nativeHost,check})=>{
       check('An ordinary two-column card keeps a short vehicle identity level with the sort result at '+scale+'x: '+JSON.stringify(sortedTwoLane.cards),
         sortedTwoLane.two&&valid(sortedTwoLane)&&valid(unsortedTwoLane)&&sortedTwoLane.cards.every((card,index)=>
           card.inline&&card.sortNumber==='234567890'&&Math.abs(card.header.height-unsortedTwoLane.cards[index].header.height)<=1));
+      await publish('pl',1300,{richVehicle:true,vehicleNames:['Zaćmienie','Bardzo długa nazwa pojazdu testowego'],selectedGroup:'vehicles'});
+      const ordinary=await audit();
+      check('Ordinary wide vehicle cards fit the name and metadata beside the thumbnail in two rows at '+scale+'x: '+JSON.stringify(ordinary.cards),
+        valid(ordinary)&&ordinary.two&&ordinary.cards.every(card=>card.twoIdentityRows&&card.sortWidth<=100)&&
+        ordinary.cards[0].titleFits&&!ordinary.cards[1].titleFits&&ordinary.cards[1].titleEllipsis);
+      await resize(1800);const ultra=await audit();
+      check('Ultra-wide vehicle cards show the full Polish sort caption beside the same number at '+scale+'x: '+JSON.stringify(ultra.cards),
+        valid(ultra)&&ultra.two&&ultra.cards.every((card,index)=>card.bounds.width>=700&&card.inline&&card.sortWidth>=160&&
+          card.sortCaptionFits&&card.twoIdentityRows&&card.sortNumber===ordinary.cards[index].sortNumber));
+      await resize(1300);const returned=await audit();
+      check('Resizing back restores the ordinary header widths and two identity rows at '+scale+'x: '+JSON.stringify(returned.cards),
+        valid(returned)&&returned.cards.every((card,index)=>card.twoIdentityRows&&Math.abs(card.sortWidth-ordinary.cards[index].sortWidth)<=1));
       for(const language of ['en','es']){
         await publish(language,1800,{selectedGroup:'vehicles'});const result=await audit();
         check('Wide vehicle cards show the full localized Combined WN8 caption at '+language+'/'+scale+'x: '+JSON.stringify(result.cards),

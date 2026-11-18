@@ -54,8 +54,8 @@ async function vehicleNavigation({browser,nativeHost,check}){
       const partialHistory=await historyPosition();
       check('The last vehicle page replaces rows and keeps More open in '+language,
         await vehicle.locator('.ss-map-battle-row').count()===3 && await vehicle.locator('.ss-map-page-next').isDisabled() && await more.getAttribute('aria-expanded')==='true');
-      check('A partial vehicle-history page retains its panel height, controls and whole-window position in '+language+': '+JSON.stringify({fullHistory,partialHistory}),
-        fullHistory.bodyHeight>0 && Object.keys(fullHistory).every(key=>Math.abs(fullHistory[key]-partialHistory[key])<=1));
+      check('A partial vehicle-history page uses its natural height in '+language+': '+JSON.stringify({fullHistory,partialHistory}),
+        partialHistory.bodyHeight>0 && partialHistory.bodyHeight<fullHistory.bodyHeight && partialHistory.height<fullHistory.height);
       const target='synthetic-vehicle-battle-12';await vehicle.locator('.ss-map-battle-open[data-battle-id="'+target+'"]').click();
       sent=await commands(page,'battle_select');request=sent[sent.length-1];
       check('Vehicle navigation waits for its native battle selection reply in '+language,
@@ -98,6 +98,29 @@ async function vehicleNavigation({browser,nativeHost,check}){
           outlineOpacity:parseFloat(getComputedStyle(card.querySelector('.ss-battle-target-outline')).opacity),cardOpacity:getComputedStyle(card).opacity}));
         check('After five seconds only the target outline becomes thirty percent transparent: '+JSON.stringify(muted),
           muted.muted && !muted.pulse && Math.abs(muted.outlineOpacity-0.7)<0.01 && muted.cardOpacity==='1');
+         const outsideBeforeResize=await targetCard.evaluate(card=>{
+           const panel=document.getElementById('grz-session-stats'),scroll=document.getElementById('ss-scroll');
+           const grip=document.getElementById('ss-resize-grip'),gripBox=grip.getBoundingClientRect();
+           scroll.scrollTop=0;
+           grip.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0,clientX:gripBox.left+2,clientY:gripBox.top+2}));
+           const {token}=__grzCommands.filter(command=>command.action==='resize_begin').at(-1);
+           GRZSessionStats.update({resize_gesture:{token,width:625,height:465,active:true}});
+           const clipped=card.getBoundingClientRect().bottom>scroll.getBoundingClientRect().bottom;
+           GRZSessionStats.update({resize_gesture:{token,width:625,height:465,active:false}});
+           panel.dispatchEvent(new MouseEvent('click',{bubbles:true,button:0}));
+           return clipped;
+         });
+         await page.waitForFunction(id=>{
+           const card=document.querySelector('[data-group-id="'+id+'"]'),banner=card?.querySelector('.ss-battle-selection-banner');
+           if(!banner)return false;
+           const viewport=document.getElementById('ss-scroll').getBoundingClientRect(),cue=banner.getBoundingClientRect();
+           const filter=document.getElementById('ss-filter-panel').getBoundingClientRect();
+           return !document.getElementById('ss-groups').classList.contains('ss-two-columns') &&
+             cue.top>=Math.max(viewport.top,filter.bottom)-1 && cue.bottom<=viewport.bottom+1;
+         },target,{timeout:5000});
+         check('Release keeps one visible selected-battle cue when resizing from two card lanes to one at '+(scale*100)+'%',
+           outsideBeforeResize && await targetCard.locator('.ss-battle-selection-banner').count()===1 &&
+           await targetCard.evaluate(card=>card.classList.contains('ss-battle-target')));
       }
       await targetCard.evaluate(card=>{window.__dismissedTarget=card;window.__targetDismissPayload=model.payload;});
       await page.locator('.ss-game-mode').click();await frames(page);

@@ -13,12 +13,12 @@
         timelineSignature: null, customRangeKey: null, customDates: {}, openMaps: {}, mapContext: null,
         pendingBattle: null, battleJump: null, battleJumpTimer: null, highlightedBattle: null, navigationSequence: 0,
         battleReturn: null, battleReturnTimer: null, returnedSource: null, returnedSourceTimer: null,
-        targetFocusTransfer: false,
+        targetFocusTransfer: false, targetResizePress: false, targetTab: null,
         targetTimer: null, targetSequence: 0, feed: null, renderedFeed: null,
         feedSequence: 0, feedForceStart: null, pageJump: null, pageJumpTimer: null, filterShift: 0, orderIntent: null,
         openBattles: {}, resize: null, logicalSize: null,
         cardFlowToken: 0, cardFlowQueued: false, cardFlowAttempts: 0, cardFlowTimer: null,
-        windowPrefs: null, windowSaved: null, windowPending: null, windowChanges: {},
+        windowPrefs: null, windowSaved: null, windowPending: null, windowChanges: {}, windowStatusBeforeError: null,
         windowSequence: 0, windowTimer: null, windowTimerToken: 0, backgroundDrag: null,
         viewKey: null, scrollTarget: null, scrollbarDrag: null, scrollbarWork: null,
         resizeSequence: 0, timePointAccount: null, timePointCount: null, timePointEdited: false,
@@ -359,6 +359,7 @@
         state.windowChanges = {};
         state.windowSaved = null;
         state.windowPrefs = null;
+        state.windowStatusBeforeError = null;
     }
     function windowSaveFailed() {
         var previous = state.windowPrefs;
@@ -366,7 +367,11 @@
         state.windowChanges = {};
         state.windowPrefs = copyWindowSettings(state.windowSaved);
         showWindowSettings(previous);
-        setActionError(t('window.save_error'));
+        var error = t('window.save_error');
+        if (state.actionError !== error) {
+            state.windowStatusBeforeError = {error:state.actionError, text:nodes.status.textContent};
+        }
+        setActionError(error);
         queueResize();
     }
     function commitWindowSettings() {
@@ -387,12 +392,21 @@
         Object.keys(changes).forEach(function (key) { args[key] = changes[key]; });
         if (!invoke('window_settings', args)) { windowSaveFailed(); }
     }
-    function previewWindowSettings(changes, commit) {
+    function scheduleWindowCommit(delay) {
+        cancelWindowCommit();
+        var token = state.windowTimerToken;
+        state.windowTimer = window.setTimeout(function () {
+            if (state.destroyed || token !== state.windowTimerToken) { return; }
+            state.windowTimer = null;
+            commitWindowSettings();
+        }, delay);
+    }
+    function previewWindowSettings(changes, commit, sizeAlreadyApplied) {
         var previous = state.windowPrefs || windowDefaults();
         state.windowPrefs = mergeWindowSettings(previous, changes);
         Object.keys(changes).forEach(function (key) { state.windowChanges[key] = changes[key]; });
-        showWindowSettings(previous);
-        queueResize();
+        showWindowSettings(sizeAlreadyApplied ? null : previous);
+        if (!sizeAlreadyApplied) { queueResize(); }
         if (commit) { commitWindowSettings(); }
     }
     function applyWindowSettings(raw, acknowledgement) {
@@ -407,6 +421,11 @@
         if (pending && ack && unwrap(ack.request_id) === pending.id) {
             if (unwrap(ack.saved) !== true) { windowSaveFailed(); return; }
             state.windowPending = null;
+            if (state.windowStatusBeforeError && state.actionError === t('window.save_error')) {
+                setActionError(state.windowStatusBeforeError.error);
+                setStatus(state.windowStatusBeforeError.text);
+            }
+            state.windowStatusBeforeError = null;
         }
         var changes = state.windowChanges;
         if (state.windowPending) {
@@ -430,6 +449,7 @@
             changes.restored_width = Math.round(size.width);
             changes.restored_height = Math.round(size.height);
         }
+        retainBattleTargetAfterResize();
         previewWindowSettings(changes, true);
     }
     function backgroundPosition(event) {
@@ -484,13 +504,7 @@
         if (change) { value = (change > 0 ? Math.floor(value / 5) : Math.ceil(value / 5)) * 5 + change; }
         consumeResizeInput(event);
         previewWindowSettings({background_transparency:Math.max(0, Math.min(100, value))}, false);
-        cancelWindowCommit();
-        var token = state.windowTimerToken;
-        state.windowTimer = window.setTimeout(function () {
-            if (state.destroyed || token !== state.windowTimerToken) { return; }
-            state.windowTimer = null;
-            commitWindowSettings();
-        }, 200);
+        scheduleWindowCommit(200);
     }
     if (nodes.maximize) { nodes.maximize.onclick = toggleMaximize; }
     if (nodes['background-transparency']) {
@@ -1299,9 +1313,9 @@
         var label = { win:t('outcome.win'), loss:t('outcome.loss'), draw:t('outcome.draw') }[outcome] || t('outcome.unknown');
         return label.toUpperCase();
     }
-    function appendOutcome(parent, item) {
+    function appendOutcome(parent, item, className) {
         var outcome = {win:'win', loss:'loss', draw:'draw'}[item.outcome] || 'unknown';
-        var badge = append(parent, element('span', 'ss-battle-outcome ss-outcome-' + outcome));
+        var badge = append(parent, element('span', (className || 'ss-battle-outcome') + ' ss-outcome-' + outcome));
         var visual = item.outcome_visual, src = visual && visual.src;
         var name = {win:'Victory', loss:'Defeat', draw:'Draw'}[outcome];
         var base = name && 'img://gui/maps/icons/library/BgBattleResultIcon' + name + '-1';
@@ -2450,7 +2464,7 @@
                 path.indexOf('//') !== -1 || !/\.(png|dds)$/i.test(path)) { return null; }
         return src;
     }
-    function appendVisual(parent, item) {
+    function appendVisual(parent, item, decorative) {
         var visual = item.visual;
         if (!visual || (visual.kind !== 'vehicle' && visual.kind !== 'map')) { return; }
         var src = nativeVisualSource(visual.src, visual.kind);
@@ -2458,15 +2472,18 @@
            UI accepts only these local asset families; no remote URLs or CSS escapes. */
         if (!src) { return; }
         var thumb = append(parent, element('div', 'ss-group-thumb'));
-        thumb.setAttribute('role', 'img');
-        thumb.setAttribute('aria-label', String(visual.alt || item.name || ''));
+        if (decorative) { thumb.setAttribute('aria-hidden', 'true'); }
+        else {
+            thumb.setAttribute('role', 'img');
+            thumb.setAttribute('aria-label', String(visual.alt || item.name || ''));
+        }
         /* Gameface supports background sizing, not object-fit. Decorative map
            photos fill their fixed thumbnail; tactical maps stay complete. */
         thumb.style.backgroundImage = 'url("' + src + '")';
         if (visual.kind === 'map' && /^img:\/\/gui\/maps\/icons\/map\/(small|screen)\//.test(src)) {
             thumb.style.backgroundSize = 'cover';
         }
-        if (visual.kind === 'map') {
+        if (visual.kind === 'map' && !decorative) {
             var preview = nativeVisualSource(visual.preview_src, 'map');
             thumb.setAttribute('data-ss-map-preview', preview || src);
             thumb.setAttribute('data-ss-map-preview-mode', preview && visual.preview_mode === 'minimap' ? 'minimap' : 'image');
@@ -2856,7 +2873,7 @@
     function captureBattleOrigin(source) {
         var scope = currentScope(), order = getOrder(scope), origin = {context:viewContext(), group:state.group,
             order:{}, revision:scope.data_revision, language:state.language, loadedCount:state.loadedCount,
-            scroll:nodes.scroll.scrollTop / (state.nativeScale || 1), anchors:[], histories:[], source:null};
+            scroll:nodes.scroll.scrollTop / (state.nativeScale || 1), anchors:[], source:null};
         ['metric', 'statistic', 'direction', 'chronology'].forEach(function (key) { origin.order[key] = order[key]; });
         // A result revision can stage a new feed while the previous window is
         // still visible. Retain that window's extent, never its stale values.
@@ -2871,8 +2888,6 @@
                 origin.anchors.push({id:card.getAttribute('data-group-id'), offset:(box.top - viewport.top) / scale});
                 if (origin.anchors.length === 1 && section && section !== nodes.groups) { origin.page = Number(section.getAttribute('data-page-index')); }
             }
-            var history = card.querySelector('.ss-history-body');
-            if (history && history.scrollTop) { origin.histories.push({id:card.getAttribute('data-group-id'), scroll:history.scrollTop / scale}); }
         });
         if (source && root.contains(source)) {
             var card = source;
@@ -3031,10 +3046,6 @@
                 anchor = {card:card, saved:saved}; return true;
             });
         });
-        origin.histories.forEach(function (saved) { (state.groupCards || []).some(function (card) {
-            var history = card.getAttribute('data-group-id') === saved.id && card.querySelector('.ss-history-body');
-            if (history) { history.scrollTop = saved.scroll * scale; return true; } return false;
-        }); });
         var focus = findBattleOriginFocus(origin);
         if (returning.focused !== focus) { focusControl(focus); returning.focused = focus; }
         var summaryPosition = null, sourceOffset = null;
@@ -3073,6 +3084,7 @@
         state.targetSequence += 1;
         var timer = state.targetTimer; state.targetTimer = null;
         state.highlightedBattle = null;
+        state.targetResizePress = false; state.targetTab = null;
         cancelUITimer(timer);
         (state.groupCards || []).forEach(function (card) {
             var outline = card.querySelector('.ss-battle-target-outline');
@@ -3114,20 +3126,51 @@
         card.classList[pulsing ? 'remove' : 'add']('ss-target-muted');
         card.setAttribute('tabindex', '-1');
     }
-    function targetClick(event) {
-        if (!state.highlightedBattle) { return; }
+    function renderedBattleTarget(id) {
         var target = null;
         (state.groupCards || []).some(function (card) {
-            if (card.getAttribute('data-group-id') === state.highlightedBattle.id) { target = card; return true; }
+            if (card.getAttribute('data-group-id') === id) { target = card; return true; }
             return false;
         });
+        return target;
+    }
+    function isResizeControl(node) {
+        while (node && node !== root) {
+            if (node.classList && (node.classList.contains('ss-resize-grip') || node.classList.contains('ss-window-toggle'))) { return true; }
+            node = node.parentNode;
+        }
+        return false;
+    }
+    function targetPointerDown(event) {
+        if (event.button === 0) { state.targetResizePress = isResizeControl(event.target); }
+    }
+    function targetClick(event) {
+        // Some native surfaces retarget the release click to the panel root.
+        var resizeClick = state.targetResizePress &&
+            (state.resize || event.target === root || event.target === document.body || event.target === document.documentElement);
+        state.targetResizePress = false;
+        if (!state.highlightedBattle || resizeClick || isResizeControl(event.target)) { return; }
+        var target = renderedBattleTarget(state.highlightedBattle.id);
         if (!target || !target.contains(event.target)) { clearBattleTarget(); }
     }
-    // Selection belongs to the navigation result, not DOM/native focus.
-    // Gameface can publish null/body/root focus, another control's focus or
-    // window blur while mounting/reparenting the battle. Only an explicit
-    // outside click or a changed result context dismisses its visible frame.
+    function targetTab(event) {
+        if (!state.highlightedBattle || (event.key !== 'Tab' && event.keyCode !== 9)) { return; }
+        // Native layout also changes DOM focus. Only follow a focus event from
+        // the current Tab press, and let the game settle focus after resizing.
+        var press = {}; state.targetTab = press;
+        window.setTimeout(function () { if (state.targetTab === press) { state.targetTab = null; } }, 0);
+    }
+    function targetFocusIn(event) {
+        if (!state.highlightedBattle || !state.targetTab || state.resize || state.targetFocusTransfer) { return; }
+        state.targetTab = null;
+        var target = renderedBattleTarget(state.highlightedBattle.id);
+        if (target && !target.contains(event.target) && !isResizeControl(event.target)) { clearBattleTarget(); }
+    }
+    document.addEventListener('pointerdown', targetPointerDown, true);
+    document.addEventListener('mousedown', targetPointerDown, true);
     document.addEventListener('click', targetClick, true);
+    document.addEventListener('keydown', targetTab, true);
+    document.addEventListener('focusin', targetFocusIn);
     function cancelBattleNavigation() {
         state.pendingBattle = null; state.battleJump = null;
         var timer = state.battleJumpTimer; state.battleJumpTimer = null; cancelUITimer(timer);
@@ -3171,8 +3214,18 @@
             (state.groupCards || []).forEach(paintBattleTarget);
         }, 5000);
         cancelPageJump();
-        state.battleJump = {id:pending.id, context:pending.context, attempts:0, deadline:Date.now() + 10000,
+        startBattleJump(state.highlightedBattle, false);
+    }
+    function startBattleJump(target, revealOnly) {
+        cancelUITimer(state.battleJumpTimer); state.battleJumpTimer = null;
+        state.battleJump = {id:target.id, context:target.context, revealOnly:revealOnly, attempts:0, deadline:Date.now() + 10000,
             lastOffset:null, settledSince:null, stable:0, target:null, focused:null, requestedOffset:null};
+    }
+    function retainBattleTargetAfterResize() {
+        var target = state.highlightedBattle;
+        if (state.destroyed || !target || state.group !== 'battles' || !sameContext(target.context)) { return; }
+        var jump = state.battleJump;
+        startBattleJump(target, !jump || jump.revealOnly);
     }
     function battleLayoutOffset(node, ancestor) {
         var offset = 0, count = 0;
@@ -3206,7 +3259,7 @@
     }
     function finishBattleJump() {
         var jump = state.battleJump;
-        if (!jump) { return; }
+        if (!jump || state.resize) { return; }
         if (state.group !== 'battles' || !sameContext(jump.context)) { cancelBattleNavigation(); return; }
         // Loading a selected page and native layout can take several seconds.
         // Own the destination until its actual position settles, while keeping
@@ -3223,11 +3276,7 @@
         // order. Never mix samples from opposite sides of that handoff.
         if (battleScrollPending(jump)) { retryBattleJump(jump); return; }
         jump.requestedOffset = null;
-        var target = null;
-        (state.groupCards || []).some(function (card) {
-            if (card.getAttribute('data-group-id') === jump.id) { target = card; return true; }
-            return false;
-        });
+        var target = renderedBattleTarget(jump.id);
         var scroll = nodes.scroll, box = target && target.getBoundingClientRect(), container = scroll.getBoundingClientRect();
         function validRect(rect) {
             return rect && hasNumber(rect.top) && hasNumber(rect.width) && hasNumber(rect.height) && rect.width > 1 && rect.height > 1;
@@ -3235,13 +3284,17 @@
         if (!validRect(box) || !validRect(container)) { retryBattleJump(jump); return; }
         var scale = state.nativeScale || 1, filterHeight = pinnedFilterHeight();
         var layoutOffset = battleLayoutOffset(target, scroll);
-        var offset = Math.max(0, Math.min(scrollbarMetrics().maximum,
-            (layoutOffset === null ? scroll.scrollTop + box.top - container.top : layoutOffset) - filterHeight - 16 * scale));
+        var top = layoutOffset === null ? scroll.scrollTop + box.top - container.top : layoutOffset;
+        var inset = filterHeight + 16 * scale, offset = top - inset;
+        if (jump.revealOnly && box.height <= container.height - inset) {
+            offset = Math.max(top + box.height - container.height, Math.min(offset, scroll.scrollTop));
+        }
+        offset = Math.max(0, Math.min(scrollbarMetrics().maximum, offset));
         var now = Date.now();
         if (jump.target !== target || jump.lastOffset === null || Math.abs(jump.lastOffset - offset) > scale) {
             jump.target = target; jump.lastOffset = offset; jump.settledSince = now; jump.stable = 0;
         }
-        if (jump.focused !== target) { focusControl(target); jump.focused = target; }
+        if (!jump.revealOnly && jump.focused !== target) { focusControl(target); jump.focused = target; }
         cancelPageJump();
         if (state.feed) { state.feed.navigationPage = null; }
         jump.requestedOffset = offset;
@@ -3272,8 +3325,8 @@
         var caption = append(button, element('span', 'ss-control-label'));
         var panel = append(card, element('div', 'ss-map-battles' + (vehicle ? ' ss-vehicle-battles' : '')));
         panel.setAttribute('role', 'region'); panel.setAttribute('aria-label', t(titleKey));
-        var body = null, previous = null, next = null, pageText = null;
-        var rendered = null, requestedPage = null;
+        var body = null, pagination = null, previous = null, next = null, pageText = null;
+        var rendered = null, renderedPage = null, requestedPage = null;
         function live() {
             return sameContext(context) && state.group === group && getOrder(currentScope()).chronology === historyChronology && document.documentElement.contains(card);
         }
@@ -3291,10 +3344,8 @@
         function ensurePanel() {
             if (body) { return; }
             append(panel, element('h3', 'ss-more-title', t(titleKey)));
-            // Unknown and paged histories reserve the same viewport. A known
-            // short single page can use its actual rows instead of empty space.
-            body = append(panel, element('div', 'ss-history-body ss-history-paged'));
-            var pagination = append(panel, element('div', 'ss-map-battles-pagination'));
+            body = append(panel, element('div', 'ss-history-body'));
+            pagination = append(panel, element('div', 'ss-map-battles-pagination'));
             function pageButton(direction, name) {
                 var control = append(pagination, element('button', 'ss-control ss-button ss-map-page-' + name));
                 control.type = 'button';
@@ -3314,8 +3365,11 @@
             if (rendered === signature) { return; }
             var active = document.activeElement;
             var focusedPager = active === previous || active === next ? active : null;
-            var localScroll = body.scrollTop, panelScroll = panel.scrollTop, globalScroll = nodes.scroll.scrollTop;
-            body.className = 'ss-history-body' + (!list || list.pages > 1 ? ' ss-history-paged' : '');
+            var globalScroll = nodes.scroll.scrollTop, pagerTop = null;
+            if (list && renderedPage !== null && renderedPage !== list.page) {
+                var pager = pagination.getBoundingClientRect(), viewport = nodes.scroll.getBoundingClientRect();
+                if (pager.bottom > viewport.top + pinnedFilterHeight() && pager.top < viewport.bottom) { pagerTop = pager.top; }
+            }
             clear(body);
             if (!list) { append(body, element('p', 'ss-map-empty', t('maps.loading'))); }
             else {
@@ -3324,9 +3378,14 @@
                     var row = append(body, element('div', 'ss-map-battle-row'));
                     row.setAttribute('data-battle-id', String(battle.id));
                     var identity = append(row, element('div', 'ss-map-battle-info'));
-                    append(identity, element('strong', 'ss-map-battle-name', vehicle ? (battle.map || t('unknown.map')) : (battle.name || t('unknown.vehicle'))));
+                    var title = append(identity, element('div', 'ss-map-battle-identity'));
+                    var name = vehicle ? (battle.map || t('unknown.map')) : (battle.name || t('unknown.vehicle'));
+                    if (battle.visual && battle.visual.kind === (vehicle ? 'map' : 'vehicle')) {
+                        appendVisual(title, {name:name, visual:battle.visual}, true);
+                    }
+                    append(title, element('span', 'ss-map-battle-name', name));
                     append(identity, element('div', 'ss-map-battle-date', date(battle.started_at, true)));
-                    append(row, element('span', 'ss-map-battle-outcome', battleOutcome(battle.outcome)));
+                    appendOutcome(row, battle, 'ss-map-battle-outcome');
                     var rating = append(row, element('span', 'ss-map-battle-wn8'));
                     paintWN8Caption(append(rating, element('span', 'ss-map-battle-wn8-label', t('metric.wn8') + ' ')), battle.wn8);
                     paintWN8(append(rating, element('span', 'ss-map-battle-wn8-value', integer(battle.wn8))), battle.wn8);
@@ -3342,13 +3401,16 @@
             next.disabled = !list || list.page + 1 >= list.pages;
             pageText.textContent = list ? t('page.status', [list.page + 1, list.pages]) : '';
             rendered = signature;
+            renderedPage = list ? list.page : null;
             if (focusedPager) {
                 var target = !focusedPager.disabled ? focusedPager : !previous.disabled ? previous : !next.disabled ? next : button;
                 if (document.activeElement !== target) { focusControl(target); }
             }
-            body.scrollTop = localScroll;
-            panel.scrollTop = panelScroll;
+            // A shorter page moves its controls up. Preserve their on-screen
+            // position if they were visible, and retain scroll on refresh.
+            if (pagerTop !== null) { globalScroll = nodes.scroll.scrollTop + pagination.getBoundingClientRect().top - pagerTop; }
             if (nodes.scroll.scrollTop !== globalScroll) { nodes.scroll.scrollTop = globalScroll; }
+            return true;
         }
         function show(open) {
             button.setAttribute('aria-expanded', String(open));
@@ -3369,7 +3431,10 @@
             // flight. A clamped reply is valid when the final page disappeared.
             if (requestedPage !== null && list && list.page !== requestedPage && requestedPage < list.pages) { return true; }
             if (list) { requestedPage = null; }
-            if (button.getAttribute('aria-expanded') === 'true') { renderHistory(); }
+            if (button.getAttribute('aria-expanded') === 'true' && renderHistory()) {
+                invalidateCardFlow();
+                queueResize();
+            }
             panel.setAttribute('aria-busy', String(requestedPage !== null || !list));
             return true;
         };
@@ -3550,10 +3615,9 @@
                 creditMetric(metric) ? t('sort.' + canonicalMetric(metric) + '.caption') : t(metric === 'xp_base' ? 'sort.card_base_xp' : 'sort.card_received_xp');
             label = t('sort.metric_stat', [statistic, name]);
             value = netCreditMetric(metric) ? signed(cardSortValue(item, options)) : number(cardSortValue(item, options));
-            // Grow the badge only when its complete figure needs more room.
-            // Translated captions use the same compact, single-line slot.
+            // Preserve the whole figure even in the compact one-line slot.
+            // The headline can allocate more caption width on larger cards.
             card._ssSortWidth = Math.max(100, 18 + value.length * 9);
-            host.style.width = card._ssSortWidth + 'rem';
             clear(badge);
             var caption = append(badge, element('span', 'ss-group-sort-caption'));
             append(caption, element('span', 'ss-group-sort-caption-text', label));
@@ -3881,11 +3945,34 @@
         }
         return docked;
     }
-    function layoutAggregateHeadline(card, headline, width, docked) {
-        var wide = width + 14 >= 700;
-        var combined = wide && headline.querySelector('[data-wn8-kind="combined"]');
-        var statsWidth = (combined ? 226 : 194) + (card._ssSortWidth || 0);
-        var actionWidth = !docked && headline.querySelector('.ss-map-more-button') ? 76 : 0;
+    function aggregateCaptionHelp(node, label) {
+        if (node.classList.contains('ss-hover-help')) { return; }
+        var accessible = node.getAttribute('aria-label');
+        node.classList.add('ss-hover-help');
+        node.setAttribute('data-ss-help', accessible ? label + '\n' + accessible : label);
+        if (!accessible) { node.setAttribute('aria-label', label); }
+        node.setAttribute('aria-controls', helpTooltip.id); node.setAttribute('aria-expanded', 'false');
+        node.setAttribute('tabindex', '0');
+    }
+    function layoutAggregateHeadline(card, headline, width, docked, twoColumns) {
+        var ultraWide = width + 14 >= 700, wide = twoColumns && !ultraWide;
+        var combined = ultraWide && headline.querySelector('[data-wn8-kind="combined"]');
+        var count = headline.querySelector('.ss-group-count');
+        var smallCount = wide && count.querySelector('.ss-kpi-value').textContent.length <= 4;
+        var countWidth = smallCount ? '48rem' : '';
+        if (count.style.flexBasis !== countWidth) { count.style.flexBasis = countWidth; }
+        if (count.style.width !== countWidth) { count.style.width = countWidth; }
+        var statsWidth = (combined ? 226 : 194) - (smallCount ? 12 : 0);
+        var actionWidth = !docked && headline.querySelector('.ss-map-more-button') ? (wide ? 72 : 76) : 0;
+        var sortWidth = card._ssSortWidth || 0;
+        if (sortWidth) {
+            // Spend the extra width on the localized caption after reserving
+            // room for the thumbnail, name and vehicle metadata.
+            if (ultraWide) { sortWidth = Math.max(sortWidth, Math.min(190, width - statsWidth - actionWidth - 220)); }
+            var sortHost = headline.querySelector('.ss-group-sort-host');
+            if (sortHost.style.width !== sortWidth + 'rem') { sortHost.style.width = sortWidth + 'rem'; }
+            statsWidth += sortWidth;
+        }
         var availableIdentity = width - statsWidth - actionWidth;
         // Use the logical slots while Gameface still reports the old geometry.
         // Keep room for the thumbnail and text before stacking the headline.
@@ -3893,19 +3980,20 @@
         var inlineDocked = docked && !stacked;
         card.classList[stacked ? 'add' : 'remove']('ss-compact-headline');
         card.classList[inlineDocked ? 'add' : 'remove']('ss-inline-docked-headline');
-        card.classList[wide ? 'add' : 'remove']('ss-wide-headline');
+        card.classList[wide ? 'add' : 'remove']('ss-wide-aggregate-headline');
+        card.classList[ultraWide ? 'add' : 'remove']('ss-ultra-wide-headline');
         var identity = card.querySelector('.ss-group-identity');
-        var compactMeta = !stacked && availableIdentity < 176, free = identity.querySelector('.ss-free-xp');
+        var compactMeta = !stacked && availableIdentity < (wide || ultraWide ? 240 : 176), free = identity.querySelector('.ss-free-xp');
         card.classList[compactMeta ? 'add' : 'remove']('ss-compact-aggregate-meta');
+        if (wide || ultraWide) {
+            var title = identity.querySelector('.ss-group-title');
+            aggregateCaptionHelp(title, title.textContent);
+        }
         if (free) {
             var freeWidth = compactMeta ? free._ssAmountWidth : '';
             if (free.style.flexBasis !== freeWidth) { free.style.flexBasis = freeWidth; }
             if (compactMeta && !free.classList.contains('ss-hover-help')) {
-                free.classList.add('ss-hover-help');
-                var label = t('xp.free') + ' ' + free.querySelector('strong').textContent;
-                free.setAttribute('data-ss-help', label); free.setAttribute('aria-label', label);
-                free.setAttribute('aria-controls', helpTooltip.id); free.setAttribute('aria-expanded', 'false');
-                free.setAttribute('tabindex', '0');
+                aggregateCaptionHelp(free, t('xp.free') + ' ' + free.querySelector('strong').textContent);
             }
         }
         var identityWidth = stacked ? '100%' : inlineDocked ? (width - statsWidth) + 'rem' : '';
@@ -3964,7 +4052,7 @@
         cards.forEach(function (card, index) {
             var borderControls = layoutCardBorderControls(card, logicalWidth, wide);
             var headline = card.querySelector('.ss-group-stats');
-            if (headline) { layoutAggregateHeadline(card, headline, contentWidth, borderControls); }
+            if (headline) { layoutAggregateHeadline(card, headline, contentWidth, borderControls, wide); }
             if (state.group === 'battles') {
                 // The card's assigned logical width is independent of its
                 // caption layout; changing the class cannot change this input.
@@ -4492,12 +4580,7 @@
             event.stopPropagation();
             return;
         }
-        var target = event.target, history = null;
-        var ancestor = target;
-        while (ancestor && ancestor !== nodes.scroll && ancestor !== root) {
-            if (ancestor.classList && ancestor.classList.contains('ss-history-body')) { history = ancestor; break; }
-            ancestor = ancestor.parentNode;
-        }
+        var target = event.target;
         while (target && target !== nodes.scroll && target !== root) { target = target.parentNode; }
         if (target !== nodes.scroll) { return; }
         var vertical = event.deltaY;
@@ -4520,10 +4603,6 @@
         if (event.deltaMode === 2) { step = -vertical * nodes.scroll.clientHeight; }
         step *= state.scrollSpeed;
         event.preventDefault(); event.stopPropagation();
-        if (history) {
-            var inner = Math.max(0, Math.min(history.scrollHeight - history.clientHeight, history.scrollTop + step));
-            if (inner !== history.scrollTop) { history.scrollTop = inner; return; }
-        }
         var last = Math.max(0, nodes.scroll.scrollHeight - nodes.scroll.clientHeight);
         var current = state.scrollTarget === null ? nodes.scroll.scrollTop : state.scrollTarget;
         state.scrollTarget = null;
@@ -4712,11 +4791,24 @@
         queueResize();
     }
     function update(payload) {
-        closeSelect(false);
         if (state.destroyed) { return false; }
         try {
             var value = unwrap(payload);
             if (typeof value === 'string') { value = JSON.parse(value); }
+            if (value && value.window_settings_update) {
+                var settings = unwrap(value.window_settings_update), pending = state.windowPending;
+                var result = settings && unwrap(settings.window_settings_result);
+                if (!state.payload || !settings || settings.account_key !== state.payload.account_key ||
+                        !pending || !result || result.request_id !== pending.id) { return true; }
+                var windowPrefs = copyWindowSettings(unwrap(settings.window_settings));
+                if (!state.payload.appearance) { state.payload.appearance = {}; }
+                state.payload.appearance.window_settings = windowPrefs;
+                state.payload.appearance.window_settings_result = result;
+                state.payload.window_size = [windowPrefs.restored_width, windowPrefs.restored_height];
+                applyWindowSettings(windowPrefs, result);
+                return true;
+            }
+            closeSelect(false);
             if (value && value.resize_gesture) {
                 var gesture = value.resize_gesture;
                 if (state.resize && gesture.token === String(state.resizeSequence)) {
@@ -4766,6 +4858,7 @@
             if (state.bound) { queueResize(); }
             return true;
         } catch (error) {
+            closeSelect(false);
             state.orderIntent = null;
             setActionError(t('error.snapshot'));
             return false;
@@ -5290,6 +5383,7 @@
         cancelUITimer(drag.layoutTimer);
         trackResizeOnStage(drag, false);
         requestResizeCursor(drag.grip, false);
+        retainBattleTargetAfterResize();
         queueResize(true);
         if (drag.pointer !== undefined && typeof drag.grip.releasePointerCapture === 'function') {
             try { drag.grip.releasePointerCapture(drag.pointer); } catch (error) { /* Capture may already be released by the engine. */ }
@@ -5301,7 +5395,10 @@
         }
         if (!state.destroyed && state.logicalSize) {
             previewWindowSettings({maximized:false, restored_width:Math.round(state.logicalSize.width),
-                restored_height:Math.round(state.logicalSize.height)}, true);
+                restored_height:Math.round(state.logicalSize.height)}, false, true);
+            // A native release can be delivered inside its model transaction.
+            // Let the surface settle and publish the save outside that callback.
+            scheduleWindowCommit(0);
         }
     }
     function keyboardResize(event) {
@@ -5320,10 +5417,11 @@
         }
         setLogicalSize(rect.width / scale + (horizontal ? direction[0] * 24 : 0),
             rect.height / scale + (vertical ? direction[1] * 24 : 0));
+        retainBattleTargetAfterResize();
         queueResize();
         if (state.bound) { invoke('size_preference', state.logicalSize); }
         previewWindowSettings({maximized:false, restored_width:Math.round(state.logicalSize.width),
-            restored_height:Math.round(state.logicalSize.height)}, true);
+            restored_height:Math.round(state.logicalSize.height)}, true, true);
     }
     function bindResize(on) {
         var method = on ? 'addEventListener' : 'removeEventListener';
@@ -5589,7 +5687,7 @@
             layoutResizeGrips();
             layoutSummary();
             layoutFilterControls(force && !drag);
-            layoutBattleCards(!!drag);
+            layoutBattleCards(force || !!drag);
             if (drag) { drag.layoutWidth = resizePanelDimensions().width; }
             if (!force || !state.logicalSize) { resizeNative(state.logicalSize ? resizePanelDimensions() : null); }
             positionDatePicker();
@@ -5742,7 +5840,11 @@
         cancelBattleNavigation();
         clearBattleTarget(); retireFeed(); state.renderedFeed = null;
         nodes.groups.style.minHeight = ''; state.groupMinHeight = false;
+        document.removeEventListener('pointerdown', targetPointerDown, true);
+        document.removeEventListener('mousedown', targetPointerDown, true);
         document.removeEventListener('click', targetClick, true);
+        document.removeEventListener('keydown', targetTab, true);
+        document.removeEventListener('focusin', targetFocusIn);
         if (nodes['scroll-top']) { nodes['scroll-top'].onclick = null; }
         resetWindowSettings();
         if (nodes.maximize) { nodes.maximize.onclick = null; }

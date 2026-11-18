@@ -30,7 +30,8 @@ function geometry(source=shipped()) {
     focusControl(){focused++;},pinnedFilterHeight:()=>60,scrollbarMetrics:()=>({maximum:4000}),
     queueResize(){context.finishBattleJump();},updatePinnedFilters(){pinnedUpdates++;},syncScrollbar(){}};
   vm.createContext(context);
-  const names=['cancelBattleNavigation','cancelPageJump','retireFeed','consumeBattleFocus','finishBattleJump','finishPageJump','onScrollIntent'];
+  const names=['cancelBattleNavigation','cancelPageJump','retireFeed','consumeBattleFocus','startBattleJump','retainBattleTargetAfterResize',
+    'renderedBattleTarget','finishBattleJump','finishPageJump','onScrollIntent'];
   for(const name of ['retryBattleJump','battleLayoutOffset','battleScrollPending'])if(source.includes('    function '+name+'('))names.push(name);
   vm.runInContext(names.map(name=>actualFunction(source,name)).join('\n'),context);
   context.consumeBattleFocus({battle_focus:{id:'selected-page-three',request_id:'owned-focus'},pagination:{battles:{page:2}}});
@@ -60,6 +61,28 @@ function assertBattleJumpSource(source=shipped()) {
   assert.strictEqual(late.state.battleJump,null,'Repeated stable geometry retires the owned correction');
   assert.strictEqual(late.focused(),1,'Native focus is applied once per mounted destination');
   assert.strictEqual(late.timers.size,1,'Only the separate paint pulse remains after alignment');
+
+  late.state.resize={};late.scroll.scrollTop=1200;late.move(2100);
+  late.context.finishBattleJump();
+  assert.strictEqual(late.scroll.scrollTop,1200,'The held resize does not fight the current scroll');
+  late.state.resize=null;late.busy(true);late.context.retainBattleTargetAfterResize();late.context.finishBattleJump();
+  assert.strictEqual(late.scroll.scrollTop,1200,'Release waits for the final lane layout');
+  late.busy(false);late.tick();
+  assert.strictEqual(late.scroll.scrollTop,1750,'Release brings an offscreen selected card fully into view');
+  late.move(1300);late.tick();
+  assert.strictEqual(late.scroll.scrollTop,1224,'The same release follows a late lane change');
+  for(let index=0;index<7&&late.state.battleJump;index++)late.tick();
+  late.scroll.scrollTop=1175;late.context.retainBattleTargetAfterResize();late.context.finishBattleJump();
+  assert.strictEqual(late.scroll.scrollTop,1175,'A visible selected card keeps its current scroll after resizing');
+  assert.strictEqual(late.focused(),1,'Resize reveal leaves keyboard focus on the active control');
+  late.context.onScrollIntent({type:'wheel',target:late.scroll});late.scroll.scrollTop=500;late.tick();
+  assert.strictEqual(late.scroll.scrollTop,500,'New user scrolling supersedes resize alignment');
+
+  const duringJump=geometry(source);duringJump.show();duringJump.state.resize={};duringJump.context.finishBattleJump();
+  assert.strictEqual(duringJump.scroll.scrollTop,0,'An initial jump also waits while the window is being resized');
+  duringJump.state.resize=null;duringJump.context.retainBattleTargetAfterResize();duringJump.context.finishBattleJump();
+  assert.strictEqual(duringJump.scroll.scrollTop,1424,'Releasing during initial selection resumes its original alignment');
+  assert.strictEqual(duringJump.focused(),1,'The original selection still receives initial focus');
 
   for(const phase of ['getter','rect']) {
     const async=geometry(source);async.show();async.lag(phase);async.context.finishBattleJump();
