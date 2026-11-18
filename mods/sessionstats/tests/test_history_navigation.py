@@ -248,12 +248,7 @@ class HistoryNavigationTests(unittest.TestCase):
         self.assertFalse(self.service.select_battle('timeline', 'row-00010', period, 'request'))
 
 
-class NativeHistoryNavigationTests(unittest.TestCase):
-    setUp = native.NativePaginationTests.__dict__['setUp']
-    tearDown = native.NativePaginationTests.__dict__['tearDown']
-    inject_module = native.NativePaginationTests.__dict__['inject_module']
-    payload = native.NativePaginationTests.__dict__['payload']
-
+class NativeHistoryNavigationTests(native.NativePaginationFixture, unittest.TestCase):
     def test_map_to_battle_navigation_crosses_native_bridge_for_every_scope(self):
         for scope in ('launch', 'manual', 'instance'):
             before = self.payload()['scopes'][scope]

@@ -6,6 +6,7 @@ import copy
 import unittest
 
 import test_history_navigation as history
+from test_native_pagination import NativePaginationFixture
 from test_core import result
 from grz_session_stats.projection import DEFAULT_ORDER
 
@@ -171,12 +172,7 @@ class PageCacheProtocolTests(unittest.TestCase):
             self.service.loading = False
 
 
-class NativePageCacheProtocolTests(unittest.TestCase):
-    setUp = history.NativeHistoryNavigationTests.__dict__['setUp']
-    tearDown = history.NativeHistoryNavigationTests.__dict__['tearDown']
-    inject_module = history.NativeHistoryNavigationTests.__dict__['inject_module']
-    payload = history.NativeHistoryNavigationTests.__dict__['payload']
-
+class NativePageCacheProtocolTests(NativePaginationFixture, unittest.TestCase):
     def test_native_page_echo_and_revision_work_for_account_and_instance_scopes(self):
         for scope in ('launch', 'manual', 'instance'):
             before = self.payload()['scopes'][scope]

@@ -15,7 +15,7 @@ from grz_session_stats.core import StatsService, aggregate_stats
 from grz_session_stats import storage, projection
 
 
-class HistoryPerformanceTests(unittest.TestCase):
+class HistoryPerformanceFixture(object):
     def setUp(self):
         self.directory = tempfile.mkdtemp(prefix='grz-history-performance-')
         self.clock = Clock(100)
@@ -39,6 +39,18 @@ class HistoryPerformanceTests(unittest.TestCase):
         self.service.store.save(self.service._state)
         self.service = self.reopen()
 
+    def assert_numbers(self, actual, expected):
+        self.assertEqual(set(actual), set(expected))
+        for key, value in expected.items():
+            if isinstance(value, dict):
+                self.assert_numbers(actual[key], value)
+            elif isinstance(value, float):
+                self.assertAlmostEqual(actual[key], value, places=6, msg=key)
+            else:
+                self.assertEqual(actual[key], value, key)
+
+
+class HistoryPerformanceTests(HistoryPerformanceFixture, unittest.TestCase):
     def test_legacy_upgrade_only_encodes_changed_record_and_small_commit(self):
         self.seed(400)
         encoded, copied = [], []
@@ -96,16 +108,6 @@ class HistoryPerformanceTests(unittest.TestCase):
         snapshot['scopes']['manual']['summary']['xp_base']['sum'] = -999
         snapshot['scopes']['manual']['battles'][0]['stats']['wins'] = -999
         self.assertGreater(self.service.snapshot()['scopes']['manual']['summary']['xp_base']['sum'], 0)
-
-    def assert_numbers(self, actual, expected):
-        self.assertEqual(set(actual), set(expected))
-        for key, value in expected.items():
-            if isinstance(value, dict):
-                self.assert_numbers(actual[key], value)
-            elif isinstance(value, float):
-                self.assertAlmostEqual(actual[key], value, places=6, msg=key)
-            else:
-                self.assertEqual(actual[key], value, key)
 
     def test_incremental_totals_match_full_recomputation_through_corrections_and_resets(self):
         rng = random.Random(19281)

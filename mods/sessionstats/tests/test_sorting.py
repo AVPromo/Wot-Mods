@@ -3,12 +3,13 @@
 from __future__ import unicode_literals
 
 import copy
-from test_native_pagination import NativePaginationTests
+import unittest
+from test_native_pagination import NativePaginationFixture
 from test_core import result
 from grz_session_stats.projection import DEFAULT_ORDER
 
 
-class SortingTests(NativePaginationTests):
+class SortingTests(NativePaginationFixture, unittest.TestCase):
     def sort(self, scope='manual', group='battles', **options):
         command = self.command(scope, group, action='sort')
         command.update(DEFAULT_ORDER)
@@ -208,5 +209,4 @@ class SortingTests(NativePaginationTests):
 
 
 if __name__ == '__main__':
-    import unittest
     unittest.main()

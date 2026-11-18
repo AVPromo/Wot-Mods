@@ -115,12 +115,12 @@ class WindowConfigTests(unittest.TestCase):
 
 
 class WindowSettingsRuntimeTests(unittest.TestCase):
-    inject_module = paging.NativePaginationTests.__dict__['inject_module']
-    payload = paging.NativePaginationTests.__dict__['payload']
+    inject_module = paging.NativePaginationFixture.__dict__['inject_module']
+    payload = paging.NativePaginationFixture.__dict__['payload']
 
     def setUp(self):
-        paging.NativePaginationTests.__dict__['setUp'](self)
-        self.addCleanup(paging.NativePaginationTests.__dict__['tearDown'], self)
+        paging.NativePaginationFixture.__dict__['setUp'](self)
+        self.addCleanup(paging.NativePaginationFixture.__dict__['tearDown'], self)
         self.path = os.path.join(self.directory, 'settings.json')
         self.document = {'language': 'pl', 'custom': 42, 'window': {'custom': 'retain'}}
         with io.open(self.path, 'w', encoding='utf-8') as handle:
