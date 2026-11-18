@@ -221,6 +221,8 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
       free.getAttribute('aria-label')==='Free XP: Data available for 3 of 4 recorded battles.' && !free.textContent.includes('/') &&
       note.getBoundingClientRect().left>=title.left && freeBox.bottom<=group.querySelector('.ss-details').getBoundingClientRect().top+1;
   },[results(partial),catalog.en['explain.wn8'],catalog.en['help.credits.incomplete_brief']].join('\n')));
+  // The extrema row includes a 2px inset on each edge. Its controls and the
+  // credit amount still fit in a compact cell including the divider.
   check('Shared financial availability stays accessible without header or row ratios',await page.locator('#ss-groups .ss-group').first().locator('.ss-economy').evaluate(table=>
     table.querySelectorAll('.ss-cell-coverage').length===0 && table.querySelectorAll('.ss-money-row').length===2 &&
     table.querySelectorAll('.ss-credit-label-column [data-ss-credit-row]').length===2 &&
@@ -228,7 +230,8 @@ module.exports=async({browser,nativeHost,check:reportCheck})=>{
     table.querySelector('.ss-info-button')===null &&
     Array.from(table.querySelectorAll('.ss-money-row')).every(row=>row.classList.contains('ss-credit-pair') ?
       Array.from(row.querySelectorAll('.ss-credit-income-column > .ss-money-value')).every(cell=>
-        cell.getBoundingClientRect().height-(cell.querySelector('.ss-credit-inline-label')?.getBoundingClientRect().height||0)<=48) : row.getBoundingClientRect().height<=30)));
+        cell.getBoundingClientRect().height-(cell.querySelector('.ss-credit-inline-label')?.getBoundingClientRect().height||0)<=
+          (cell.querySelector('.ss-credit-extreme-actions') ? 50 : 48)) : row.getBoundingClientRect().height<=30)));
   for(const field of ['income','costs','net']) partial.currencies.bonds[field+'_count']=2;
   await render(payload);
   check('Currencies with different availability keep independent semantic counts without visible ratios',
