@@ -178,18 +178,19 @@
         helpTooltip.style.display = 'block';
         var bounds = root.getBoundingClientRect(), anchor = target.getBoundingClientRect();
         var scale = state.nativeScale, inset = 10 * scale, gap = 12 * scale;
-        var width = Math.max(1, Math.min(320 * scale, bounds.width - inset * 2));
         // Bound the positioning container, then let the visible box take the
         // width of its text. This does not need a fresh Gameface measurement.
         var anchorTop = Math.max(inset, Math.min(anchor.top - bounds.top, bounds.height - inset));
         var anchorBottom = Math.max(inset, Math.min(anchor.bottom - bounds.top, bounds.height - inset));
         var below = bounds.height - anchorBottom - gap - inset, above = anchorTop - gap - inset;
-        var anchorLeft = Math.max(inset, anchor.left - bounds.left);
-        var anchorRight = Math.min(bounds.width - inset, anchor.right - bounds.left);
-        var rightAligned = anchorLeft + width > bounds.width - inset && anchorRight - width >= inset;
-        var left = rightAligned ? anchorRight - width : Math.max(inset, Math.min(anchorLeft, bounds.width - width - inset));
+        var rightEdge = bounds.width - inset;
+        var anchorLeft = Math.max(inset, Math.min(anchor.left - bounds.left, rightEdge));
+        var anchorRight = Math.max(inset, Math.min(anchor.right - bounds.left, rightEdge));
+        var roomRight = rightEdge - anchorLeft, roomLeft = anchorRight - inset;
+        var rightAligned = roomRight < 320 * scale && roomLeft > roomRight;
+        var width = Math.max(1, Math.min(320 * scale, rightAligned ? roomLeft : roomRight));
         helpTooltipAnchor.style.width = width + 'px';
-        helpTooltipAnchor.style.left = left + 'px';
+        helpTooltipAnchor.style.left = (rightAligned ? anchorRight - width : anchorLeft) + 'px';
         helpTooltipAnchor.style.alignItems = rightAligned ? 'flex-end' : 'flex-start';
         helpTooltip.style.maxHeight = Math.max(1, Math.max(above, below)) + 'px';
         helpTooltipAnchor.style.top = below >= above ? anchorBottom + gap + 'px' : 'auto';
@@ -1005,10 +1006,12 @@
             });
         });
     }
-    function freeXP(parent, stats) {
+    function freeXP(parent, stats, aggregate) {
         var free = append(parent, element('div', 'ss-free-xp'));
-        append(free, element('span', '', t('xp.free')));
-        append(free, element('strong', '', number(series(stats.free_xp).sum)));
+        var caption = t('xp.free'), amount = number(series(stats.free_xp).sum);
+        append(free, element('span', '', caption));
+        append(free, element('strong', '', amount));
+        if (aggregate) { free._ssAmountWidth = Math.max(26, amount.length * 7 + 4) + 'rem'; }
         var count = series(stats.free_xp).count, total = observedTotal(stats);
         if (coverage(count, total)) { explainCoverage(free, count, total, t('xp.free')); }
     }
@@ -2603,6 +2606,7 @@
             element('div', 'ss-more-reward-block ss-more-bonus-block')) : null;
         if (ids.length) {
             var missionBlock = append(detailColumns, element('div', 'ss-more-mission-block'));
+            missionBlock._ssMissionCount = ids.length;
             append(missionBlock, element('h3', 'ss-more-title', t('more.missions')));
             if (data.active_crucible && ids.indexOf(data.active_crucible) > 0) {
                 ids.splice(ids.indexOf(data.active_crucible), 1);
@@ -2715,13 +2719,15 @@
         if (data.suicide) { append(panel, element('p', 'ss-more-caption', t('more.suicide'))); }
         if (!panel.firstChild) { append(panel, element('p', '', t('more.empty'))); }
     }
+    var missionTwoColumnWidth = 440;
     function layoutMissionRows(missions, width) {
+        if (missions._ssMissionWidth === width) { return; }
         var body = missions.querySelector('.ss-more-body');
         if (!body) { return; }
         var cards = Array.prototype.slice.call(body.querySelectorAll('.ss-more-mission'));
         // Two readable mission cells fill compact cards without squeezing the
         // independent bonus matrix. Explicit rows avoid native grid/wrap gaps.
-        var count = cards.length > 1 && width >= 440 ? 2 : 1, gap = 8;
+        var count = cards.length > 1 && width >= missionTwoColumnWidth ? 2 : 1, gap = 8;
         if (body.getAttribute('data-mission-columns') !== String(count)) {
             clear(body);
             var row;
@@ -2742,50 +2748,7 @@
             var margin = paired && index % 2 === 0 ? gap + 'rem' : '0rem';
             if (card.style.marginRight !== margin) { card.style.marginRight = margin; }
         });
-    }
-    function layoutMissionDetails(columns, missions, bonus, missionWidth, width, scale) {
-        var body = missions.querySelector('.ss-more-body');
-        var key = [missionWidth, width, scale, !!bonus].join(':');
-        if (columns._ssMissionLayout === key) { return; }
-        var continuation = columns._ssMissionContinuation;
-        if (continuation) {
-            Array.prototype.slice.call(continuation.querySelectorAll('.ss-more-mission')).forEach(function (mission) {
-                body.appendChild(mission);
-            });
-            continuation.parentNode.removeChild(continuation);
-            columns._ssMissionContinuation = null;
-            body.removeAttribute('data-mission-columns');
-        }
-        layoutMissionRows(missions, missionWidth);
-        var cards = Array.prototype.slice.call(body.querySelectorAll('.ss-more-mission'));
-        if (bonus && width >= 680 && missionWidth < 440 && cards.length >= 4) {
-            var bonusBox = bonus.getBoundingClientRect(), first = cards[0].getBoundingClientRect();
-            if (!(bonusBox.height > 0) || !(first.height > 0) || Math.abs(first.width / scale - missionWidth) > 1) {
-                // On native first paint, measure once more after the explicit widths settle.
-                if (columns._ssMissionLayoutWait !== key) { columns._ssMissionLayoutWait = key; queueResize(); }
-                return;
-            }
-            // Move at least a pair of missions only once the bonus matrix has
-            // ended. Both sections retain their headings and the original order.
-            var split = 0;
-            while (split < cards.length - 2) {
-                split += 1;
-                if (cards[split - 1].getBoundingClientRect().bottom >= bonusBox.bottom - scale) { break; }
-            }
-            if (cards[split - 1].getBoundingClientRect().bottom >= bonusBox.bottom - scale) {
-                continuation = element('div', 'ss-more-mission-block ss-more-mission-continuation');
-                columns.parentNode.insertBefore(continuation, columns.nextSibling);
-                columns._ssMissionContinuation = continuation;
-                append(continuation, element('h3', 'ss-more-title', t('more.missions')));
-                var tail = rewardTable(continuation, 'ss-more-missions');
-                cards.slice(split).forEach(function (mission) { tail.appendChild(mission); });
-                body.removeAttribute('data-mission-columns');
-                layoutMissionRows(missions, missionWidth);
-                layoutMissionRows(continuation, width);
-            }
-        }
-        columns._ssMissionLayout = key;
-        columns._ssMissionLayoutWait = null;
+        missions._ssMissionWidth = width;
     }
     function layoutMoreColumns(card, availableWidth) {
         var columns = card.querySelector('.ss-more-columns');
@@ -2798,7 +2761,10 @@
         var bonus = columns.querySelector('.ss-more-bonus-block');
         var missions = columns.querySelector('.ss-more-mission-block');
         var preferred = bonus ? Number(bonus.getAttribute('data-bonus-width')) || 308 : 0;
-        var bonusWidth = Math.min(width, preferred), gap = 8, minimumMissionWidth = 180;
+        var bonusWidth = Math.min(width, preferred), gap = 8;
+        // Keep a longer mission list together below the bonuses if two readable
+        // mission columns cannot fit beside them.
+        var minimumMissionWidth = missions && missions._ssMissionCount >= 4 ? missionTwoColumnWidth : 180;
         var paired = bonus && missions && width >= preferred + gap + minimumMissionWidth;
         columns.className = 'ss-more-columns ss-more-columns-' + (paired ? 'paired' : 'stacked');
         if (bonus) {
@@ -2813,7 +2779,7 @@
             missions.style.width = missionWidth + 'rem';
             missions.style.flex = paired ? '0 0 ' + missionWidth + 'rem' : '0 0 auto';
             missions.style.minWidth = paired ? minimumMissionWidth + 'rem' : '0rem';
-            layoutMissionDetails(columns, missions, paired ? bonus : null, missionWidth, width, scale);
+            layoutMissionRows(missions, missionWidth);
         }
     }
     function attachBattleMore(card, header, battle) {
@@ -3584,9 +3550,9 @@
                 creditMetric(metric) ? t('sort.' + canonicalMetric(metric) + '.caption') : t(metric === 'xp_base' ? 'sort.card_base_xp' : 'sort.card_received_xp');
             label = t('sort.metric_stat', [statistic, name]);
             value = netCreditMetric(metric) ? signed(cardSortValue(item, options)) : number(cardSortValue(item, options));
-            // Budget for the complete figure using the 16rem digit advance and
-            // horizontal insets. Translated captions never widen this slot.
-            card._ssSortWidth = Math.max(120, 18 + value.length * 9);
+            // Grow the badge only when its complete figure needs more room.
+            // Translated captions use the same compact, single-line slot.
+            card._ssSortWidth = Math.max(100, 18 + value.length * 9);
             host.style.width = card._ssSortWidth + 'rem';
             clear(badge);
             var caption = append(badge, element('span', 'ss-group-sort-caption'));
@@ -3654,7 +3620,7 @@
             meta = append(identity, element('div', 'ss-group-meta'));
             if (subtitle) { append(meta, element('div', 'ss-group-subtitle', subtitle)); }
             if (state.group === 'vehicles' || battle) { appendVehicleMetadata(meta, item, !battle); }
-            freeXP(meta, stats);
+            freeXP(meta, stats, !battle);
             if (battle) {
                 appendOutcome(header, item);
                 appendBattleMap(header, item);
@@ -3920,20 +3886,34 @@
         var combined = wide && headline.querySelector('[data-wn8-kind="combined"]');
         var statsWidth = (combined ? 226 : 194) + (card._ssSortWidth || 0);
         var actionWidth = !docked && headline.querySelector('.ss-map-more-button') ? 76 : 0;
-        // Reserve the logical slots before the native layout publishes its
-        // next rectangle, leaving space for the image and vehicle metadata.
-        var stacked = width - statsWidth - actionWidth < 176;
+        var availableIdentity = width - statsWidth - actionWidth;
+        // Use the logical slots while Gameface still reports the old geometry.
+        // Keep room for the thumbnail and text before stacking the headline.
+        var stacked = availableIdentity < (actionWidth ? 148 : 176);
         var inlineDocked = docked && !stacked;
         card.classList[stacked ? 'add' : 'remove']('ss-compact-headline');
         card.classList[inlineDocked ? 'add' : 'remove']('ss-inline-docked-headline');
         card.classList[wide ? 'add' : 'remove']('ss-wide-headline');
         var identity = card.querySelector('.ss-group-identity');
-        var identityWidth = stacked ? width + 'rem' : inlineDocked ? (width - statsWidth) + 'rem' : '';
-        var headlineWidth = stacked ? width + 'rem' : inlineDocked ? statsWidth + 'rem' : '';
+        var compactMeta = !stacked && availableIdentity < 176, free = identity.querySelector('.ss-free-xp');
+        card.classList[compactMeta ? 'add' : 'remove']('ss-compact-aggregate-meta');
+        if (free) {
+            var freeWidth = compactMeta ? free._ssAmountWidth : '';
+            if (free.style.flexBasis !== freeWidth) { free.style.flexBasis = freeWidth; }
+            if (compactMeta && !free.classList.contains('ss-hover-help')) {
+                free.classList.add('ss-hover-help');
+                var label = t('xp.free') + ' ' + free.querySelector('strong').textContent;
+                free.setAttribute('data-ss-help', label); free.setAttribute('aria-label', label);
+                free.setAttribute('aria-controls', helpTooltip.id); free.setAttribute('aria-expanded', 'false');
+                free.setAttribute('tabindex', '0');
+            }
+        }
+        var identityWidth = stacked ? '100%' : inlineDocked ? (width - statsWidth) + 'rem' : '';
+        var headlineWidth = stacked ? '100%' : inlineDocked ? statsWidth + 'rem' : '';
         if (identity.style.width !== identityWidth) { identity.style.width = identityWidth; }
         if (headline.style.width !== headlineWidth) { headline.style.width = headlineWidth; }
     }
-    function layoutBattleCards() {
+    function layoutBattleCards(duringResize) {
         layoutTitleControls();
         if (!state.cardPages || !state.cardPages.length) { return; }
         var scale = state.nativeScale || 1, width = nodes.groups.getBoundingClientRect().width / scale;
@@ -3957,6 +3937,7 @@
         state.effectiveCardWidth = cardWidth;
         var layoutKey = [wide, cardWidth, scale, Math.round(Math.min(width, cardWidth) * 1000)].join(':');
         var changed = state.cardLayoutKey !== layoutKey;
+        if (duringResize && !changed) { return; }
         if (changed) { invalidateCardFlow(); }
         nodes.groups.className = 'ss-card-layout' + (state.renderedFeed ? ' ss-feed-layout' : '') +
             (state.feedStaging ? ' ss-feed-staging' : '') +
@@ -4740,8 +4721,9 @@
                 var gesture = value.resize_gesture;
                 if (state.resize && gesture.token === String(state.resizeSequence)) {
                     state.resize.native = true;
-                    setLogicalSize(gesture.width, gesture.height, state.resize.corner);
-                    if (!gesture.active) { endResize(false); }
+                    setLogicalSize(gesture.width, gesture.height);
+                    if (gesture.active) { queueResize(); }
+                    else { endResize(false); }
                 }
                 return true;
             }
@@ -5101,13 +5083,12 @@
         } catch (ignored) { /* The owned rail's shipped padding is the first-layout fallback. */ }
         return inset;
     }
-    function setLogicalSize(width, height, edge) {
+    function setLogicalSize(width, height) {
         var bounds = windowSizeBounds();
         state.logicalSize = {
             width: Math.min(bounds.maxWidth, Math.max(bounds.minWidth, width)),
             height: Math.min(bounds.maxHeight, Math.max(bounds.minHeight, height))
         };
-        queueResize();
     }
     function consumeResizeInput(event) {
         if (event && typeof event.preventDefault === 'function') { event.preventDefault(); }
@@ -5259,7 +5240,10 @@
         var grip = event.currentTarget, corner = grip.getAttribute('data-corner') || 'se';
         focusControl(grip);
         state.resize = {x:event.clientX, y:event.clientY, width:rect.width, height:rect.height,
-            pointer:event.pointerId, grip:grip, corner:corner, native:false};
+            pointer:event.pointerId, grip:grip, corner:corner, native:false,
+            surfaceTimer:null, layoutTimer:null, layoutWidth:resizePanelDimensions(rect).width};
+        state.resizeMeasureToken += 1;
+        state.resizeQueued = false;
         state.resizeSequence += 1;
         state.resizeLast = Date.now() - 100;
         requestResizeCursor(grip, true);
@@ -5283,7 +5267,8 @@
         var horizontal = west || drag.corner.indexOf('e') >= 0;
         var vertical = north || drag.corner.indexOf('s') >= 0;
         setLogicalSize((drag.width + (horizontal ? (event.clientX - drag.x) * (west ? -1 : 1) : 0)) / state.nativeScale,
-            (drag.height + (vertical ? (event.clientY - drag.y) * (north ? -1 : 1) : 0)) / state.nativeScale, drag.corner);
+            (drag.height + (vertical ? (event.clientY - drag.y) * (north ? -1 : 1) : 0)) / state.nativeScale);
+        if (event.type !== 'mouseup' && event.type !== 'pointerup') { queueResize(); }
     }
     function endResize(notify) {
         if (!state.resize) { return; }
@@ -5301,9 +5286,8 @@
             moveResize(notify);
         }
         state.resize = null;
-        if (drag.layoutTimer !== undefined && drag.layoutTimer !== null) {
-            window.clearTimeout(drag.layoutTimer);
-        }
+        cancelUITimer(drag.surfaceTimer);
+        cancelUITimer(drag.layoutTimer);
         trackResizeOnStage(drag, false);
         requestResizeCursor(drag.grip, false);
         queueResize(true);
@@ -5335,7 +5319,8 @@
             invoke('drag', {active:false});
         }
         setLogicalSize(rect.width / scale + (horizontal ? direction[0] * 24 : 0),
-            rect.height / scale + (vertical ? direction[1] * 24 : 0), corner);
+            rect.height / scale + (vertical ? direction[1] * 24 : 0));
+        queueResize();
         if (state.bound) { invoke('size_preference', state.logicalSize); }
         previewWindowSettings({maximized:false, restored_width:Math.round(state.logicalSize.width),
             restored_height:Math.round(state.logicalSize.height)}, true);
@@ -5563,25 +5548,26 @@
             if (drag.previewSize && drag.previewSize.width === displaySize.width &&
                     drag.previewSize.height === displaySize.height) { return; }
             drag.previewSize = displaySize;
-            // Resize the actual window on the next event-loop turn. Laying out
-            // every loaded card on each sample can block the native resize.
-            state.resizeQueued = false;
-            var gestureTicket = ++state.resizeMeasureToken;
-            window.setTimeout(function () {
-                if (state.destroyed || state.resize !== drag || gestureTicket !== state.resizeMeasureToken) { return; }
-                resizeNative(displaySize);
-                layoutResizeGrips();
-            }, 0);
-            if (drag.layoutTimer !== undefined && drag.layoutTimer !== null) {
-                window.clearTimeout(drag.layoutTimer);
+            // Leave the native model callback before changing the surface. One
+            // task applies the latest dimensions even if more input arrives.
+            if (drag.surfaceTimer === null) {
+                drag.surfaceTimer = window.setTimeout(function () {
+                    if (state.destroyed || state.resize !== drag) { return; }
+                    drag.surfaceTimer = null;
+                    resizeNative(drag.previewSize);
+                    layoutResizeGrips();
+                    if (drag.layoutWidth === drag.previewSize.width) { syncScrollbar(); }
+                }, 0);
             }
-            // A pause in the drag still updates the content. Release bypasses
-            // this delay and flushes the latest size.
-            drag.layoutTimer = window.setTimeout(function () {
-                if (state.destroyed || state.resize !== drag || gestureTicket !== state.resizeMeasureToken) { return; }
-                drag.layoutTimer = null;
-                queueResize(true);
-            }, 160);
+            // Keep width-dependent layout responsive during continuous input
+            // without measuring all cards on every sample or on height changes.
+            if (drag.layoutTimer === null && drag.layoutWidth !== displaySize.width) {
+                drag.layoutTimer = window.setTimeout(function () {
+                    if (state.destroyed || state.resize !== drag) { return; }
+                    drag.layoutTimer = null;
+                    if (drag.layoutWidth !== drag.previewSize.width) { queueResize(true); }
+                }, 120);
+            }
             return;
         }
         if (state.resizeQueued) { return; }
@@ -5589,18 +5575,22 @@
         var ticket = ++state.resizeMeasureToken;
         if (force && state.logicalSize) {
             window.setTimeout(function () {
-                if (state.destroyed || ticket !== state.resizeMeasureToken) { return; }
+                if (state.destroyed || ticket !== state.resizeMeasureToken || !state.resizeQueued) { return; }
                 resizeNative(resizePanelDimensions());
             }, 0);
+            // A changing native surface can defer animation frames. The same
+            // owned measurement can run via the timer when paint is delayed.
+            window.setTimeout(measure, 40);
         }
         function measure() {
-            if (state.destroyed || ticket !== state.resizeMeasureToken) { return; }
+            if (state.destroyed || ticket !== state.resizeMeasureToken || !state.resizeQueued) { return; }
             state.resizeQueued = false;
             if (force && state.logicalSize) { resizeNative(resizePanelDimensions()); }
             layoutResizeGrips();
             layoutSummary();
-            layoutFilterControls(force);
-            layoutBattleCards();
+            layoutFilterControls(force && !drag);
+            layoutBattleCards(!!drag);
+            if (drag) { drag.layoutWidth = resizePanelDimensions().width; }
             if (!force || !state.logicalSize) { resizeNative(state.logicalSize ? resizePanelDimensions() : null); }
             positionDatePicker();
             if (state.groupMinHeight) {
@@ -5617,7 +5607,7 @@
         }
         if (typeof window.requestAnimationFrame === 'function') {
             window.requestAnimationFrame(function () {
-                if (state.destroyed || ticket !== state.resizeMeasureToken) { return; }
+                if (state.destroyed || ticket !== state.resizeMeasureToken || !state.resizeQueued) { return; }
                 if (typeof window.requestAnimationFrame === 'function') { window.requestAnimationFrame(measure); }
                 else { measure(); }
             });

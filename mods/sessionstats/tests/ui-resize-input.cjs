@@ -190,4 +190,63 @@ module.exports = async function ({browser, nativeHost, check}) {
       return __resizeHandled === previous;
     }));
   await page.close();
+
+  const responsive = await nativeHost(browser, {
+    initialViewport:{width:1600,height:1100}, viewport:{width:1600,height:1100,scale:1},
+  });
+  const timing = await responsive.evaluate(() => {
+    const originalFrame = window.requestAnimationFrame;
+    const frames = [];
+    window.requestAnimationFrame = callback => frames.push(callback);
+    const grip = document.querySelector('[data-corner="se"]');
+    grip.dispatchEvent(new MouseEvent('mousedown', {button:0,clientX:699,clientY:729,
+      bubbles:true,cancelable:true}));
+    const token = __grzCommands.filter(command => command.action === 'resize_begin').pop().token;
+    const sample = (width, height, active) => GRZSessionStats.update({
+      resize_gesture:{token,width,height,active},
+    });
+    const groups = document.getElementById('ss-groups');
+    const widthsStart = __grzTimerSequence;
+    const tasks = (after, delay) => [...__grzTimers].filter(([id, timer]) => id > after && timer.delay === delay);
+    const run = task => {
+      __grzTimers.delete(task[0]);
+      task[1].callback();
+    };
+    try {
+      sample(900, 830, true);
+      const firstLayout = tasks(widthsStart, 120)[0];
+      sample(1120, 835, true);
+      sample(1300, 840, true);
+      const surfaces = tasks(widthsStart, 0), layouts = tasks(widthsStart, 120);
+      const coalesced = surfaces.length === 1 && layouts.length === 1 && firstLayout &&
+        layouts[0][0] === firstLayout[0];
+      if (!coalesced) return {coalesced};
+      run(surfaces[0]);
+      const latestSurface = __nativeSize[0] === 1300 && __nativeSize[1] === 840;
+      run(firstLayout);
+      run(tasks(widthsStart, 40)[0]);
+      const activeLayout = groups.classList.contains('ss-two-columns');
+      const heightStart = __grzTimerSequence;
+      sample(1300, 860, true);
+      run(tasks(heightStart, 0)[0]);
+      const heightOnly = __nativeSize[1] === 860 && tasks(heightStart, 120).length === 0;
+      const releaseStart = __grzTimerSequence;
+      sample(900, 850, false);
+      run(tasks(releaseStart, 0)[0]);
+      run(tasks(releaseStart, 40)[0]);
+      const releaseLayout = __nativeSize[0] === 900 && __nativeSize[1] === 850 &&
+        !groups.classList.contains('ss-two-columns');
+      const calls = __grzHelperCalls.resize;
+      frames.slice().forEach(callback => callback());
+      return {coalesced,latestSurface,activeLayout,heightOnly,releaseLayout,
+        staleFramesInert:__grzHelperCalls.resize === calls};
+    } finally { window.requestAnimationFrame = originalFrame; }
+  });
+  check('Continuous native movement retains one surface task and the original layout deadline', timing.coalesced);
+  check('The surface takes the newest size and cards reflow during a held gesture without animation frames',
+    timing.latestSurface && timing.activeLayout);
+  check('Height-only native updates skip card reflow', timing.heightOnly);
+  check('Native release applies final dimensions and layout while delayed frame callbacks stay inert',
+    timing.releaseLayout && timing.staleFramesInert);
+  await responsive.close();
 };

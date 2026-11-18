@@ -59,12 +59,19 @@ module.exports=async ({browser,nativeHost,check})=>{
           return {text:messages['sort.value_per_battle'].replace(/\{([0-9])\}/g,(_,index)=>[statLabel,messages['sort.credits_net_received'],amount][index]),amount};
         });
         const audit=await page.locator('.ss-group-sort-value').evaluateAll((nodes,scale)=>nodes.map(node=>{
-          const box=node.getBoundingClientRect(),card=node.closest('.ss-group').getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node);
-          return {text:node.getAttribute('aria-label')||node.textContent,visible:node.querySelector('.ss-group-sort-number').textContent,inHeader:!!node.closest('.ss-group-header .ss-group-sort-host'),font:parseFloat(getComputedStyle(node).fontSize)/scale,
-            fits:box.width>0 && box.left>=card.left-1 && box.right<=card.right+1 && [...range.getClientRects()].every(text=>text.left>=box.left-1 && text.right<=box.right+1)};
+          const box=node.getBoundingClientRect(),card=node.closest('.ss-group').getBoundingClientRect();
+          const caption=node.querySelector('.ss-group-sort-caption-text'),number=node.querySelector('.ss-group-sort-number');
+          const captionBox=caption.getBoundingClientRect(),captionStyle=getComputedStyle(caption),range=document.createRange();
+          range.selectNodeContents(number);
+          const figure=range.getBoundingClientRect(),inside=part=>part.left>=box.left-1 && part.right<=box.right+1;
+          return {text:node.getAttribute('aria-label'),help:node.getAttribute('data-ss-help'),visible:number.textContent,
+            inHeader:!!node.closest('.ss-group-header .ss-group-sort-host'),font:parseFloat(getComputedStyle(node).fontSize)/scale,
+            fits:box.width>0 && box.width/scale<=101 && box.left>=card.left-1 && box.right<=card.right+1 && inside(captionBox) && inside(figure),
+            captionClamped:captionStyle.whiteSpace==='nowrap' && captionStyle.textOverflow==='ellipsis' && captionStyle.overflowX==='hidden'};
         }),scale);
         check('Net sort displays the full per-battle '+statistic+' value rather than its aggregate total for '+group+' '+caption+': '+JSON.stringify(audit),
-          audit.length===4 && audit.every((item,index)=>item.text===expected[index].text && item.visible===expected[index].amount && item.inHeader && item.font>=11 && item.fits));
+          audit.length===4 && audit.every((item,index)=>item.text===expected[index].text && item.help===item.text &&
+            item.visible===expected[index].amount && item.inHeader && item.font>=11 && item.fits && item.captionClamped));
         check('An active aggregate metric restores Statistic access: '+group+' '+caption,
           await page.locator('#ss-sort-statistic .ss-select-trigger').isEnabled() && await page.locator('#ss-sort-statistic .ss-select-trigger').getAttribute('aria-disabled')==='false');
       }

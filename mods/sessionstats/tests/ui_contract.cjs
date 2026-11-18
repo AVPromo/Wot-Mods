@@ -678,6 +678,7 @@ const FEATURE_DURATION_HINTS = {
   }
   await page.locator('#ss-group-vehicles').click();
   await page.setViewportSize({width:320,height:820});
+  await page.waitForFunction(()=>document.querySelector('#ss-groups .ss-group').classList.contains('ss-compact-headline'));
   check('Thumbnail leaves tank identity and KPIs within the narrow panel',await page.locator('#ss-groups .ss-group').first().evaluate(group=>{
     const panel=document.getElementById('grz-session-stats').getBoundingClientRect();
     return Array.from(group.querySelectorAll('.ss-group-thumb,.ss-group-name,.ss-group-kpi')).every(node=>{

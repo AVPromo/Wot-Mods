@@ -8,10 +8,12 @@ module.exports=async({browser,nativeHost,check})=>{
   const timers=()=>page.evaluate(()=>[...__grzTimers].filter(([,timer])=>String(timer.callback).includes('helpPending')).map(([id,timer])=>({id,delay:timer.delay})));
   async function fire(id){await page.evaluate(id=>{const timer=__grzTimers.get(id);if(!timer)throw Error('Expected owned help timer');__grzTimers.delete(id);timer.callback();},id);}
   async function leave(){await page.locator('#ss-titlebar h1').hover();await page.locator('#ss-close').focus();}
-  async function publish(observed=27){
-    await page.evaluate(({observed,messages})=>{
+  async function publish(observed=27,width=1500){
+    await page.evaluate(({observed,messages,width})=>{
       const payload=JSON.parse(model.payload),scope=payload.scopes.launch;
-      payload.account_key='SYNTHETIC:tooltip-entry-'+observed;payload.window_size=[1500,1050];payload.localization={language:'en',messages};
+      payload.account_key='SYNTHETIC:tooltip-entry-'+observed+'-'+width;
+      payload.viewport.width=width===550?570:1800;
+      payload.window_size=[width,1050];payload.localization={language:'en',messages};
       scope.summary.battles=24;scope.summary.observed_battles=observed;
       scope.summary.credits_income_received={count:24,min:10,avg:100,max:200,sum:2400};
       const item=scope.maps[0];item.stats=JSON.parse(JSON.stringify(scope.summary));item.stats.credits_income_received={count:24,min:10,avg:100,max:200,sum:2400};
@@ -26,7 +28,7 @@ module.exports=async({browser,nativeHost,check})=>{
           name:'Synthetic vehicle',map:'Synthetic map',started_at:1793514000};
       }
       model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
-    },{observed,messages});
+    },{observed,messages,width});
     await page.locator('#ss-scope-launch').click();await page.locator('#ss-group-maps').click();await frames(page);
   }
   try{
@@ -88,11 +90,11 @@ module.exports=async({browser,nativeHost,check})=>{
       target.setAttribute('aria-controls','ss-help-tooltip');
       document.getElementById('grz-session-stats').appendChild(target);
     });
-    async function auditText(text){
+    async function auditText(text,side='right'){
       await leave();
       await edgeHelp.evaluate((target,text)=>target.setAttribute('data-ss-help',text),text);
       await edgeHelp.focus();await frames(page);
-      return tooltip.evaluate(node=>{
+      return tooltip.evaluate((node,side)=>{
         const panel=node.closest('#grz-session-stats').getBoundingClientRect(),box=node.getBoundingClientRect(),
           anchor=document.getElementById('ss-test-edge-help').getBoundingClientRect(),range=document.createRange();
         range.selectNodeContents(node);
@@ -100,8 +102,8 @@ module.exports=async({browser,nativeHost,check})=>{
           part.left>=owner.left-1&&part.right<=owner.right+1&&part.top>=owner.top-1&&part.bottom<=owner.bottom+1;
         return {width:box.width,height:box.height,text:node.textContent,lines:ink.length,
           longest:Math.max(...ink.map(part=>part.width)),inside:inside(box,panel)&&ink.every(part=>inside(part,box)),
-          anchored:Math.abs(box.right-anchor.right)<=1&&Math.abs(anchor.top-box.bottom-12)<=1};
-      });
+          anchored:Math.abs(box[side]-anchor[side])<=1&&Math.abs(anchor.top-box.bottom-12)<=1};
+      },side);
     }
     const short=await auditText('Combined WN8');
     check('Short tooltip fits its text and stays anchored at the bottom-right edge: '+JSON.stringify(short),
@@ -113,5 +115,11 @@ module.exports=async({browser,nativeHost,check})=>{
     const long=await auditText(explanation);
     check('Long help wraps within its width cap and fits near the bottom-right edge: '+JSON.stringify(long),
       long.text===explanation&&long.lines>2&&long.width>short.width&&long.width<=321&&long.inside&&long.anchored);
+
+    await publish(24,550);
+    await edgeHelp.evaluate(target=>{target.style.left='48%';target.style.right='auto';target.style.width='18rem';});
+    const centered=await auditText('Combined WN8','left');
+    check('Short help stays attached to its anchor when the full width cap fits on neither side: '+JSON.stringify(centered),
+      centered.lines===1&&centered.width>=centered.longest&&centered.width<=centered.longest+30&&centered.inside&&centered.anchored);
   }finally{await page.close();}
 };

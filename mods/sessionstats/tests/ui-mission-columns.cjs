@@ -59,16 +59,6 @@ module.exports=async({browser,nativeHost,check})=>{
         await page.evaluate(()=>__missionGridRows.every(row=>row.isConnected)&&__missionGridCards.every(card=>card.isConnected)&&
           [...document.querySelector('.ss-more-mission-block .ss-more-body').children].every((row,index)=>row===__missionGridRows[index])));
       if(language==='en'){
-        for(const width of [720,500,720,500]){
-          await page.evaluate(width=>{const data=JSON.parse(model.payload);data.appearance.wide_card_widths.battles=width;
-            model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();},width);
-          const more=page.locator('.ss-battle .ss-more-button');
-          if(await more.getAttribute('aria-expanded')!=='true')await more.click();await settled(page,scale,2100);
-          const result=await page.locator('.ss-more-columns > .ss-more-mission-block').evaluate(block=>({width:block.getBoundingClientRect().width/parseFloat(document.documentElement.style.fontSize),
-            count:Number(block.querySelector('.ss-more-body').getAttribute('data-mission-columns')),cards:block.closest('.ss-more-panel').querySelectorAll('.ss-more-mission').length}));
-          check('Mission rows reflow after a narrow/wide transition at'+width+'px/'+scale+'x: '+JSON.stringify(result),
-            result.count===(width===500?2:1)&&result.cards===4);
-        }
         await page.evaluate(()=>{const data=JSON.parse(model.payload);data.account_key+='-odd';
           data.scopes.launch.battles[0].details.missions.extra={kind:'daily',name:'Synthetic extra objective',status:'completed'};
           model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();});
@@ -78,11 +68,10 @@ module.exports=async({browser,nativeHost,check})=>{
           const body=block.querySelector('.ss-more-body'),last=body.lastElementChild,box=block.getBoundingClientRect(),card=last.firstElementChild.getBoundingClientRect();
           return body.children.length===3&&last.children.length===1&&block.querySelectorAll('.ss-more-mission').length===5&&Math.abs(card.width-box.width)<=scale;
         },scale));
-        const splits=[];
         for(const rich of [false,true]){
           await page.evaluate(rich=>{
             const data=JSON.parse(model.payload),battle=data.scopes.launch.battles[0];
-            data.account_key+='-mission-tail';data.appearance.wide_card_widths.battles=720;
+            data.account_key+='-mission-section';data.appearance.wide_card_widths.battles=720;
             battle.details.bonuses=rich?{eventCredits:80000,eventCrystal:50,wotPlusCredits:7321,wotPlusXP:246,wotPlusFreeXP:12,wotPlusCrewXP:246,
               premiumCredits:16269,premiumXP:547,premiumFreeXP:28,premiumCrewXP:547,dailyXPFactor10:20,additionalXPFactor10:30}:
               {eventCredits:80000};
@@ -93,46 +82,33 @@ module.exports=async({browser,nativeHost,check})=>{
           },rich);
           await page.locator('.ss-battle .ss-more-button').click();await settled(page,scale,2100);
           const panel=page.locator('.ss-more-panel');
-          const layout=await panel.evaluate((panel,scale)=>{
-            const bonusBlock=panel.querySelector('.ss-more-bonus-block'),bonus=bonusBlock.getBoundingClientRect(),
-              missionBlock=panel.querySelector('.ss-more-columns .ss-more-mission-block'),
-              continuation=panel.querySelector('.ss-more-mission-continuation'),
-              first=[...panel.querySelectorAll('.ss-more-columns .ss-more-mission')],
-              cards=[...panel.querySelectorAll('.ss-more-mission')];
-            if(!continuation)return {first:first.length,compacted:false};
-            const bounds=continuation.getBoundingClientRect(),tail=[...continuation.querySelectorAll('.ss-more-mission')],
-              [left,right]=tail.map(mission=>mission.getBoundingClientRect());
-            window.__missionTail=continuation;window.__missionTailCards=tail;
-            const backdrop=node=>getComputedStyle(node).backgroundColor;
-            const sharedBackground=backdrop(missionBlock)===backdrop(continuation)&&backdrop(missionBlock)!==backdrop(bonusBlock)&&
-              cards.every(mission=>backdrop(mission)==='rgba(0, 0, 0, 0)');
-            return {first:first.length,ordered:cards.every((mission,index)=>mission.querySelector('strong').textContent==='Ordered objective '+index),
-              sharedBackground,
-              compacted:cards.length===8 && first.length+tail.length===8 && !!left && !!right &&
-                continuation.querySelector('.ss-more-title').textContent==='Missions' && bounds.top>=bonus.bottom-scale &&
-                left.left<bonus.right && Math.abs(left.top-right.top)<=scale && left.right<=right.left-scale && right.right<=bounds.right+scale};
-          },scale);
-          check('Wide More fits additional missions below '+(rich?'taller':'shorter')+' bonuses at'+scale*100+'%: '+JSON.stringify(layout),
-            layout.compacted&&layout.ordered);
-          check('Mission tiles share their section background apart from the bonuses at '+scale*100+'%',layout.sharedBackground);
-          splits.push(layout.first);
-          await page.evaluate(()=>window.dispatchEvent(new Event('resize')));await settled(page,scale,2100);
-          check('An unchanged wide More retains the same continuation and mission nodes at'+scale*100+'%',
-            await panel.evaluate(panel=>panel.querySelector('.ss-more-mission-continuation')===__missionTail && __missionTailCards.every(card=>card.isConnected)));
+          for(const width of [720,970,500]){
+            await page.evaluate(width=>{const data=JSON.parse(model.payload);data.appearance.wide_card_widths.battles=width;
+              model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();},width);
+            const more=page.locator('.ss-battle .ss-more-button');
+            if(await more.getAttribute('aria-expanded')!=='true')await more.click();await settled(page,scale,2100);
+            const layout=await panel.evaluate((panel,scale)=>{
+              const bonusBlock=panel.querySelector('.ss-more-bonus-block'),bonus=bonusBlock.getBoundingClientRect(),
+                missionBlock=panel.querySelector('.ss-more-columns > .ss-more-mission-block'),box=missionBlock.getBoundingClientRect(),
+                table=missionBlock.querySelector('.ss-more-missions'),cards=[...panel.querySelectorAll('.ss-more-mission')];
+              const backdrop=node=>getComputedStyle(node).backgroundColor,transparent='rgba(0, 0, 0, 0)';
+              return {sections:panel.querySelectorAll('.ss-more-mission-block').length,
+                cardWidth:panel.closest('.ss-battle').getBoundingClientRect().width/scale,
+                columns:Number(table.querySelector('.ss-more-body').getAttribute('data-mission-columns')),
+                title:missionBlock.querySelector('.ss-more-title').textContent,
+                ordered:cards.length===8&&cards.every((mission,index)=>missionBlock.contains(mission)&&
+                  mission.querySelector('strong').textContent==='Ordered objective '+index),
+                background:backdrop(missionBlock)!==transparent&&backdrop(missionBlock)!==backdrop(bonusBlock)&&
+                  [table,...cards].every(node=>backdrop(node)===transparent),
+                beside:Math.abs(box.top-bonus.top)<=scale&&box.left>=bonus.right,
+                below:box.top>=bonus.bottom-scale};
+            },scale);
+            check('Missions share one section '+(width===970?'beside':'below')+' '+(rich?'taller':'shorter')+
+              ' bonuses at '+width+'px/'+scale+'x: '+JSON.stringify(layout),
+              Math.abs(layout.cardWidth-width)<=1&&layout.sections===1&&layout.columns===2&&layout.title==='Missions'&&
+              layout.ordered&&layout.background&&(width===970?layout.beside:layout.below));
+          }
         }
-        check('A taller bonus table keeps more missions beside it before continuing at'+scale*100+'%: '+splits.join(', '),splits[0]<splits[1]);
-        await page.evaluate(()=>{
-          const data=JSON.parse(model.payload);
-          data.appearance.wide_card_widths.battles=500;
-          model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();
-        });
-        const compactMore=page.locator('.ss-battle .ss-more-button');
-        if(await compactMore.getAttribute('aria-expanded')!=='true')await compactMore.click();
-        await settled(page,scale,2100);
-        check('The compact card restores a single mission section with all eight results at'+scale*100+'%',
-          await page.locator('.ss-more-panel').evaluate(panel=>!panel.querySelector('.ss-more-mission-continuation') &&
-            [...panel.querySelectorAll('.ss-more-mission')].map(mission=>mission.querySelector('strong').textContent).join('|')===
-              Array.from({length:8},(_,index)=>'Ordered objective '+index).join('|')));
       }
     }
   }finally{await page.close();}

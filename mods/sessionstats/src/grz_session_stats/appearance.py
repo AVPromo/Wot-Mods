@@ -782,6 +782,10 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-aggregate.ss-compact-headline .ss-group-identity,
 .ss-aggregate.ss-inline-docked-headline .ss-group-identity { flex:0 0 auto; min-height:36rem; }
 .ss-aggregate.ss-compact-headline .ss-group-stats { justify-content:flex-end; max-width:100%; flex-wrap:wrap; margin-top:3rem; }
+.ss-compact-aggregate-meta .ss-group-meta .ss-group-subtitle { margin-right:4rem; }
+.ss-compact-aggregate-meta .ss-free-xp { flex:1 1 0rem; min-width:0; flex-wrap:nowrap; }
+.ss-compact-aggregate-meta .ss-free-xp span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ss-compact-aggregate-meta .ss-free-xp strong { flex:0 0 auto; white-space:nowrap; }
 .ss-more-panel { display:flex; flex-wrap:wrap; align-items:flex-start; padding:5rem 0 2rem; border-top:1rem solid {{colors.group_tabs_border_bottom}}; font-size:13rem; line-height:18rem; overflow-wrap:break-word; }
 .ss-more-panel > p { width:100%; margin:3rem 5rem; }
 .ss-more-title { margin:4rem 5rem; color:{{colors.session_tab_active_text}}; font-size:13rem; line-height:18rem; }
@@ -864,7 +868,6 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-more-columns { display:block; width:100%; min-width:0; }
 .ss-more-columns-paired { display:flex; flex-wrap:nowrap; align-items:flex-start; }
 .ss-more-mission-block { flex:0 0 auto; min-width:0; max-width:100%; width:100%; padding:1rem 0 4rem; border-radius:{{radii.table_row}}rem; background:{{colors.table_header_background_end}}; }
-.ss-more-mission-continuation { flex:0 0 100%; margin-top:3rem; border-top:1rem solid {{colors.details_separator_border_top}}; }
 .ss-more-reward-block { flex:1 1 220rem; min-width:0; max-width:100%; padding:0 0 4rem; }
 /* The current point total stays beside its heading. Additional point sources
    wrap as complete cells, keeping the numerical strip above both columns. */
@@ -891,7 +894,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-more-mission-row:last-child { margin-bottom:0; }
 .ss-more-mission-row .ss-more-mission { min-width:0; max-width:100%; margin-bottom:0; }
 .ss-more-mission:last-child { margin-bottom:0; }
-.ss-more-table.ss-more-missions { border:0; background:{{colors.close_background}}; }
+.ss-more-table.ss-more-missions { border:0; background:none; }
 .ss-more-table .ss-more-mission-name { display:block; min-width:0; width:100%; padding:0; }
 .ss-more-mission-name strong { display:block; }
 .ss-more-table .ss-more-mission-status { display:block; min-width:0; width:100%; margin-top:4rem; padding:4rem 0 0; border-top:1rem solid {{colors.details_separator_border_top}}; color:{{colors.metric_value_text}}; font-size:12rem; line-height:16rem; }

@@ -17,8 +17,8 @@ module.exports=async({browser,nativeHost,check})=>{
     try{
       await page.evaluate(()=>{window.__responsiveHeaderFixture=JSON.parse(model.payload);});
       let sequence=0;
-      async function publish(language,width,{paged=false,fresh=false,largeFinance=false,selectedGroup='maps'}={}){
-        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh,largeFinance,selectedGroup,panelCSS})=>{
+      async function publish(language,width,{paged=false,fresh=false,largeFinance=false,vehicleNames,selectedGroup='maps'}={}){
+        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh,largeFinance,vehicleNames,selectedGroup,panelCSS})=>{
           const payload=JSON.parse(JSON.stringify(__responsiveHeaderFixture)),scope=payload.scopes.launch;
           payload.account_key='synthetic-responsive-header-'+scale+'-'+language;payload.window_size=[width,1100];
           payload.viewport={width:width<625?width*scale+20:3840,height:2800,scale};payload.localization={language,messages};
@@ -28,6 +28,7 @@ module.exports=async({browser,nativeHost,check})=>{
             const sample=scope[group][0];scope[group]=[0,1].map(index=>{
               const item=JSON.parse(JSON.stringify(sample)),stats=item.stats,total=index?8:7;
               item.id=(fresh?'fresh-':'')+'responsive-'+group+'-'+index;item.name=group==='maps'?(index?'Klondike':'Cliff'):'Synthetic vehicle '+index;
+              if(group==='vehicles'&&vehicleNames)item.name=vehicleNames[index];
               if(group==='maps')item.visual={kind:'map',src:'img://gui/maps/icons/map/small/synthetic-header.png',alt:'Synthetic map'};
               if(group==='vehicles'||group==='battles')item.visual={kind:'vehicle',src:'img://gui/maps/icons/vehicle/contour/synthetic-header.png',alt:'Synthetic vehicle'};
               if(group==='battles')item.map_visual={kind:'map',src:'img://gui/maps/icons/map/small/synthetic-header.png',alt:'Synthetic map'};
@@ -54,7 +55,7 @@ module.exports=async({browser,nativeHost,check})=>{
           payload.scopes.timeline.from_point=payload.scopes.timeline.to_point='';payload.scopes.timeline.time_points=[];
           model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
           document.getElementById('ss-scope-manual').click();document.getElementById('ss-group-'+selectedGroup).click();
-        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh,largeFinance,selectedGroup,panelCSS:compiled.stdout.trim()});
+        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh,largeFinance,vehicleNames,selectedGroup,panelCSS:compiled.stdout.trim()});
         await frames(page);
       }
       async function resize(width,height=1100){
@@ -216,6 +217,17 @@ module.exports=async({browser,nativeHost,check})=>{
               Math.abs(card.header.height-result.cards[index].header.height)<=1));
         }
       }
+      await publish('en',1300,{largeFinance:true,vehicleNames:['Pz. 55','CAV 71'],selectedGroup:'vehicles'});
+      const sortedTwoLane=await audit();
+      await page.evaluate(()=>{
+        const payload=JSON.parse(model.payload);
+        for(const scope of ['launch','timeline'])payload.scopes[scope].ordering.vehicles.metric='off';
+        model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
+      });await frames(page);
+      const unsortedTwoLane=await audit();
+      check('An ordinary two-column card keeps a short vehicle identity level with the sort result at '+scale+'x: '+JSON.stringify(sortedTwoLane.cards),
+        sortedTwoLane.two&&valid(sortedTwoLane)&&valid(unsortedTwoLane)&&sortedTwoLane.cards.every((card,index)=>
+          card.inline&&card.sortNumber==='234567890'&&Math.abs(card.header.height-unsortedTwoLane.cards[index].header.height)<=1));
       for(const language of ['en','es']){
         await publish(language,1800,{selectedGroup:'vehicles'});const result=await audit();
         check('Wide vehicle cards show the full localized Combined WN8 caption at '+language+'/'+scale+'x: '+JSON.stringify(result.cards),
