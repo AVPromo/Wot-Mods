@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def load_logger():
     # Extract original implementation, avoiding imports of unavailable WoT DLLs.
-    original = ast.parse((ROOT / 'source/mod_staysharp_medkit.py').read_text())
+    original = ast.parse((ROOT / 'src/mod_staysharp_medkit.py').read_text())
     function = next(n for n in original.body
                     if isinstance(n, ast.FunctionDef) and n.name == '_log')
     ast.fix_missing_locations(function)

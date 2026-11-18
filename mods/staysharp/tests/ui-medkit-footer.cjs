@@ -4,8 +4,8 @@ const fs=require('fs');
 const path=require('path');
 const vm=require('vm');
 const root=path.resolve(__dirname,'..');
-const script=path.join(root,'source/staysharp_medkit/ui/footer.js');
-const settingsScript=path.join(root,'source/staysharp_medkit/ui/settings.js');
+const script=path.join(root,'src/staysharp_medkit/ui/footer.js');
+const settingsScript=path.join(root,'src/staysharp_medkit/ui/settings.js');
 const modVersion=fs.readFileSync(path.join(root,'VERSION'),'utf8').trim();
 async function nodeContracts(){
   class Element {
@@ -162,7 +162,7 @@ async function nodeContracts(){
   assert.strictEqual(find(labeled,'#grz-medkit-settings-clear-mod-caption').textContent,'Wyczyść');
   assert.strictEqual(find(labeled,'#grz-medkit-settings-cancel-caption').textContent,'Anuluj');
   labeled.context.GRZStaySharpSettings.destroy();
-  const html=fs.readFileSync(path.join(root,'source/staysharp_medkit/ui/settings.html'),'utf8');
+  const html=fs.readFileSync(path.join(root,'src/staysharp_medkit/ui/settings.html'),'utf8');
   for(const suffix of ['title','version','close','label-mod','label-voice','mod','voice','clear-mod','clear-voice','hint','feedback','cancel','bottom'])assert(html.includes('id="grz-medkit-settings-'+suffix+'"'));
   assert(!/\beval\s*\(|innerHTML|https?:\/\//.test(fs.readFileSync(script,'utf8')+fs.readFileSync(settingsScript,'utf8')),'Native frontend has no executable/remote/config-HTML path');
   console.log('PASS: Node DOM contracts cover the native gear anchor, global/footer-texture coordinates, bounded fallbacks, rerenders, no commands on binding, Settings model, capture shielding, safe text and cleanup.');
@@ -175,10 +175,10 @@ async function browserContracts(){
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await page.setContent('<html style="font-size:1px"><head><style>.App_footer_test{display:flex;justify-content:space-between}.Footer_section_test{display:flex;align-items:center}</style></head><body><div class="App_footer_test"><div class="Footer_section_test"><button id="left">Contacts</button></div><div>Chats</div><div class="Footer_section_test"><button class="SessionStatistic_test">WG stats</button><button id="wn8">WN8</button><span id="server">EU2</span><button data-test-id="menu">Gear</button><button>Notifications</button></div></div></body></html>');
     await page.evaluate(()=>{window.actions=[];window.isDomBuilt=true;window.engine={whenReady:Promise.resolve(),on(){},off(){}};window.viewEnv={addDataChangedCallback(){return 1;},removeDataChangedCallback(){}};window.subViews={ids(){return[41];},get(){return{model:{grzMedkitFooter:{state:'{}',onAction:args=>actions.push(args)}}};}};});
-    await page.addStyleTag({path:path.join(root,'source/staysharp_medkit/ui/footer.css')});await page.addScriptTag({path:script});await page.waitForSelector('#grz-medkit-footer-button');assert(await page.evaluate(()=>document.querySelector('#grz-medkit-footer-host').nextElementSibling.getAttribute('data-test-id')==='menu'));assert.strictEqual(await page.locator('.App_footer_test > div').count(),3);await page.locator('#grz-medkit-footer-button').click();assert.strictEqual((await page.evaluate(()=>actions))[0].action,'open');
-    await page.setContent(fs.readFileSync(path.join(root,'source/staysharp_medkit/ui/settings.html'),'utf8').replace(/<link[^>]+>|<script[^>]+><\/script>/g,''));
+    await page.addStyleTag({path:path.join(root,'src/staysharp_medkit/ui/footer.css')});await page.addScriptTag({path:script});await page.waitForSelector('#grz-medkit-footer-button');assert(await page.evaluate(()=>document.querySelector('#grz-medkit-footer-host').nextElementSibling.getAttribute('data-test-id')==='menu'));assert.strictEqual(await page.locator('.App_footer_test > div').count(),3);await page.locator('#grz-medkit-footer-button').click();assert.strictEqual((await page.evaluate(()=>actions))[0].action,'open');
+    await page.setContent(fs.readFileSync(path.join(root,'src/staysharp_medkit/ui/settings.html'),'utf8').replace(/<link[^>]+>|<script[^>]+><\/script>/g,''));
     await page.evaluate(version=>{window.actions=[];window.layouts=[];window.state={version,hotkeys:{toggle_mod:['Ctrl','Alt','M'],toggle_voice:['Ctrl','Alt','V']},capturing:'toggle_mod',preview:['Ctrl','Alt','Shift','M'],labels:{title:'Skróty apteczki'},viewport:{width:1920,height:1080,scale:1}};window.model={state:JSON.stringify(state),onAction:args=>(args.action==='layout'?layouts:actions).push(args)};window.isDomBuilt=true;window.engine={whenReady:Promise.resolve(),on(){},off(){}};window.viewEnv={addDataChangedCallback(){return 1;},removeDataChangedCallback(){},resizeViewPx(){}};},modVersion);
-    await page.addStyleTag({path:path.join(root,'source/staysharp_medkit/ui/settings.css')});await page.addScriptTag({path:settingsScript});await page.waitForSelector('#grz-medkit-settings-mod');await page.evaluate(()=>Promise.resolve());assert.strictEqual(await page.locator('#grz-medkit-settings-mod').textContent(),'Ctrl + Alt + Shift + M');const dimensions=await page.locator('#grz-medkit-settings').boundingBox();assert.strictEqual(dimensions.width,360);assert.strictEqual(dimensions.height,232);
+    await page.addStyleTag({path:path.join(root,'src/staysharp_medkit/ui/settings.css')});await page.addScriptTag({path:settingsScript});await page.waitForSelector('#grz-medkit-settings-mod');await page.evaluate(()=>Promise.resolve());assert.strictEqual(await page.locator('#grz-medkit-settings-mod').textContent(),'Ctrl + Alt + Shift + M');const dimensions=await page.locator('#grz-medkit-settings').boundingBox();assert.strictEqual(dimensions.width,360);assert.strictEqual(dimensions.height,232);
     assert.strictEqual(await page.locator('#grz-medkit-settings-version').textContent(),'v'+modVersion);
     const versionBounds=await page.locator('#grz-medkit-settings-version').boundingBox();
     const closeBounds=await page.locator('#grz-medkit-settings-close').boundingBox();

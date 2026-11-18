@@ -14,7 +14,7 @@ class GarageLayoutTests(unittest.TestCase):
         if node is None:
             self.skipTest('Node is unavailable')
         root = Path(__file__).resolve().parents[1]
-        spec = importlib.util.spec_from_file_location('medkit_layout_contract', root / 'source/staysharp_medkit/views.py')
+        spec = importlib.util.spec_from_file_location('medkit_layout_contract', root / 'src/staysharp_medkit/views.py')
         views = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(views)
         cases = []

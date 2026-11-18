@@ -32,8 +32,8 @@ def blocked_imports(*prefixes):
 
 class StartupSourceTests(unittest.TestCase):
     def test_owned_runtime_has_no_ctypes_import_dependency(self):
-        paths = [ROOT / 'source/mod_staysharp_medkit.py']
-        paths.extend((ROOT / 'source/staysharp_medkit').glob('*.py'))
+        paths = [ROOT / 'src/mod_staysharp_medkit.py']
+        paths.extend((ROOT / 'src/staysharp_medkit').glob('*.py'))
         self.assertGreater(len(paths), 1)
         for path in paths:
             with self.subTest(source=path.name):
@@ -90,7 +90,7 @@ with tempfile.TemporaryDirectory() as folder:
         os.name, os.rename, os.replace = old_name, old_rename, old_replace
 print('cold embedded dependency check passed')
 '''
-        result = subprocess.run([sys.executable, '-I', '-c', script, str(ROOT / 'source')],
+        result = subprocess.run([sys.executable, '-I', '-c', script, str(ROOT / 'src')],
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('cold embedded dependency check passed', result.stdout)

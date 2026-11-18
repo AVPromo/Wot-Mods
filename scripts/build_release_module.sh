@@ -14,12 +14,13 @@ export WOT_CLIENT_VERSION="$client"
 case "$module" in
   staysharp)
     export WOTMOD_VERSION="$version"
+    source_dir=mods/staysharp/dist
     python3 scripts/privacy_audit.py
     python3 -m unittest discover -s tests -v
-    python3 source/build_wotmod.py
+    python3 -m unittest discover -s mods/staysharp/tests -v
+    python3 mods/staysharp/tools/build_wotmod.py
     python3 scripts/privacy_audit.py --scan-dist
-    (cd dist && sha256sum -- *.wotmod > SHA256SUMS.txt && sha256sum --check --strict SHA256SUMS.txt)
-    source_dir=dist
+    (cd "$source_dir" && sha256sum -- *.wotmod > SHA256SUMS.txt && sha256sum --check --strict SHA256SUMS.txt)
     ;;
   sessionstats)
     export SESSIONSTATS_VERSION="$version"

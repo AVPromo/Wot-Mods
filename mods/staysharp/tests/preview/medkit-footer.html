@@ -1,5 +1,5 @@
 <!doctype html><html lang="en" style="font-size:1px"><head><meta charset="utf-8"><title>Stay Sharp native settings preview</title>
-<link rel="stylesheet" href="../../source/staysharp_medkit/ui/footer.css"><link rel="stylesheet" href="../../source/staysharp_medkit/ui/settings.css">
+<link rel="stylesheet" href="../../src/staysharp_medkit/ui/footer.css"><link rel="stylesheet" href="../../src/staysharp_medkit/ui/settings.css">
 <style>
 html,body{width:100%!important;height:100%!important;margin:0;overflow:hidden;background:#171a18;color:#b8b5a8;font-family:Arial,sans-serif;}
 .preview-tools{margin:28px;font-size:14px;line-height:1.6;max-width:800px}.preview-tools h1{font-size:21px;font-weight:normal;color:#d3cab0}.preview-tools button{margin-right:8px;padding:7px 12px;background:#30352d;border:1px solid #656452;color:#c7c4af}
@@ -50,4 +50,4 @@ document.getElementById('simulate-four').onclick=function(){ensureOpen();state.c
 document.getElementById('simulate-save').onclick=function(){ensureOpen();state.capturing=null;state.preview=[];state.display.toggle_mod='Ctrl + Alt + Shift + M';state.status='Shortcut saved.';state.error='';refresh();};
 document.getElementById('simulate-error').onclick=function(){ensureOpen();state.error='Already assigned to Toggle mod.';refresh();};
 }());
-</script><script src="../../source/staysharp_medkit/ui/footer.js"></script><script src="../../source/staysharp_medkit/ui/settings.js"></script></body></html>
+</script><script src="../../src/staysharp_medkit/ui/footer.js"></script><script src="../../src/staysharp_medkit/ui/settings.js"></script></body></html>
