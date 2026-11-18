@@ -10,6 +10,8 @@ on:
       - 'assets/**'
       - 'VERSION'
       - 'mods/**'
+      - '!mods/staysharp/tests/**'
+      - '!mods/staysharp/README.md'
       - 'scripts/sessionstats/**'
       - 'scripts/hangarsync/**'
       - 'scripts/release_installers.py'

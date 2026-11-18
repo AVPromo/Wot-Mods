@@ -44,6 +44,7 @@ class PrBuildScopingTests(unittest.TestCase):
                      'mods/staysharp/tests/test_packaging.py',
                      'mods/staysharp/assets/voices/manifest.json',
                      'mods/staysharp/VERSION',
+                     'mods/staysharp/README.md',
                      'source/mod_staysharp_medkit.py', 'source/build_audio_bank.py',
                      'assets/voices/pl.wav.b85', 'assets/voices/manifest.json',
                      'VERSION', 'staysharp.medkit.example.json', 'CHANGELOG.md',
