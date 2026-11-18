@@ -102,8 +102,11 @@ module.exports=async({browser,nativeHost,check})=>{
     async function ready(group){await page.waitForFunction(group=>document.getElementById('ss-group-'+group).getAttribute('aria-pressed')==='true'&&__returnBridgePending===0&&document.getElementById('ss-groups').getAttribute('aria-busy')!=='true',group,{timeout:5000});await frames(page,12);}
     async function sourceMarker(selector,caption,scale=1){
       await page.locator(selector+'.ss-source-returned').waitFor({state:'visible',timeout:3000});
-      const result=await page.locator(selector).evaluate((node,scale)=>{const cue=node.querySelector('.ss-extreme-link-cue'),paint=cue||node,style=getComputedStyle(paint);return{count:document.querySelectorAll('.ss-source-returned').length,focus:document.activeElement===node,color:style.outlineColor,width:parseFloat(style.outlineWidth)/scale,shadow:style.boxShadow,buttonOutline:getComputedStyle(node).outlineStyle,small:!cue||cue.getBoundingClientRect().width/scale<=18};},scale);
-      check('Back marks only the exact source action with a visible orange frame '+caption,result.count===1&&result.focus&&result.color==='rgb(231, 162, 59)'&&result.width===2&&result.shadow!=='none'&&result.small);
+      const result=await page.locator(selector).evaluate((node,scale)=>{const cue=node.querySelector('.ss-extreme-link-cue'),paint=cue||node,style=getComputedStyle(paint);return{count:document.querySelectorAll('.ss-source-returned').length,focus:document.activeElement===node,color:style.outlineColor,width:parseFloat(style.outlineWidth)/scale,offset:parseFloat(style.outlineOffset)/scale,shadow:style.boxShadow,buttonOutline:getComputedStyle(node).outlineStyle,small:!cue||cue.getBoundingClientRect().width/scale<=18};},scale);
+      const financial=selector.includes('ss-credit-extreme-actions');
+      check('Back marks only the exact source action with a visible orange frame '+caption,
+        result.count===1&&result.focus&&result.color==='rgb(231, 162, 59)'&&result.width===2&&result.small&&
+        (financial?result.offset===-2&&result.shadow==='none':result.offset===1&&result.shadow!=='none'));
       if(selector.includes('ss-metric-battle-link')&&!selector.includes('ss-credit-extreme-actions'))check('A numeric return frame belongs only to its small cue '+caption,result.buttonOutline==='none');
     }
     async function geometry(identifier){return page.evaluate(identifier=>{const card=[...document.querySelectorAll('#ss-groups .ss-group')].find(node=>node.getAttribute('data-group-id')===identifier),scroll=document.getElementById('ss-scroll'),box=scroll.getBoundingClientRect();const edge=Math.max(box.top,document.getElementById('ss-filter-panel').getBoundingClientRect().bottom),visible=[...document.querySelectorAll('.ss-continuous-page')].find(section=>{const r=section.getBoundingClientRect();return r.bottom>edge&&r.top<box.bottom;});return {offset:card?card.getBoundingClientRect().top-box.top:null,scroll:scroll.scrollTop,visiblePage:visible?Number(visible.getAttribute('data-page-index')):null,pageLabel:document.getElementById('ss-page-label').textContent,group:document.querySelector('.ss-group-tab[aria-pressed="true"]').id,pages:[...document.querySelectorAll('.ss-continuous-page')].map(node=>Number(node.getAttribute('data-page-index'))),payload:(scope=>({period_id:scope.period_id,data_revision:scope.data_revision,from_point:scope.from_point,to_point:scope.to_point,ordering:scope.ordering,pagination:scope.pagination}))(JSON.parse(model.payload).scopes.timeline)};},identifier);}
@@ -215,8 +218,13 @@ module.exports=async({browser,nativeHost,check})=>{
     await configure('battles');const oldExtreme=await page.locator(summarySource).getAttribute('data-battle-id');
     await page.locator(summarySource).evaluate(node=>node.addEventListener('click',()=>{window.__returnChangedSummaryCellOffset=node.closest('.ss-metric-number').getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top;},{once:true,capture:true}));
     await page.locator(summarySource).click();await opened();const newExtreme=await driver.request({action:'revise_summary'});await publish(newExtreme.payload);await opened();
-    await page.locator('.ss-battle-return').click();await ready('battles');await frames(page,35);
-    check('A changed extremum uses fallback focus without marking a replacement result or group tab',await page.evaluate(({selector,oldExtreme})=>document.activeElement===document.getElementById('ss-group-battles')&&document.querySelector(selector).getAttribute('data-battle-id')!==oldExtreme&&document.querySelectorAll('.ss-source-returned').length===0,{selector:summarySource,oldExtreme}));
+    await page.locator('.ss-battle-return').click();await ready('battles');
+    await page.waitForFunction(({selector,oldExtreme})=>{
+      const source=document.querySelector(selector);
+      return source&&source.getAttribute('data-battle-id')!==oldExtreme&&document.activeElement===document.getElementById('ss-group-battles')&&
+        document.querySelectorAll('.ss-source-returned').length===0;
+    },{selector:summarySource,oldExtreme},{timeout:5000});
+    check('A changed extremum uses fallback focus without marking a replacement result or group tab',true);
     check('A changed summary reference still returns to the same upper metric cell',await page.locator(summarySource).evaluate(node=>Math.abs(node.closest('.ss-metric-number').getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top-__returnChangedSummaryCellOffset)<=2));
     for(const changed of ['account','range']){
       await configure('battles');await page.locator(summarySource).click();await opened();

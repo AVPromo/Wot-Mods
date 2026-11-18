@@ -20,7 +20,7 @@
         cardFlowToken: 0, cardFlowQueued: false, cardFlowAttempts: 0, cardFlowTimer: null,
         windowPrefs: null, windowSaved: null, windowPending: null, windowChanges: {}, windowStatusBeforeError: null,
         windowSequence: 0, windowTimer: null, windowTimerToken: 0, backgroundDrag: null,
-        viewKey: null, scrollTarget: null, scrollbarDrag: null, scrollbarWork: null,
+        viewKey: null, scrollTarget: null, scrollbarDrag: null, scrollbarWork: null, resizeFeedGuard: null,
         resizeSequence: 0, timePointAccount: null, timePointCount: null, timePointEdited: false,
         resizeQueued: false, resizeTimer: null, resizeLast: 0, resizeMeasureToken: 0 };
     // BEGIN GENERATED ENGLISH
@@ -449,6 +449,7 @@
             changes.restored_width = Math.round(size.width);
             changes.restored_height = Math.round(size.height);
         }
+        suspendResizePrefetch();
         retainBattleTargetAfterResize();
         previewWindowSettings(changes, true);
     }
@@ -921,15 +922,25 @@
         });
         return pair;
     }
+    function assignFinanceBudget(economy, width, numberWidth, paired) {
+        economy.classList[paired ? 'add' : 'remove']('ss-finance-inset');
+        if (!width) {
+            economy.removeAttribute('data-ss-finance-content-width');
+            economy.removeAttribute('data-ss-finance-number-width');
+            return;
+        }
+        // The paired tables paint an 8rem gutter and a 1rem divider. The
+        // engine can omit both from its computed-style report during layout.
+        economy.setAttribute('data-ss-finance-content-width', String(Math.max(1, width - (paired ? 9 : 0))));
+        economy.setAttribute('data-ss-finance-number-width', String(numberWidth));
+    }
     function layoutCreditPairs(owner) {
         var scale = state.nativeScale || 1, measurements = [];
         var narrowCards = owner === nodes.groups && owner.classList.contains('ss-narrow-cards');
         Array.prototype.forEach.call(owner.querySelectorAll('.ss-economy'), function (economy) {
-            var assigned = Number(economy.getAttribute('data-ss-finance-width')) || 0;
-            var outerWidth = assigned > 0 ? assigned * scale : economy.getBoundingClientRect().width;
-            var style = window.getComputedStyle(economy);
-            var width = (outerWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) -
-                (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0)) / scale;
+            var assigned = Number(economy.getAttribute('data-ss-finance-content-width')) || 0;
+            var head = economy.querySelector('.ss-money-head');
+            var width = assigned || (head && head.getBoundingClientRect().width / scale);
             var numberWidth = Number(economy.getAttribute('data-ss-finance-number-width')) || 0;
             var battle = economy.parentNode.classList.contains('ss-battle-details');
             if (width > 0) { measurements.push({node:economy, width:width, assigned:assigned > 0, numberWidth:numberWidth,
@@ -1020,12 +1031,12 @@
             });
         });
     }
-    function freeXP(parent, stats, aggregate) {
+    function freeXP(parent, stats) {
         var free = append(parent, element('div', 'ss-free-xp'));
         var caption = t('xp.free'), amount = number(series(stats.free_xp).sum);
         append(free, element('span', '', caption));
         append(free, element('strong', '', amount));
-        if (aggregate) { free._ssAmountWidth = Math.max(26, amount.length * 7 + 4) + 'rem'; }
+        free._ssAmountWidth = Math.max(26, amount.length * 7 + 4) + 'rem';
         var count = series(stats.free_xp).count, total = observedTotal(stats);
         if (coverage(count, total)) { explainCoverage(free, count, total, t('xp.free')); }
     }
@@ -1253,10 +1264,11 @@
             var expected = (key === 'AT_SPG' ? 'AT-SPG' : key) + (elite === true ? '_elite' : '');
             return src.slice(src.lastIndexOf('/') + 1).replace(/\.(png|dds)$/, '') === expected ? src : null;
         }
-        if (kind === 'vehicle_role' && typeof key === 'string' && /^role_[A-Za-z0-9_]{1,64}$/.test(key) && key !== 'role_SPG' &&
-                src === 'img://gui/maps/icons/roleExp/roles/24x24/' + key + '.png') { return src; }
-        if (kind === 'vehicle_role' && typeof key === 'string' && /^role_[A-Za-z0-9_]{1,64}$/.test(key) && key !== 'role_SPG' &&
-                src === 'img://gui/maps/icons/roleExp/roles/24x24/' + key + '.dds') { return src; }
+        if (kind === 'vehicle_role' && typeof key === 'string' && /^role_[A-Za-z0-9_]{1,64}$/.test(key)) {
+            var folder = key === 'role_SPG' ? '22x22/' : '24x24/';
+            var base = 'img://gui/maps/icons/roleExp/roles/' + folder + key;
+            if (src === base + '.png' || src === base + '.dds') { return src; }
+        }
         return null;
     }
     function appendVehicleMetadata(parent, item, withTier) {
@@ -3462,12 +3474,10 @@
             t('sort.metric_stat', [t(options.statistic === 'avg' ? 'sort.avg' : options.statistic === 'sum' ? 'sort.sum' : 'metric.' + options.statistic), label]);
     }
     function markSortValue(node, metric, label) {
-        if (!node || (node.classList.contains('ss-metric-battle-link') && node.disabled)) { return false; }
+        if (!node) { return; }
         node.classList.add('ss-sort-active-value');
         node.setAttribute('data-ss-sort-active', metric);
-        // A permanent action keeps its exact source explanation as fallback help.
-        if (!node.classList.contains('ss-metric-battle-link')) { node.title = t('sort.active_value', [label]); }
-        return true;
+        node.title = t('sort.active_value', [label]);
     }
     function highlightCardSort(card, meta, item, options, battle) {
         var metric = options.metric;
@@ -3497,10 +3507,7 @@
                 markSortValue(cell && cell.querySelector('.ss-cell-value'), metric, label);
             } else {
                 // A financial cell displays All; its permanent Min/Max links
-                // are source actions, not substitutes for the selected value.
-                if (options.statistic === 'min' || options.statistic === 'max') {
-                    markSortValue(cell && cell.querySelector('[data-ss-extreme="' + options.statistic + '"]'), metric, label);
-                }
+                // are source actions. Only the badge shows the selected value.
                 append(meta, element('div', 'ss-group-sort-value ss-sort-active-value', t('sort.value_per_battle', [
                     t(options.statistic === 'avg' ? 'sort.avg' : 'metric.' + options.statistic),
                     t('sort.' + canonicalMetric(metric)),
@@ -3684,7 +3691,7 @@
             meta = append(identity, element('div', 'ss-group-meta'));
             if (subtitle) { append(meta, element('div', 'ss-group-subtitle', subtitle)); }
             if (state.group === 'vehicles' || battle) { appendVehicleMetadata(meta, item, !battle); }
-            freeXP(meta, stats, !battle);
+            freeXP(meta, stats);
             if (battle) {
                 appendOutcome(header, item);
                 appendBattleMap(header, item);
@@ -3856,7 +3863,7 @@
                 width += action.getBoundingClientRect().width + (parseFloat(style.marginLeft) || 0) +
                     (parseFloat(style.marginRight) || 0);
             });
-            financeNumber = Math.max(financeNumber, Math.ceil(width / scale) + 2);
+            financeNumber = Math.max(financeNumber, Math.ceil(width / scale) + 6);
         });
         var financeMinimum = Math.max(244, financeNumber * 3 + 9);
         var paired = available >= minimumPerformance + financeMinimum;
@@ -3871,13 +3878,7 @@
         var financeWidth = available - performanceWidth;
         economy.style.flex = paired ? '0 0 ' + financeWidth + 'rem' : '';
         economy.style.width = paired ? financeWidth + 'rem' : '';
-        if (paired) {
-            economy.setAttribute('data-ss-finance-number-width', String(financeNumber));
-            economy.setAttribute('data-ss-finance-width', String(financeWidth));
-        } else {
-            economy.removeAttribute('data-ss-finance-number-width');
-            economy.removeAttribute('data-ss-finance-width');
-        }
+        assignFinanceBudget(economy, paired ? financeWidth : 0, financeNumber, paired);
         var contentWidth = performanceWidth - 9;
         var captionWidth = Math.min(contentWidth - numberWidth, Math.max(70, Math.min(110, contentWidth * 0.30)));
         var extraNumberWidth = Math.max(0, (contentWidth - captionWidth - numberWidth) / 3);
@@ -3900,7 +3901,8 @@
             performanceNumber = Math.max(performanceNumber, Math.ceil(text.getBoundingClientRect().width / scale));
         });
         var wide = card.classList.contains('ss-battle-inline-captions');
-        var performanceWidth = wide ? Math.max(190, Math.ceil(performanceNumber / 0.42) + 15) : Math.max(148, performanceNumber + 84);
+        var valueWidth = Math.max(42, performanceNumber + 4);
+        var performanceWidth = wide ? Math.max(190, Math.ceil(performanceNumber / 0.42) + 15) : Math.max(148, valueWidth + 84);
         var financeMinimum = Math.max(244, financeNumber * 3 + 9);
         var paired = available >= 416 && available >= performanceWidth + financeMinimum;
         var financeWidth = paired ? available - performanceWidth : available;
@@ -3909,12 +3911,12 @@
         holder.style.flexWrap = paired ? 'nowrap' : 'wrap';
         performance.style.flex = '0 0 ' + (paired ? performanceWidth : available) + 'rem';
         performance.style.width = (paired ? performanceWidth : available) + 'rem';
+        Array.prototype.forEach.call(performance.querySelectorAll('.ss-battle-value'), function (value) {
+            value.style.width = wide ? '' : valueWidth + 'rem';
+        });
         economy.style.flex = '0 0 ' + financeWidth + 'rem';
         economy.style.width = financeWidth + 'rem';
-        // Battle headers, paired credits and Bonds share the same logical
-        // budget even when native geometry still reports the previous width.
-        economy.setAttribute('data-ss-finance-width', String(financeWidth));
-        economy.setAttribute('data-ss-finance-number-width', String(financeNumber));
+        assignFinanceBudget(economy, financeWidth, financeNumber, paired);
     }
     function layoutTitleControls() {
         var width = resizePanelDimensions().width;
@@ -3945,7 +3947,7 @@
         }
         return docked;
     }
-    function aggregateCaptionHelp(node, label) {
+    function cardCaptionHelp(node, label) {
         if (node.classList.contains('ss-hover-help')) { return; }
         var accessible = node.getAttribute('aria-label');
         node.classList.add('ss-hover-help');
@@ -3953,6 +3955,16 @@
         if (!accessible) { node.setAttribute('aria-label', label); }
         node.setAttribute('aria-controls', helpTooltip.id); node.setAttribute('aria-expanded', 'false');
         node.setAttribute('tabindex', '0');
+    }
+    function layoutCardIdentity(identity, oneLineTitle, compactMeta) {
+        var title = identity.querySelector('.ss-group-title'), free = identity.querySelector('.ss-free-xp');
+        title.classList[oneLineTitle ? 'add' : 'remove']('ss-caption-ellipsis');
+        if (oneLineTitle) { cardCaptionHelp(title, title.textContent); }
+        var freeWidth = compactMeta ? free._ssAmountWidth : '';
+        if (free.style.flexBasis !== freeWidth) { free.style.flexBasis = freeWidth; }
+        if (compactMeta && !free.classList.contains('ss-hover-help')) {
+            cardCaptionHelp(free, t('xp.free') + ' ' + free.querySelector('strong').textContent);
+        }
     }
     function layoutAggregateHeadline(card, headline, width, docked, twoColumns) {
         var ultraWide = width + 14 >= 700, wide = twoColumns && !ultraWide;
@@ -3983,20 +3995,9 @@
         card.classList[wide ? 'add' : 'remove']('ss-wide-aggregate-headline');
         card.classList[ultraWide ? 'add' : 'remove']('ss-ultra-wide-headline');
         var identity = card.querySelector('.ss-group-identity');
-        var compactMeta = !stacked && availableIdentity < (wide || ultraWide ? 240 : 176), free = identity.querySelector('.ss-free-xp');
+        var compactMeta = !stacked && availableIdentity < (wide || ultraWide ? 240 : 176);
         card.classList[compactMeta ? 'add' : 'remove']('ss-compact-aggregate-meta');
-        var title = identity.querySelector('.ss-group-title');
-        title.classList[wide || ultraWide ? 'add' : 'remove']('ss-caption-ellipsis');
-        if (wide || ultraWide) {
-            aggregateCaptionHelp(title, title.textContent);
-        }
-        if (free) {
-            var freeWidth = compactMeta ? free._ssAmountWidth : '';
-            if (free.style.flexBasis !== freeWidth) { free.style.flexBasis = freeWidth; }
-            if (compactMeta && !free.classList.contains('ss-hover-help')) {
-                aggregateCaptionHelp(free, t('xp.free') + ' ' + free.querySelector('strong').textContent);
-            }
-        }
+        layoutCardIdentity(identity, wide || ultraWide, compactMeta);
         var identityWidth = stacked ? '100%' : inlineDocked ? (width - statsWidth) + 'rem' : '';
         var headlineWidth = stacked ? '100%' : inlineDocked ? statsWidth + 'rem' : '';
         if (identity.style.width !== identityWidth) { identity.style.width = identityWidth; }
@@ -4061,6 +4062,11 @@
                 if (card.classList.contains('ss-battle-inline-captions') !== inlineCaptions) {
                     card.classList[inlineCaptions ? 'add' : 'remove']('ss-battle-inline-captions');
                 }
+                // When a map has its own caption, the short date and vehicle
+                // metadata can share the second identity row with the XP.
+                var compactIdentity = logicalWidth >= 430 && !!card.querySelector('.ss-battle-map-visual');
+                card.classList[compactIdentity ? 'add' : 'remove']('ss-battle-compact-identity');
+                layoutCardIdentity(card.querySelector('.ss-group-name'), compactIdentity, compactIdentity);
             }
             if (state.group !== 'battles') {
                 layoutAggregateCaptions(card);
@@ -4549,9 +4555,18 @@
         if (jump.stable >= 3 && now - jump.settledSince >= 500) { cancelPageJump(); return; }
         retryPageJump(jump);
     }
+    function suspendResizePrefetch() {
+        // Reflow can clamp scrollTop or reposition a selected battle, and the
+        // resulting native scroll event can arrive well after mouse release.
+        // Keep passive pagination off this view until real scrolling resumes.
+        state.resizeFeedGuard = state.feed ? {view:state.viewKey, feed:state.feed} : null;
+        state.scrollbarWork = null;
+    }
     function loadNearEdges() {
         if (state.destroyed) { return; }
         updatePinnedFilters();
+        var guard = state.resizeFeedGuard;
+        if (state.resize || (guard && guard.view === state.viewKey && guard.feed === state.feed)) { return; }
         if (state.renderedFeed && state.feed === state.renderedFeed) {
             var feed = state.feed;
             if (feed.pending || feed.error !== null || feed.topRequested || state.pageJump || state.battleJump) { return; }
@@ -4640,7 +4655,11 @@
         if (state.feed && state.feed.pending) { state.feed.pending.navigate = false; }
         // Native wheel input consumes the pending logical offset itself before
         // cancelling restoration; its DOM getter can still expose an old frame.
-        if (event.type === 'wheel' && state.bound) { return; }
+        if (event.type === 'wheel') {
+            if (!event.defaultPrevented && !event.shiftKey && hasNumber(event.deltaY) &&
+                    Math.abs(event.deltaY) > Math.abs(event.deltaX || 0)) { state.resizeFeedGuard = null; }
+            if (state.bound) { return; }
+        }
         if (event.type === 'keydown') {
             var key = event.key || event.keyCode;
             if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 38, 40, 33, 34, 36, 35, 32].indexOf(key) < 0) { return; }
@@ -4649,6 +4668,10 @@
         while (target && target !== nodes.scroll) {
             if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'SELECT') { return; }
             target = target.parentNode;
+        }
+        if (event.type === 'scrollbar' || (event.type === 'keydown' && !event.ctrlKey && !event.metaKey && !event.altKey) ||
+                (event.type === 'mousedown' && event.button === 0 && event.target === nodes.scroll)) {
+            state.resizeFeedGuard = null;
         }
         // A wheel, scrollbar drag or scrolling key after rendering belongs to
         // the user; a queued layout must not undo that newer movement.
@@ -5330,6 +5353,7 @@
         consumeResizeInput(event);
         if (state.resize || state.dragging || state.dialog) { return; }
         if (state.windowPrefs && state.windowPrefs.maximized) { return; }
+        suspendResizePrefetch();
         var rect = root.getBoundingClientRect();
         var grip = event.currentTarget, corner = grip.getAttribute('data-corner') || 'se';
         focusControl(grip);
@@ -5384,6 +5408,7 @@
         cancelUITimer(drag.layoutTimer);
         trackResizeOnStage(drag, false);
         requestResizeCursor(drag.grip, false);
+        suspendResizePrefetch();
         retainBattleTargetAfterResize();
         queueResize(true);
         if (drag.pointer !== undefined && typeof drag.grip.releasePointerCapture === 'function') {
@@ -5418,6 +5443,7 @@
         }
         setLogicalSize(rect.width / scale + (horizontal ? direction[0] * 24 : 0),
             rect.height / scale + (vertical ? direction[1] * 24 : 0));
+        suspendResizePrefetch();
         retainBattleTargetAfterResize();
         queueResize();
         if (state.bound) { invoke('size_preference', state.logicalSize); }

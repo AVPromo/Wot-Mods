@@ -1,5 +1,11 @@
 SESSION STATS — CHANGELOG
 
+0.9.28 • 2026-11-18
+• Separate the blue sort cue from the amber last-source outline and inset Min/Max controls within the credit cells.
+• Keep loaded battle cards visible during resize and fetch another page after scroll input.
+• Keep battle identity on two lines when its map has a caption and show the original artillery role icon.
+• Center results in shared table columns and account for the finance gutter before sizing the Net column.
+
 0.9.27 • 2026-11-18
 • Show the full current history page in the main scroll area, with available game artwork above map and result captions.
 • Keep vehicle headers compact in ordinary two-column cards and give the sort label more width in ultra-wide cards.

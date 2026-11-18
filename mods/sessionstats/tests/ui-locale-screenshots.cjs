@@ -28,7 +28,7 @@ async function audit(page,mode,group) {
       const captionEllipsis=(text,owner)=>{
         const parent=text.nodeType===3?text.parentElement:text,
           caption=parent&&parent.closest('.ss-caption-ellipsis');
-        if(!caption||!owner.contains(caption)||!caption.closest('.ss-aggregate')||
+        if(!caption||!owner.contains(caption)||!(caption.closest('.ss-aggregate')||caption.matches('.ss-battle-compact-identity .ss-group-title'))||
           !caption.closest('.ss-metric-name,.ss-credit-row-label,.ss-credit-inline-label,.ss-money-head > .ss-money-label,.ss-money-row > .ss-money-label,.ss-money-head > .ss-money-value,.ss-metric-head > .ss-metric-number,.ss-group-kpi .ss-kpi-label,.ss-group-heading > .ss-group-title'))return false;
         const style=getComputedStyle(caption),box=caption.getBoundingClientRect(),cell=owner.getBoundingClientRect(),full=caption.textContent,
           inset=['paddingTop','paddingBottom','borderTopWidth','borderBottomWidth'].reduce((sum,key)=>sum+(parseFloat(style[key])||0),0);

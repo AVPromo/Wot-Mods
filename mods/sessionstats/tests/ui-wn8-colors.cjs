@@ -196,7 +196,7 @@ module.exports=async({browser,nativeHost,check})=>{
       if(group!=='battles')check('Purple WN8 stays on a neutral olive sorting fill with its orange edge in '+group,
         await page.locator('.ss-group-wn8-kpi.ss-sort-active-value').first().evaluate(node=>{
           const css=getComputedStyle(node),figure=node.querySelector('.ss-kpi-value');
-          return css.backgroundColor==='rgb(37, 42, 35)'&&css.boxShadow.includes('rgb(231, 162, 59)')&&
+          return css.backgroundColor==='rgb(37, 42, 35)'&&css.boxShadow.includes('rgb(128, 183, 207)')&&
             getComputedStyle(figure).color==='rgb(131, 87, 157)';
         }));
       if(group!=='battles'){
@@ -204,7 +204,7 @@ module.exports=async({browser,nativeHost,check})=>{
         check('The selected WN8 average retains its neutral sorting fill without becoming a source action in '+group,
           await page.locator('#ss-groups [data-ss-metric="battle_wn8"] > .ss-sort-active-value').first().evaluate(cell=>{
             const style=getComputedStyle(cell);return !cell.querySelector('.ss-metric-battle-link')&&
-              style.color==='rgb(131, 87, 157)'&&style.backgroundColor==='rgb(37, 42, 35)'&&style.boxShadow.includes('rgb(231, 162, 59)');
+              style.color==='rgb(131, 87, 157)'&&style.backgroundColor==='rgb(37, 42, 35)'&&style.boxShadow.includes('rgb(128, 183, 207)');
           }));
         if(group==='vehicles'){
           const obsolete=await page.addStyleTag({content:'.ss-extreme-cell { outline:1px solid #e7a23b !important; }'});

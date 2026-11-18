@@ -249,4 +249,91 @@ module.exports = async function ({browser, nativeHost, check}) {
   check('Native release applies final dimensions and layout while delayed frame callbacks stay inert',
     timing.releaseLayout && timing.staleFramesInert);
   await responsive.close();
+
+  const feedPage = await nativeHost(browser, {
+    initialViewport:{width:1700,height:1150}, viewport:{width:1700,height:1150,scale:1},
+  });
+  try {
+    const settle = () => feedPage.evaluate(() => new Promise(resolve => {
+      let remaining = 5;
+      function frame() { if (--remaining) requestAnimationFrame(frame); else resolve(); }
+      requestAnimationFrame(frame);
+    }));
+    for (const input of ['wheel', 'uncancelable wheel', 'keyboard', 'scrollbar']) {
+      await feedPage.evaluate(input => {
+        const payload = JSON.parse(model.payload), scope = payload.scopes.launch;
+        const sample = scope.battles[0];
+        payload.account_key = 'resize-feed-' + input;
+        payload.window_size = [900, 780];
+        scope.battles = Array.from({length:10}, (_, index) => ({...sample,id:'resize-feed-card-' + index}));
+        scope.pagination = {...scope.pagination,battles:{page:0,pages:2,total:20,page_size:10}};
+        model.payload = JSON.stringify(payload);
+        __grzEvents['viewEnv.onDataChanged']();
+        document.getElementById('ss-group-battles').click();
+      }, input);
+      await settle();
+      await feedPage.evaluate(() => {
+        const grip = document.getElementById('ss-resize-grip'), scroll = document.getElementById('ss-scroll');
+        window.__resizeFeedPagesBefore = __grzCommands.filter(command => command.action === 'page').length;
+        window.__resizeFeedCard = document.querySelector('#ss-groups .ss-group');
+        const box = grip.getBoundingClientRect();
+        grip.dispatchEvent(new MouseEvent('mousedown', {button:0,clientX:box.left+2,clientY:box.top+2,bubbles:true,cancelable:true}));
+        const token = __grzCommands.filter(command => command.action === 'resize_begin').at(-1).token;
+        GRZSessionStats.update({resize_gesture:{token,width:1300,height:800,active:true}});
+        scroll.scrollTop = scroll.scrollHeight;
+        scroll.dispatchEvent(new Event('scroll'));
+        GRZSessionStats.update({resize_gesture:{token,width:1300,height:800,active:false}});
+      });
+      await feedPage.waitForFunction(() => __nativeSize[0] === 1300 && __nativeSize[1] === 800);
+      await settle();
+      await feedPage.evaluate(() => {
+        const scroll = document.getElementById('ss-scroll');
+        // Gameface can report the clamped scroll position after release. An
+        // incidental horizontal wheel or non-scrolling key must not own it.
+        scroll.dispatchEvent(new WheelEvent('wheel', {deltaX:10,bubbles:true,cancelable:true}));
+        scroll.dispatchEvent(new KeyboardEvent('keydown', {key:'Tab',bubbles:true}));
+        scroll.scrollTop = scroll.scrollHeight;
+        scroll.dispatchEvent(new Event('scroll'));
+      });
+      await settle();
+      check('A late resize scroll keeps mounted Battles visible with no page request before '+input,
+        await feedPage.evaluate(() => document.getElementById('grz-session-stats').getAttribute('aria-busy') === 'false' &&
+          document.querySelector('#ss-groups .ss-group') === __resizeFeedCard &&
+          __grzCommands.filter(command => command.action === 'page').length === __resizeFeedPagesBefore));
+      await feedPage.evaluate(input => {
+        const scroll = document.getElementById('ss-scroll');
+        window.__resizeFeedTimersBefore = __grzTimerSequence;
+        if (input === 'scrollbar') {
+          const rail = document.getElementById('ss-scrollbar'), rect = rail.getBoundingClientRect();
+          const mouse = {bubbles:true,cancelable:true,button:0,clientX:rect.left+2,clientY:rect.bottom-4};
+          rail.dispatchEvent(new MouseEvent('mousedown', mouse));
+          document.dispatchEvent(new MouseEvent('mouseup', mouse));
+        } else if (input === 'keyboard') {
+          scroll.dispatchEvent(new KeyboardEvent('keydown', {key:'End',bubbles:true}));
+        } else {
+          scroll.dispatchEvent(new WheelEvent('wheel', {deltaY:-5,bubbles:true,cancelable:input === 'wheel'}));
+        }
+        scroll.dispatchEvent(new Event('scroll'));
+      }, input);
+      await feedPage.waitForFunction(() => __grzCommands.filter(command => command.action === 'page').length > __resizeFeedPagesBefore);
+      check('Intentional '+input+' still requests the adjacent Battles page and displays its loading state',
+        await feedPage.evaluate(() => {
+          const pages = __grzCommands.filter(command => command.action === 'page'), request = pages.at(-1);
+          return pages.length === __resizeFeedPagesBefore+1 && request.group === 'battles' && request.page === '1' &&
+            document.getElementById('grz-session-stats').getAttribute('aria-busy') === 'true';
+        }));
+      if (input === 'wheel') {
+        await feedPage.evaluate(() => {
+          const timer = [...__grzTimers].find(([id, entry]) => id > __resizeFeedTimersBefore && entry.delay === 10000);
+          __grzTimers.delete(timer[0]);
+          timer[1].callback();
+        });
+        check('A missing page clears the resize view loading state and remains retryable',
+          await feedPage.evaluate(() => document.getElementById('grz-session-stats').getAttribute('aria-busy') === 'false' &&
+            document.querySelector('.ss-page-pending button').textContent === 'Retry'));
+        await feedPage.locator('.ss-page-pending button').click();
+        await feedPage.waitForFunction(() => __grzCommands.filter(command => command.action === 'page').length === __resizeFeedPagesBefore+2);
+      }
+    }
+  } finally { await feedPage.close(); }
 };

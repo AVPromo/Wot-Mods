@@ -36,5 +36,16 @@ module.exports=function(){
   const wrongMetric=action(),get=wrongMetric.getAttribute;wrongMetric.getAttribute=key=>key==='data-ss-source-metric'?'xp_base':get(key);context.markReturnedSource(origin(),wrongMetric);assert.strictEqual(state.returnedSource,null,'A different metric cannot inherit the source marker');
   const wrongOwner=origin();wrongOwner.source.summary=true;context.markReturnedSource(wrongOwner,action());assert.strictEqual(state.returnedSource,null,'A group control cannot impersonate a summary source');
   const wrongRow=action();wrongRow.tagName='DIV';context.markReturnedSource(origin(),wrongRow);assert.strictEqual(state.returnedSource,null,'The history row cannot impersonate its Show battle button');
+  const finance=(statistic)=>{const node=action(),get=node.getAttribute;
+    node.getAttribute=key=>key==='data-ss-source-metric'?'credits_income_received':key==='data-ss-extreme'?statistic:get(key);return node;};
+  const min=finance('min'),max=finance('max'),financialOrigin=origin();
+  Object.assign(financialOrigin.source,{metric:'credits_income_received',statistic:'min'});
+  context.markReturnedSource(financialOrigin,max);
+  assert.strictEqual(state.returnedSource,null,'Max cannot inherit the returned Min marker for the same battle');
+  context.markReturnedSource(financialOrigin,min);
+  assert(min.classList.contains('ss-source-returned')&&!max.classList.contains('ss-source-returned'));
+  financialOrigin.source={...financialOrigin.source,statistic:'max'};
+  context.markReturnedSource(financialOrigin,max);
+  assert(!min.classList.contains('ss-source-returned')&&max.classList.contains('ss-source-returned'),'A new exact source replaces the previous marker');
 };
 if(require.main===module){module.exports();process.stdout.write('Actual-source returned-action ownership, replacement and expiry checks passed.\n');}

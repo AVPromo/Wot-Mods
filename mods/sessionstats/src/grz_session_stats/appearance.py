@@ -79,6 +79,7 @@ DEFAULT_CONFIG = {'schema_version': 1,
             'kpi_value_text': '#e8e5d2',
             'kpi_wn8_text': '#d9dca4',
             'sort_active_background': '#252a23',
+            'sort_active_border': '#80b7cf',
             'sort_warning_text': '#ee7000',
             'sort_warning_inner_shadow': '#000',
             'sort_warning_glow': '#8d0d03',
@@ -351,7 +352,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-money-label { display:block; width:19%; font-size:13rem; color:{{colors.money_label_text}}; }
 .ss-money-value { display:block; width:27%; text-align:right; font-size:14rem; }
 /* Base and received credit totals share compact, permanent extrema actions. */
-.ss-credit-extreme-actions { display:flex; align-items:center; justify-content:center; min-height:18rem; width:100%; }
+.ss-credit-extreme-actions { display:flex; align-items:center; justify-content:center; min-height:22rem; width:100%; padding:2rem; }
 .ss-credit-extreme-actions > .ss-metric-battle-link { flex:0 0 auto; width:auto; min-width:0; max-width:none; height:18rem; min-height:18rem; padding:0 4rem; font-size:11rem; line-height:16rem; }
 .ss-credit-extreme-actions > .ss-metric-battle-link + .ss-metric-battle-link { margin-left:3rem; }
 .ss-credit-extreme-actions .ss-control-label, .ss-credit-extreme-actions .ss-metric-action-label { font-size:11rem; line-height:16rem; white-space:nowrap; }
@@ -567,8 +568,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group-meta .ss-free-xp { font-size:12rem; }
 .ss-group-meta .ss-free-xp strong { font-size:12rem; }
 .ss-group-sort-value { display:block; flex:0 1 auto; min-width:0; max-width:100%; margin:2rem 8rem 2rem 0; padding:2rem 5rem; border:1rem solid {{colors.button_border}}; border-radius:{{radii.control}}rem; background:{{colors.table_header_background_start}}; color:{{colors.session_tab_active_text}}; font-size:12rem; line-height:16rem; white-space:normal; overflow-wrap:normal; }
-/* Sorting decorates the existing KPI slots without changing their geometry. */
-.ss-group .ss-sort-active-value { border-radius:{{radii.control}}rem; background:{{colors.sort_active_background}}; box-shadow:inset 0 0 0 1rem {{colors.session_tab_marker_background}}; }
+/* A cool inset marks sort values. The amber outline belongs to the source action. */
+.ss-group .ss-sort-active-value { border-radius:{{radii.control}}rem; background:{{colors.sort_active_background}}; box-shadow:inset 0 0 0 1rem {{colors.sort_active_border}}; }
 .ss-summary-meta { margin:3rem 4rem; }
 .ss-summary-main .ss-summary-meta { display:block; }
 /* Explicit header/value rows keep all three totals horizontal in native flex. */
@@ -599,6 +600,11 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
    Natural caption heights center the visible artwork/text together, including
    one-line captions, without measuring or probing translated text. */
 .ss-battle .ss-group-header { flex-wrap:nowrap; }
+.ss-battle-compact-identity .ss-group-header > .ss-group-thumb { margin-right:4rem; }
+.ss-battle-compact-identity .ss-group-name { padding-right:4rem; }
+.ss-battle-compact-identity .ss-group-heading { flex-wrap:nowrap; }
+.ss-battle-compact-identity .ss-group-title { flex:0 1 auto; }
+.ss-battle-compact-identity .ss-group-meta > .ss-group-subtitle { flex-shrink:0; white-space:nowrap; }
 .ss-battle .ss-battle-outcome { display:flex; align-items:center; justify-content:center; flex:0 0 64rem; width:64rem; max-width:64rem; height:59rem; margin-left:6rem; padding:0; }
 .ss-battle .ss-outcome-art { flex-direction:column; background:none; }
 .ss-battle .ss-outcome-image { width:54rem; height:30rem; }
@@ -760,7 +766,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group-sort-host .ss-group-sort-caption, .ss-group-sort-host .ss-group-sort-number { flex:0 0 auto; height:auto; min-height:0; text-align:center; }
 /* Paint numbers outside the button; explicit nonwrapping flex items reserve its lane. */
 .ss-metric-battle-link { display:block; min-width:0; width:100%; min-height:26rem; margin:0; padding:3rem 0; border:1rem solid {{colors.button_border}}; border-radius:{{radii.control}}rem; background:linear-gradient({{colors.button_background_start}},{{colors.button_background_middle}} 48%,{{colors.button_background_end}}); color:{{colors.button_text}}; font-family:Warhelios, Arial, sans-serif; font-size:14rem; font-weight:normal; line-height:20rem; text-align:center; cursor:pointer; }
-.ss-metric-battle-link:hover, .ss-metric-battle-link:focus { outline:1rem solid {{colors.session_tab_marker_background}}; outline-offset:-1rem; border-color:{{colors.session_tab_marker_background}}; }
+.ss-metric-battle-link:hover, .ss-metric-battle-link:focus { outline:1rem solid {{colors.extreme_link_text}}; outline-offset:-1rem; border-color:{{colors.extreme_link_text}}; }
 .ss-metric-battle-link.ss-metric-action-disabled, .ss-metric-battle-link.ss-metric-action-disabled:hover, .ss-metric-battle-link.ss-metric-action-disabled:focus { color:{{colors.date_unavailable_text}}; border-color:{{colors.date_unavailable_border}}; background:{{colors.date_unavailable_background}}; outline:none; box-shadow:none; text-shadow:none; cursor:default; }
 .ss-metric-action-disabled .ss-control-label, .ss-metric-action-disabled .ss-metric-action-label { color:{{colors.date_unavailable_text}}; text-shadow:none; }
 .ss-metric-extreme-action .ss-metric-action-label { display:block; width:100%; min-width:0; height:16rem; font-size:11rem; line-height:16rem; text-align:center; }
@@ -791,10 +797,14 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-aggregate.ss-compact-headline .ss-group-identity,
 .ss-aggregate.ss-inline-docked-headline .ss-group-identity { flex:0 0 auto; min-height:36rem; }
 .ss-aggregate.ss-compact-headline .ss-group-stats { justify-content:flex-end; max-width:100%; flex-wrap:wrap; margin-top:3rem; }
-.ss-compact-aggregate-meta .ss-group-meta .ss-group-subtitle { margin-right:4rem; }
-.ss-compact-aggregate-meta .ss-free-xp { flex:1 1 0rem; min-width:0; flex-wrap:nowrap; }
-.ss-compact-aggregate-meta .ss-free-xp span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ss-compact-aggregate-meta .ss-free-xp strong { flex:0 0 auto; white-space:nowrap; }
+.ss-compact-aggregate-meta .ss-group-meta .ss-group-subtitle,
+.ss-battle-compact-identity .ss-group-meta .ss-group-subtitle { margin-right:4rem; }
+.ss-compact-aggregate-meta .ss-free-xp,
+.ss-battle-compact-identity .ss-free-xp { flex:1 1 0rem; min-width:0; flex-wrap:nowrap; }
+.ss-compact-aggregate-meta .ss-free-xp span,
+.ss-battle-compact-identity .ss-free-xp span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ss-compact-aggregate-meta .ss-free-xp strong,
+.ss-battle-compact-identity .ss-free-xp strong { flex:0 0 auto; white-space:nowrap; }
 .ss-more-panel { display:flex; flex-wrap:wrap; align-items:flex-start; padding:5rem 0 2rem; border-top:1rem solid {{colors.group_tabs_border_bottom}}; font-size:13rem; line-height:18rem; overflow-wrap:break-word; }
 .ss-more-panel > p { width:100%; margin:3rem 5rem; }
 .ss-more-title { margin:4rem 5rem; color:{{colors.session_tab_active_text}}; font-size:13rem; line-height:18rem; }
@@ -848,6 +858,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-battle-return-arrow:before { content:""; display:block; position:absolute; left:2rem; top:7rem; width:11rem; height:1rem; background:{{colors.extreme_link_text}}; }
 .ss-battle-return-arrow:after { content:""; display:block; position:absolute; left:2rem; top:4rem; width:6rem; height:6rem; border-left:1rem solid {{colors.extreme_link_text}}; border-bottom:1rem solid {{colors.extreme_link_text}}; transform:rotate(45deg); }
 .ss-control.ss-source-returned { outline:2rem solid {{colors.session_tab_marker_background}}; outline-offset:1rem; box-shadow:0 0 5rem {{colors.session_tab_marker_background}}; }
+.ss-credit-extreme-actions > .ss-control.ss-source-returned { outline-offset:-2rem; box-shadow:none; }
 .ss-extreme-cell > .ss-metric-battle-link.ss-source-returned { outline:none; box-shadow:none; }
 .ss-extreme-cell > .ss-metric-battle-link.ss-source-returned .ss-extreme-link-cue,
 .ss-extreme-cell > .ss-metric-battle-link.ss-source-returned + .ss-extreme-link-cue { outline:2rem solid {{colors.session_tab_marker_background}}; outline-offset:1rem; box-shadow:0 0 5rem {{colors.session_tab_marker_background}}; }
@@ -931,7 +942,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 /* Aggregate Min/Avg/Max columns reserve their real text and action widths.
    Pair the tables at ordinary card sizes instead of wrapping their old bases. */
 .ss-aggregate .ss-table-text { display:inline-block; white-space:nowrap; }
-.ss-aggregate .ss-caption-ellipsis { min-width:0; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; overflow-wrap:normal; cursor:help; }
+.ss-aggregate .ss-caption-ellipsis,
+.ss-battle-compact-identity .ss-group-title.ss-caption-ellipsis { min-width:0; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; overflow-wrap:normal; cursor:help; }
 .ss-aggregate .ss-metric-row .ss-metric-number { display:flex; flex-wrap:nowrap; align-items:center; justify-content:flex-end; }
 .ss-aggregate .ss-credit-extreme-actions > .ss-metric-battle-link { padding-left:3rem; padding-right:3rem; }
 .ss-aggregate .ss-metric-name .ss-cell-value, .ss-paired-tables .ss-credit-label-text { overflow-wrap:break-word; }
@@ -953,8 +965,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-battle .ss-battle-label { padding-right:4rem; }
 .ss-battle .ss-table-text { display:inline-block; white-space:nowrap; }
 .ss-battle-inline-captions .ss-battle-details { justify-content:center; }
-.ss-battle-inline-captions .ss-battle-value { flex:0 0 42%; width:42%; text-align:center; }
-.ss-battle-inline-captions .ss-money-value { padding-left:1rem; padding-right:1rem; text-align:center; }
+.ss-battle .ss-battle-value { text-align:center; }
+.ss-battle-inline-captions .ss-battle-value { flex:0 0 42%; width:42%; }
 .ss-battle .ss-battle-tables-stacked .ss-performance { padding-right:0; }
 .ss-battle .ss-battle-tables-stacked .ss-economy { padding:5rem 0 0; margin-top:3rem; border-left:0; border-top:1rem solid {{colors.details_separator_border_top}}; }
 /* Reclaim cell insets before widening a table: translated currency names and
@@ -978,6 +990,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-narrow-cards .ss-group .ss-metric-head .ss-metric-count, .ss-narrow-cards .ss-group .ss-money-head .ss-money-count { display:block; width:100%; padding:0 4rem; }
 .ss-narrow-cards .ss-group .ss-metric-row .ss-metric-name, .ss-narrow-cards .ss-group .ss-money-row .ss-money-label { width:100%; padding-bottom:0; }
 .ss-narrow-cards .ss-group .ss-metric-number, .ss-narrow-cards .ss-group .ss-money-value { width:33.333%; }
+.ss-group .ss-details > .ss-economy.ss-finance-inset { padding-left:8rem; border-left:1rem solid {{colors.economy_separator_border_left}}; }
 /* Base and received earnings are two logical rows around one settled cost.
    Explicit flex columns keep the shared value in normal native flow. */
 .ss-money-row.ss-credit-pair { display:flex; flex-wrap:nowrap; align-items:stretch; }
@@ -1010,9 +1023,9 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-summary-details .ss-metric-number { padding-left:1.5rem; padding-right:1.5rem; text-align:center; }
 .ss-summary-details .ss-metric-row .ss-metric-number.ss-extreme-cell { padding-left:1rem; padding-right:1rem; }
 .ss-aggregate .ss-metric-row .ss-metric-number, .ss-summary-details .ss-metric-row .ss-metric-number { justify-content:center; }
-.ss-aggregate .ss-money-value { padding-left:0.5rem; padding-right:0.5rem; text-align:center; }
+.ss-aggregate .ss-money-value, .ss-battle .ss-money-value { padding-left:0.5rem; padding-right:0.5rem; text-align:center; }
 .ss-summary-details .ss-money-value { padding-left:2rem; padding-right:2rem; text-align:center; }
-.ss-aggregate .ss-credit-shared-cost, .ss-summary-details .ss-credit-shared-cost { padding-left:0; padding-right:0; }
+.ss-aggregate .ss-credit-shared-cost, .ss-battle .ss-credit-shared-cost, .ss-summary-details .ss-credit-shared-cost { padding-left:0; padding-right:0; }
 /* Fixed-width cards stay in native column flow. Expanded battle heights are
    sampled after layout to choose chronological lanes, never absolute offsets. */
 .ss-card-layout { display:flex; align-items:flex-start; justify-content:center; width:100%; }

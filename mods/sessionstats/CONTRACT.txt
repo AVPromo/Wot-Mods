@@ -1,4 +1,4 @@
-GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.27 (persistent data schema unchanged)
+GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.28 (persistent data schema unchanged)
 Release date: 2026-11-17.
 
 Target: World of Tanks PC Wargaming EU 2.4.1.1, Python 2.7 runtime.
@@ -82,7 +82,7 @@ to current launch just because received now. Use returned battle start time in a
 
 SNAPSHOT -> Window ViewModel string property `payload`
 {
- version: '0.9.27', account_key: string, generated_at: unix seconds,
+ version: '0.9.28', account_key: string, generated_at: unix seconds,
  expected: {version: string, ...}, warnings: [string],
  appearance: {panel_css:string, footer_css:string, scroll_speed:number},
  recovery: {pending:int, in_flight:int, states:{status_label:int}},
@@ -496,6 +496,8 @@ value instead of repeating it below the name. Active WN8 ordering replaces the
 large headline with its selected Min/Average/Max; finance tables continue to show
 totals. Credit All selects the existing income/net total; per-battle Min/Avg/Max
 credit values and XP All retain an explicit caption when no matching table cell exists.
+The active sort value uses a cool inset accent. Credit Min/Max buttons keep their
+ordinary paint while sorting. Returning from a battle marks the exact source in amber.
 Win-rate ordering is aggregate-only and matches known-outcome percentages; unknown
 results remain last in either direction. Default group headlines identify Combined
 WN8, recalculated from summed actual/expected values, separately from battle averages.
