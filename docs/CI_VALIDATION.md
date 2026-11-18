@@ -20,10 +20,10 @@ The PR workflow exposes the same phases as named steps:
 | `integration` | Check module identities and resource integration |
 | `privacy` | Audit source, recursive archives and game bytecode |
 
-Only the two Python phases run concurrently in the PR job. GitHub's native
-`parallel` group waits for both and propagates either failure before later steps
-can start. Browser QA follows the Python phases to avoid oversubscribing the
-runner. Production continues to use the complete `all` entry point.
+The PR job generates the preview before starting both Python suites and browser
+QA together on one runner. GitHub's native `parallel` group joins all three
+steps. They must all succeed before the build and package checks begin.
+Production uses the complete `all` entry point.
 
 There is no custom process scheduler or persistent prepared-browser state.
 The existing full browser runner owns preparation, isolated containers and
@@ -74,10 +74,11 @@ Run the complete infrastructure suite with
 runtime reuse, verification and download failures, phase failure propagation,
 temporary-manifest cleanup, concurrency isolation and cache writer boundaries.
 
-Run both complete module test suites against the candidate phases before browser
-QA. Test the main-based CI PR and the current feature source separately: their
-application versions and test counts may differ. A local compatibility run is
-not a claim that a new workflow has already been accepted on main.
+Run both complete module test suites and browser QA against the candidate.
+Validate the main-based CI PR and the current feature source separately because
+their application versions and test counts may differ. For timing comparisons,
+keep the application revision and compiler cache state fixed. Compare each
+test phase, the time until the installer is available and the sum of job times.
 
 ## References
 
