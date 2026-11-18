@@ -45,7 +45,7 @@ OPENWG_SHA256 = '2bb65f28663e3ab34b5a1102a1bbd1f6e17a65e1f6a898a8645c4ab732b5018
 
 def medkit_gameface_dependency():
     """Decode the existing, unmodified vendor package; never fetch at build time."""
-    path = ROOT / 'assets' / 'openwg_gameface_1.2.2.wotmod.b85'
+    path = ROOT / 'mods/staysharp/assets/openwg_gameface_1.2.2.wotmod.b85'
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 128 * 1024:
         raise ValueError('Missing or invalid bundled OpenWG dependency')
     payload = base64.b85decode(b''.join(path.read_bytes().split()))
@@ -419,22 +419,23 @@ def package(source, destination, kind, client=CLIENT):
                 # for each mod separate when both ZIPs are extracted together.
                 payload['docs/sessionstats/' + name] = data
     else:
+        module = ROOT / 'mods/staysharp'
         payload['mods/' + client + '/' + MEDKIT_INSTALLED_PACKAGE] = files[primary]
         resources = read_zip(io.BytesIO(files[primary]))
         if MEDKIT_GARAGE_RESOURCE in resources:
             payload['mods/' + client + '/net.openwg/' + OPENWG_PACKAGE] = medkit_gameface_dependency()
-            license_path = ROOT / 'assets' / 'OPENWG_LICENSE'
+            license_path = module / 'assets/OPENWG_LICENSE'
             if license_path.is_symlink() or not license_path.is_file():
                 raise ValueError('Missing bundled OpenWG license')
             payload['docs/staysharp/OPENWG_LICENSE'] = license_path.read_bytes()
-            guide = ROOT / 'docs' / 'INSTALACJA.md'
+            guide = module / 'docs/INSTALACJA.md'
             if guide.is_file():
                 payload['docs/staysharp/INSTALACJA.md'] = guide.read_bytes()
-        sample = ROOT / 'staysharp.medkit.example.json'
+        sample = module / 'staysharp.medkit.example.json'
         payload['mods/configs/staysharp.medkit.json.example'] = (
             sample.read_bytes() if sample.is_file() else b'{\n  "language": "auto"\n}\n')
         for name in ('CHANGELOG.md', 'docs/AUDIO.md', 'assets/VOICE_NOTICE.txt'):
-            path = ROOT / name
+            path = module / name
             if path.is_file():
                 payload['docs/staysharp/' + path.name] = path.read_bytes()
     destination.mkdir(parents=True, exist_ok=True)

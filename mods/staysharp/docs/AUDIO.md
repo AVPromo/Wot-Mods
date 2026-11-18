@@ -93,7 +93,7 @@ codes such as `pl-PL` and `fr_FR` are normalized. Unsupported or unavailable
 game languages use English. To force Polish, change the value to `"pl"`;
 the other codes in the table work the same way. A copyable sample is provided
 inside the installer as `mods/configs/staysharp.medkit.json.example` (remove
-only `.example` to activate it), and as `staysharp.medkit.example.json` in the repository; copy it to
+only `.example` to activate it), and as `mods/staysharp/staysharp.medkit.example.json` in the repository. Copy it to
 `mods/configs/staysharp.medkit.json` if you want to prepare the setting before
 the first game launch.
 
@@ -123,7 +123,7 @@ The sound routes to the game's existing **VOICE_GUI** bus, inheriting WoT's
 master/voice notification volume and mute controls. No existing game event, bus or voiceover bank is
 replaced. Sound settings and the final loudness must be checked in-game.
 
-`source/build_audio_bank.py` serializes the small Wwise 2023.1 / bank-version
+`mods/staysharp/tools/build_audio_bank.py` serializes the small Wwise 2023.1 / bank-version
 150 subset directly, including the Wargaming bank-header representation.
 The four header fields use the encoding documented by
 [OpenWG.Utils](https://github.com/Aslain/wows.openwg.utils/tree/9f6733e48ffda5149beb34d43e8817059472d2fc/src/wwise).
@@ -149,8 +149,8 @@ samples without another audio encode.
 
 Exact text, model/codec/port revisions, generation parameters, raw waveform
 hashes, Ukrainian crop bounds and final WAV/PCM hashes are recorded in
-`assets/voices/manifest.json`. The generated-audio credit is prominent in
-the README and retained in `assets/VOICE_NOTICE.txt`, which is included in
+`mods/staysharp/assets/voices/manifest.json`. The generated-audio credit is prominent in
+the README and retained in `mods/staysharp/assets/VOICE_NOTICE.txt`, which is included in
 the soundbank package and installer. The original model's terms are the
 [Boson Higgs TTS 3 Research and Non-Commercial License, including its
 Creator Use Grant](https://huggingface.co/bosonai/higgs-tts-3-4b/blob/239f63fb7b02b1aa085f98d9efae5e35cc5523e8/LICENSE).

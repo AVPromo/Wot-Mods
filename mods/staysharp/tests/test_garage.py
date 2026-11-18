@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
     'medkit_garage_tests', Path(__file__).resolve().parents[1] /
-    'source' / 'staysharp_medkit' / 'garage.py')
+    'src' / 'staysharp_medkit' / 'garage.py')
 garage = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(garage)
 MOD_VERSION = (Path(__file__).resolve().parents[1] / 'VERSION').read_text(encoding='ascii').strip()

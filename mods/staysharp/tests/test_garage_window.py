@@ -9,7 +9,7 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import patch
 
-PATH = os.path.join(os.path.dirname(__file__), '..', 'source',
+PATH = os.path.join(os.path.dirname(__file__), '..', 'src',
                     'staysharp_medkit', 'views.py')
 SPEC = importlib.util.spec_from_file_location('medkit_window_tests', PATH)
 views = importlib.util.module_from_spec(SPEC)

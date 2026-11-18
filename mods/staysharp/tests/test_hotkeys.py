@@ -4,7 +4,7 @@ from pathlib import Path
 import types
 import unittest
 
-SOURCE = Path(__file__).resolve().parents[1] / 'source/staysharp_medkit/hotkeys.py'
+SOURCE = Path(__file__).resolve().parents[1] / 'src/staysharp_medkit/hotkeys.py'
 spec = importlib.util.spec_from_file_location('medkit_hotkeys_test', SOURCE)
 hotkeys = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hotkeys)
