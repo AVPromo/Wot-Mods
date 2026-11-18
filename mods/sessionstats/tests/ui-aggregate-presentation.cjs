@@ -93,10 +93,17 @@ module.exports=async({browser,nativeHost,check})=>{
         const frames=[...document.querySelectorAll('#ss-groups .ss-group')].map(card=>{
           const frame=card.querySelector('.ss-wn8-card-border'),paint=getComputedStyle(frame),rect=box(card),value=Number(card.getAttribute('data-wn8-border-value')),
             rgb=value===2450?'131, 87, 157':'76, 118, 46';
+          const halos=[...paint.boxShadow.matchAll(/rgba\(([^)]+)\) (-?[\d.]+)px (-?[\d.]+)px ([\d.]+)px (-?[\d.]+)px/g)].map(match=>{
+            const rgba=match[1].split(', '),[x,y,blur,spread]=match.slice(2).map(Number);
+            return {color:rgba.slice(0,3).join(', '),alpha:Number(rgba[3]),x,y,blur:blur/scale,spread};
+          });
+          const tapered=halos.length>=2&&!paint.boxShadow.includes('inset')&&
+            halos.every(halo=>halo.color===rgb&&halo.x===0&&halo.y===0&&halo.spread<=0&&halo.blur>0)&&
+            halos.slice(1).every((halo,index)=>halo.blur>halos[index].blur&&halo.alpha<halos[index].alpha)&&
+            halos[0].blur<=6&&halos[0].alpha>=0.5&&halos.at(-1).blur>=10&&halos.at(-1).blur<=22&&halos.at(-1).alpha<=0.25;
           return {width:rect.width/scale,height:rect.height/scale,border:parseFloat(paint.borderTopWidth)/scale,
-            color:paint.borderTopColor,shadow:paint.boxShadow,style:frame.style.boxShadow,
-            correct:paint.borderTopColor==='rgba('+rgb+', 0.62)'&&paint.boxShadow.includes('rgba('+rgb+', 0.36)')&&
-              paint.boxShadow.includes('rgba('+rgb+', 0.7)')&&paint.boxShadow.includes('rgba(0, 0, 0, 0.5)')&&paint.boxShadow.includes('rgba(0, 0, 0, 0.72)')&&
+            color:paint.borderTopColor,shadow:paint.boxShadow,
+            correct:tapered&&paint.borderTopColor==='rgba('+rgb+', 0.62)'&&
               !/currentcolor/i.test(frame.style.cssText)&&paint.position==='absolute'&&paint.pointerEvents==='none'&&Math.abs(parseFloat(paint.borderTopWidth)/scale-1)<=0.1};
         });
         return {numbers,info,frames,headings};
@@ -119,7 +126,7 @@ module.exports=async({browser,nativeHost,check})=>{
         check('All aggregate and period numbers center full figures and source composites '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(results),numbersValid(results));
         check('Period table titles and info icons remain inside their separate caption lanes '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(results.map(result=>result.headings)),headingsValid(results));
         check('Card and period help remains localized and limited to three short sentences '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(results.map(result=>result.info)),helpsValid(results));
-        check('Explicit WN8 shadows strengthen the colored one-pixel frame '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(results.map(result=>result.frames)),framesValid(results));
+        check('WN8 glow fades outward around the colored one-pixel border '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(results.map(result=>result.frames)),framesValid(results));
       }
       await publish('en',1800);await page.locator('#ss-group-vehicles').click();await frames(page);
       const card=page.locator('#ss-groups .ss-group').first(),before=await card.boundingBox();

@@ -1,5 +1,10 @@
 SESSION STATS — CHANGELOG
 
+0.9.24 • 2026-11-18
+• Fade WN8 card glow evenly outside the original thin border.
+• Keep card summary figures close to larger captions and dock narrow controls clear of the card content.
+• Use two columns for history in the widest cards and continue long mission lists below the bonuses.
+
 0.9.23 • 2026-11-17
 • Keep narrow title controls separate and assign card identity width before the first layout.
 • Dock More/Less on the border of single-column cards below 680 logical pixels, beside Back when present.

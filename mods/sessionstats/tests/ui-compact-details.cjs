@@ -87,8 +87,9 @@ function sourceChecks(source=fs.readFileSync(path.join(__dirname,'../ui/session_
 const frames=page=>page.evaluate(()=>new Promise(resolve=>{let left=6;function next(){if(--left)requestAnimationFrame(next);else resolve();}requestAnimationFrame(next);}));
 module.exports=async({browser,nativeHost,check})=>{
   sourceChecks();check('Actual shipped compact-history and bonus-column rendering passes source regressions',true);
+  const languages=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/languages.json'),'utf8')).languages;
   for(const scale of [1,2])for(const group of ['maps','vehicles']) {
-    const page=await nativeHost(browser,{initialViewport:{width:3000,height:2200},viewport:{width:3000,height:2200,scale}});
+    const page=await nativeHost(browser,{initialViewport:{width:4600,height:2400},viewport:{width:4600,height:2400,scale}});
     try {
       await page.evaluate(({group,scale})=>{
         const data=JSON.parse(model.payload),scope=data.scopes.launch,sample=scope[group][0];
@@ -108,6 +109,43 @@ module.exports=async({browser,nativeHost,check})=>{
       },scale);
       check('Four '+group+' battles use compact rows with readable inline dates at '+(scale*100)+'%: '+JSON.stringify(layout),
         !layout.paged && layout.height>0 && layout.height<240 && layout.rows.length===4 && layout.rows.every(row=>row.inline && row.dateFont>=13));
+      const language=group==='maps'?(scale===1?'ru':'fr'):(scale===1?'de':'pl');
+      await page.evaluate(({group,scale,language,messages})=>{
+        const data=JSON.parse(model.payload),sample=data.scopes.launch[group][0];
+        data.account_key+='-wide';data.window_size=[1900,950];data.viewport={width:4600,height:2400,scale};
+        data.localization={language,messages};
+        sample.battle_list={page:0,pages:2,total:13,page_size:10,
+          items:Array.from({length:10},(_,index)=>({id:'compact-'+index,name:'Synthetic Long Vehicle Name '+index,map:'Synthetic Long Map Name '+index,
+            started_at:1794000000-index*600,outcome:index%2?'unknown':'win',wn8:1700+index}))};
+        model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();
+      },{group,scale,language,messages:languages[language]});
+      await page.locator('.ss-map-more-button').click();await frames(page);
+      const panel=page.locator('.ss-map-battles');
+      const layoutWide=await panel.evaluate((panel,scale)=>{
+        const body=panel.querySelector('.ss-history-body'),rows=[...body.querySelectorAll('.ss-map-battle-row')],rects=rows.map(row=>row.getBoundingClientRect());
+        const bounds=body.getBoundingClientRect();
+        const overflow=[...body.querySelectorAll('.ss-map-battle-name,.ss-map-battle-date,.ss-map-battle-outcome,.ss-map-battle-wn8,.ss-map-battle-open .ss-control-label')].filter(node=>{
+          const box=node.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node);
+          return [...range.getClientRects()].some(text=>text.left<box.left-scale||text.right>box.right+scale||text.top<box.top-scale||text.bottom>box.bottom+scale);
+        }).map(node=>node.textContent);
+        window.__wideHistory={body,rows};
+        return {height:bounds.height/scale,overflow,columns:rows.length===10&&rects.every((b,index)=>index%2===0||
+          Math.abs(b.top-rects[index-1].top)<=scale&&rects[index-1].right<b.left&&b.right<=bounds.right),
+          chronological:rows.every((row,index)=>row.getAttribute('data-battle-id')==='compact-'+index),
+          actions:rows.every((row,index)=>row.querySelector('.ss-map-battle-open').getAttribute('data-battle-id')==='compact-'+index)};
+      },scale);
+      check('Ultra-wide '+group+' history fits ten ordered battles into five readable rows in '+language+' at '+(scale*100)+'%: '+JSON.stringify(layoutWide),
+        layoutWide.columns && layoutWide.chronological && layoutWide.actions && layoutWide.height<330 && !layoutWide.overflow.length);
+      await page.setViewportSize({width:1400*scale,height:2400});
+      await page.evaluate(scale=>{
+        const data=JSON.parse(model.payload);data.viewport.width=1400*scale;
+        model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();
+      },scale);await frames(page);
+      check('Narrower '+group+' history restores one column without replacing the open rows at '+(scale*100)+'%',await panel.evaluate(panel=>{
+        const body=panel.querySelector('.ss-history-body'),rows=[...body.querySelectorAll('.ss-map-battle-row')];
+        return body===__wideHistory.body && rows.length===10 && rows.every((row,index)=>row===__wideHistory.rows[index] &&
+          (!index || row.getBoundingClientRect().top>=rows[index-1].getBoundingClientRect().bottom-1));
+      }));
     }finally{await page.close();}
   }
   await require('./ui-stat-layout-controls.cjs')({browser,nativeHost,check});

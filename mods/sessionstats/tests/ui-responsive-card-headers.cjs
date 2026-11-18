@@ -10,8 +10,8 @@ module.exports=async({browser,nativeHost,check})=>{
     try{
       await page.evaluate(()=>{window.__responsiveHeaderFixture=JSON.parse(model.payload);});
       let sequence=0;
-      async function publish(language,width,{paged=false,fresh=false}={}){
-        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh})=>{
+      async function publish(language,width,{paged=false,fresh=false,largeFinance=false}={}){
+        await page.evaluate(({language,messages,width,scale,sequence,paged,fresh,largeFinance})=>{
           const payload=JSON.parse(JSON.stringify(__responsiveHeaderFixture)),scope=payload.scopes.launch;
           payload.account_key='synthetic-responsive-header-'+scale+'-'+language;payload.window_size=[width,1100];
           payload.viewport={width:3840,height:2800,scale};payload.localization={language,messages};
@@ -24,6 +24,7 @@ module.exports=async({browser,nativeHost,check})=>{
               if(group==='maps')item.visual={kind:'map',src:'img://gui/maps/icons/map/small/synthetic-header.png',alt:'Synthetic map'};
               Object.assign(stats,{battles:total,observed_battles:total,wn8:index?1676:1601,wn8_count:total,win_rate:42.9});
               const values={xp_base:[132,549,1403],xp_received:[426,2372,8737],battle_wn8:[245,2288,6779],credits_net_base:[1000,index?5481:6343,9444]};
+              if(largeFinance)values.credits_income_received=[123456789,234567890,345678901];
               item.extrema_battles={};
               for(const [metric,[min,avg,max]]of Object.entries(values)){
                 stats[metric]={count:metric==='credits_net_base'?3:total,min,avg,max,sum:avg*total};item.extrema_battles[metric]={};
@@ -37,14 +38,14 @@ module.exports=async({browser,nativeHost,check})=>{
               item.battle_list={page:0,pages:1,total:1,page_size:10,items:[{id:'responsive-result-'+index,name:'Synthetic vehicle',map:'Cliff',started_at:1794000000,outcome:'win',wn8:1601}]};
               return item;
             });
-            scope.ordering[group]={metric:group==='battles'?'off':'credits_net_base',statistic:'avg',direction:'desc',chronology:'newest'};
+            scope.ordering[group]={metric:group==='battles'?'off':largeFinance?'credits_income_received':'credits_net_base',statistic:'avg',direction:'desc',chronology:'newest'};
             scope.pagination[group]={page:0,pages:paged&&group==='maps'?2:1,total:paged&&group==='maps'?4:2,page_size:2};
           }
           payload.scopes.timeline=JSON.parse(JSON.stringify(scope));
           payload.scopes.timeline.from_point=payload.scopes.timeline.to_point='';payload.scopes.timeline.time_points=[];
           model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
           document.getElementById('ss-scope-manual').click();document.getElementById('ss-group-maps').click();
-        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh});await frames(page);
+        },{language,messages:languages[language],width,scale,sequence:++sequence,paged,fresh,largeFinance});await frames(page);
       }
       async function resize(width,height=1100){
         await page.evaluate(({width,height})=>{
@@ -59,6 +60,7 @@ module.exports=async({browser,nativeHost,check})=>{
       async function audit(){return page.evaluate(scale=>{
         const rect=node=>{const b=node.getBoundingClientRect();return {left:b.left/scale,right:b.right/scale,top:b.top/scale,bottom:b.bottom/scale,width:b.width/scale,height:b.height/scale};},
           inside=(a,b)=>a.left>=b.left-1&&a.right<=b.right+1&&a.top>=b.top-1&&a.bottom<=b.bottom+1,
+          overlapY=(a,b)=>Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1,
           overlap=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1,
           ink=node=>{const range=document.createRange();range.selectNodeContents(node);return [...range.getClientRects()].filter(b=>b.width>0&&b.height>0)
             .map(b=>({left:b.left/scale,right:b.right/scale,top:b.top/scale,bottom:b.bottom/scale}));};
@@ -78,13 +80,32 @@ module.exports=async({browser,nativeHost,check})=>{
           if(identity.width<72||!titleInk.length||titleInk.some(part=>!inside(part,titleBox)))failures.push('squeezed-identity');
           if(['Cliff','Klondike'].includes(title.textContent)&&titleInk.some(part=>Math.abs(part.top-titleInk[0].top)>1))failures.push('vertical-short-name');
           if(!inside(identity,header))failures.push('identity-outside-header');
+          let sortNumber=null;
+          if(stats){
+            const statsBox=rect(stats),kpis=[...stats.querySelectorAll('.ss-group-kpi')].map(rect);
+            if(kpis.length!==3||kpis.some(box=>!inside(box,statsBox))||!inside(statsBox,header)||
+              kpis.slice(1).some((box,index)=>box.left<kpis[index].right-1||!overlapY(box,kpis[index])))failures.push('statistics-stacked-or-outside');
+            const badge=stats.querySelector('.ss-group-sort-value');
+            if(badge){
+              const badgeBox=rect(badge),caption=badge.querySelector('.ss-group-sort-caption-text'),value=badge.querySelector('.ss-group-sort-number');
+              const captionBox=rect(caption),captionStyle=getComputedStyle(caption),captionInk=ink(caption);
+              sortNumber=value.textContent.replace(/\s/g,'');
+              const fullHelp=badge.getAttribute('data-ss-help');
+              const readableCaption=captionInk.length>0&&(captionInk.every(part=>inside(part,captionBox))||
+                captionStyle.textOverflow==='ellipsis'&&captionStyle.overflowX==='hidden'&&caption.scrollWidth>caption.clientWidth&&
+                fullHelp&&fullHelp===badge.getAttribute('aria-label')&&badge.getAttribute('aria-controls')==='ss-help-tooltip');
+              if(!inside(badgeBox,statsBox)||kpis.some(box=>overlap(box,badgeBox))||!inside(captionBox,badgeBox)||
+                !readableCaption||!ink(value).length||ink(value).some(part=>!inside(part,badgeBox)))failures.push('clipped-statistic-badge');
+            }
+          }
           if(more){
             if(docked!==expectedDock)failures.push('dock-scope');
+            if(button.width<=0||button.height<=0||button.left<bounds.left-1||button.right>bounds.right+1)failures.push('action-outside-card');
             if(expectedDock){
-              if(getComputedStyle(more).position!=='absolute'||Math.abs(button.width-82)>0.5||Math.abs(button.height-20)>0.5||
+              if(more.parentNode!==card||getComputedStyle(more).position!=='absolute'||Math.abs(button.width-82)>0.5||Math.abs(button.height-20)>0.5||
                 Math.abs((button.top+button.bottom)/2-bounds.top)>2||Math.abs(bounds.right-button.right-6)>2||header.top<button.bottom+2)failures.push('border-dock');
               if(stats&&identity.bottom>rect(stats).top+1)failures.push('identity-statistics-overlap');
-            }else if(getComputedStyle(more).position==='absolute'||!inside(button,header))failures.push('ordinary-action-moved');
+            }else if(!card.querySelector('.ss-group-header').contains(more)||getComputedStyle(more).position==='absolute'||!inside(button,header))failures.push('ordinary-action-moved');
             if(!ink(more.querySelector('.ss-control-label')).every(part=>inside(part,button)))failures.push('clipped-action');
           }
           const banner=card.querySelector('.ss-battle-selection-banner'),back=card.querySelector('.ss-battle-return'),label=card.querySelector('.ss-battle-selection-label');
@@ -93,8 +114,13 @@ module.exports=async({browser,nativeHost,check})=>{
             selected={text:label.textContent,backLabel:back.getAttribute('aria-label'),contained:inside(a,b)&&inside(l,b),
               order:docked?l.right<=a.left+1:a.right<=l.left+1,
               adjacent:!docked||(button.left-a.right>=2&&button.left-a.right<=24&&Math.abs((a.top+a.bottom-button.top-button.bottom)/2)<=2&&!overlap(b,button))};
+            if(docked){
+              const labelInk=ink(label),visuals=[...card.querySelectorAll('.ss-battle-outcome,.ss-battle-map-visual')].map(rect);
+              if(labelInk.length===0||labelInk.some(part=>Math.abs(part.top-labelInk[0].top)>1||!inside(part,l))||
+                visuals.some(visual=>[b,button].some(control=>overlap(control,visual))))failures.push('selection-overlaps-battle-header');
+            }
           }
-          return {id:card.getAttribute('data-group-id'),title:title.textContent,bounds,header,identity,button,expectedDock,docked,failures,selected,
+          return {id:card.getAttribute('data-group-id'),title:title.textContent,bounds,header,identity,button,expectedDock,docked,failures,selected,sortNumber,
             more:more&&more.textContent,expanded:more&&more.getAttribute('aria-expanded')};
         });
         return {titlebar,timeline,controls,language,actions,rowsOK,topOK,two,cards};
@@ -118,11 +144,11 @@ module.exports=async({browser,nativeHost,check})=>{
           scope.battles=[{...sample,id:request.id},{...sample,id:'responsive-neighbor'}];scope.pagination.battles={page:0,pages:1,total:2,page_size:2};
           scope.battle_focus={id:request.id,request_id:request.request_id};model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
         });await frames(page,12);
-        await page.evaluate(()=>{window.__selectedHeaderCard=document.querySelector('#ss-groups .ss-battle-target');window.__selectedHeaderMore=__selectedHeaderCard.querySelector('.ss-more-button');window.__selectedHeaderParent=__selectedHeaderMore.parentNode;});
-        for(const width of [600,780,1320]){
+        await page.evaluate(()=>{window.__selectedHeaderCard=document.querySelector('#ss-groups .ss-battle-target');window.__selectedHeaderMore=__selectedHeaderCard.querySelector('.ss-more-button');});
+        for(const width of (language==='en'?[480,600,780,1320]:[600,780,1320])){
           await resize(width);const result=await audit();
           check('Back remains beside Selected while only narrow single-column More uses the border '+language+'/'+width+'/'+scale+'x: '+JSON.stringify(result),selectedValid(result,messages)&&
-            await page.evaluate(()=>document.querySelector('#ss-groups .ss-battle-target')===__selectedHeaderCard&&__selectedHeaderCard.querySelector('.ss-more-button')===__selectedHeaderMore&&__selectedHeaderMore.parentNode===__selectedHeaderParent));
+            await page.evaluate(()=>document.querySelector('#ss-groups .ss-battle-target')===__selectedHeaderCard&&__selectedHeaderCard.querySelector('.ss-more-button')===__selectedHeaderMore));
           if(width===600){
             const more=page.locator('#ss-groups .ss-battle-target .ss-more-button');await more.click();await frames(page);const open=await audit();
             check('Selected, Back and localized Less coexist without moving their shared border controls '+language+'/'+scale+'x: '+JSON.stringify(open),
@@ -140,11 +166,17 @@ module.exports=async({browser,nativeHost,check})=>{
           }
         }
       }
-      await publish('en',600);await page.evaluate(()=>{window.__retainedHeaderCards=[...document.querySelectorAll('#ss-groups .ss-group')];window.__retainedHeaderParents=__retainedHeaderCards.map(card=>card.querySelector('.ss-more-button').parentNode);});
+      await publish('en',600);await page.evaluate(()=>{window.__retainedHeaderCards=[...document.querySelectorAll('#ss-groups .ss-group')];window.__retainedHeaderActions=__retainedHeaderCards.map(card=>card.querySelector('.ss-more-button'));});
       for(const width of [550,640,700,1320,1800,600]){
         await resize(width);const result=await audit();
         check('The same map headers recover correct rows and action scope through live resize at '+width+'/'+scale+'x: '+JSON.stringify(result),valid(result)&&
-          await page.evaluate(()=>[...document.querySelectorAll('#ss-groups .ss-group')].every((card,index)=>card===__retainedHeaderCards[index]&&card.querySelector('.ss-more-button').parentNode===__retainedHeaderParents[index])));
+          await page.evaluate(()=>[...document.querySelectorAll('#ss-groups .ss-group')].every((card,index)=>card===__retainedHeaderCards[index]&&card.querySelector('.ss-more-button')===__retainedHeaderActions[index])));
+      }
+      for(const width of [360,480,600]){
+        await publish('ru',width,{largeFinance:true});const result=await audit();
+        const failures=result.cards.flatMap(card=>card.failures);
+        check('Narrow aggregate headers contain all KPIs and a long localized finance statistic at '+width+'/'+scale+'x: '+JSON.stringify(failures),
+          result.cards.length===2&&failures.length===0&&result.cards.every(card=>card.sortNumber==='234567890'));
       }
       await publish('en',600,{paged:true});await page.evaluate(()=>{window.__firstHeaderFeedCard=document.querySelector('#ss-groups .ss-group');});
       await page.locator('#ss-page-next').click();await frames(page);

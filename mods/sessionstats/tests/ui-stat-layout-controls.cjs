@@ -1,12 +1,16 @@
 /* Statistic text stays centered; adjacent tables retain natural row heights. */
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 async function naturalKPIBoxes(page){
-  return page.locator('#ss-groups .ss-group-kpi .ss-kpi-label,#ss-groups .ss-group-kpi .ss-kpi-value').evaluateAll(nodes=>nodes.length===6&&nodes.every(node=>{
-    const range=document.createRange();range.selectNodeContents(node);
-    const rectangles=[...range.getClientRects()].filter(rect=>rect.width>0&&rect.height>0).sort((a,b)=>a.top-b.top),lines=[];
-    for(const rect of rectangles)if(!lines.length||rect.top-lines[lines.length-1]>1)lines.push(rect.top);
-    const style=getComputedStyle(node),scale=parseFloat(getComputedStyle(document.documentElement).fontSize);
-    return lines.length>0&&node.getBoundingClientRect().height<=lines.length*parseFloat(style.lineHeight)+scale;
+  return page.locator('#ss-groups .ss-group-kpi').evaluateAll(nodes=>nodes.length===3&&nodes.every(node=>{
+    const [label,value]=node.querySelectorAll('.ss-kpi-label,.ss-kpi-value'),scale=parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const natural=part=>{
+      const range=document.createRange();range.selectNodeContents(part);
+      const rectangles=[...range.getClientRects()].filter(rect=>rect.width>0&&rect.height>0).sort((a,b)=>a.top-b.top),lines=[];
+      for(const rect of rectangles)if(!lines.length||rect.top-lines[lines.length-1]>1)lines.push(rect.top);
+      return lines.length>0&&part.getBoundingClientRect().height<=lines.length*parseFloat(getComputedStyle(part).lineHeight)+scale;
+    };
+    const gap=value.getBoundingClientRect().top-label.getBoundingClientRect().bottom;
+    return natural(label)&&natural(value)&&gap>=-scale&&gap<=3*scale&&parseFloat(getComputedStyle(label).fontSize)>=12*scale;
   }));
 }
 module.exports=async({browser,nativeHost,check})=>{
@@ -109,7 +113,7 @@ module.exports=async({browser,nativeHost,check})=>{
           geometry.header>=geometry.content&&geometry.header<=geometry.content+3);
         check('The familiar KPI columns retain compact widths while the identity takes spare space '+metric+'/'+statistic+'/'+scale,
           geometry.kpiWidths.length===3&&geometry.kpiWidths.every((width,index)=>Math.abs(width-[60,62,72][index])<=0.5));
-        check('KPI labels and figures use natural text height instead of blank fixed rows '+metric+'/'+statistic+'/'+scale,await naturalKPIBoxes(page));
+        check('KPI labels and figures stay close together at their natural height '+metric+'/'+statistic+'/'+scale,await naturalKPIBoxes(page));
         if(geometry.badge){
           const b=geometry.badge;
           check('The statistic frame fits its centered caption and value with small padding '+metric+'/'+statistic+'/'+scale+': '+JSON.stringify(b),
@@ -260,7 +264,7 @@ module.exports=async({browser,nativeHost,check})=>{
             identity=box(card.querySelector('.ss-group-name'));
           const kpis=[...card.querySelectorAll('.ss-group-kpi')].map(node=>{
             const owner=box(node),label=box(node.querySelector('.ss-kpi-label')),value=node.querySelector('.ss-kpi-value'),figure=box(value),range=document.createRange();range.selectNodeContents(value);
-            return {labelTop:label.top,bottom:figure.bottom,text:value.textContent,
+            return {labelTop:label.top,labelBottom:label.bottom,valueTop:figure.top,bottom:figure.bottom,text:value.textContent,
               lines:[...range.getClientRects()].filter(rect=>rect.width>0&&rect.height>0).length,
               fits:figure.left>=owner.left-scale&&figure.right<=owner.right+scale&&
                 [...range.getClientRects()].every(rect=>rect.left>=figure.left-scale&&rect.right<=figure.right+scale)};
@@ -271,8 +275,9 @@ module.exports=async({browser,nativeHost,check})=>{
             contained:identity.left>=header.left-scale&&stats.right<=header.right+scale&&
               identity.top>=header.top-scale&&identity.bottom<=header.bottom+scale};
         },scale);
-        check('Wrapped identities and multi-line figures retain top labels and aligned bottoms at '+scale+': '+JSON.stringify(result),
-          result.contained&&result.kpis.length===3&&result.kpis.every(kpi=>kpi.fits&&Math.abs(kpi.labelTop-result.statsTop)<=scale&&Math.abs(kpi.bottom-result.statsBottom)<=scale)&&
+        check('Wrapped identities and multi-line figures keep every KPI label close to its own value at '+scale+': '+JSON.stringify(result),
+          result.contained&&result.kpis.length===3&&result.kpis.every(kpi=>kpi.fits&&kpi.labelTop>=result.statsTop-scale&&kpi.bottom<=result.statsBottom+scale&&
+            kpi.valueTop-kpi.labelBottom>=-scale&&kpi.valueTop-kpi.labelBottom<=3*scale)&&
           result.headerHeight<=result.contentHeight+3);
         if(profile.empty)check('A zero-results group retains its full recorded count and unknown values at '+scale,
           result.kpis[0].text==='137'&&result.kpis[1].text==='—'&&result.kpis[2].text==='—');

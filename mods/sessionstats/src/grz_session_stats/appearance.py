@@ -735,20 +735,18 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-custom-date-error { display:block; min-width:0; width:100%; padding-top:3rem; color:{{colors.negative_text}}; font-size:11rem; line-height:15rem; overflow-wrap:break-word; }
 .ss-more-button { margin-left:7rem; }
 .ss-map-more-button { min-width:48rem; padding:3rem 7rem; margin-left:6rem; }
-.ss-narrow-cards [id^="ss-card-maps-"] .ss-group-header, .ss-narrow-cards [id^="ss-card-vehicles-"] .ss-group-header { flex-wrap:wrap; }
-.ss-narrow-cards [id^="ss-card-maps-"] .ss-group-name, .ss-narrow-cards [id^="ss-card-vehicles-"] .ss-group-name { flex:1 1 340rem; min-width:0; }
 /* Keep the familiar compact KPI columns; only the selected amount grows. */
-.ss-group-stats { display:flex; flex:0 0 auto; align-items:stretch; min-width:0; width:auto; }
-.ss-group-stats.ss-group-stats-more { flex-basis:auto; width:auto; }
+.ss-group-stats { display:flex; flex:0 0 auto; flex-direction:row; align-items:stretch; min-width:0; width:auto; }
 .ss-aggregate .ss-group-header { align-items:stretch; min-height:0; flex-wrap:nowrap; }
+.ss-group-identity { display:flex; flex:1 1 0rem; align-items:center; width:0; min-width:0; }
 .ss-aggregate .ss-group-name { flex:1 1 0rem; align-self:center; min-width:0; padding-right:8rem; }
 .ss-aggregate .ss-group-thumb { align-self:center; }
-.ss-aggregate .ss-group-kpi { display:flex; flex:0 0 62rem; flex-direction:column; align-items:center; justify-content:space-between; width:62rem; min-width:0; margin-top:0; padding:0 2rem; }
+.ss-aggregate .ss-group-kpi { display:flex; flex:0 0 62rem; flex-direction:column; align-items:center; justify-content:center; width:62rem; min-width:0; margin-top:0; padding:2rem; }
 .ss-aggregate .ss-group-count { flex-basis:60rem; width:60rem; }
 .ss-aggregate .ss-group-wn8-kpi { flex-basis:72rem; width:72rem; }
-.ss-aggregate .ss-group-kpi .ss-kpi-label { width:100%; min-width:0; height:auto; min-height:0; font-size:11rem; line-height:13rem; overflow-wrap:break-word; }
-.ss-aggregate .ss-group-kpi .ss-kpi-value { display:block; width:100%; min-width:0; height:auto; min-height:0; font-size:20rem; line-height:23rem; overflow-wrap:break-word; }
-.ss-aggregate .ss-group-count .ss-kpi-value { font-size:18rem; }
+.ss-aggregate .ss-group-kpi .ss-kpi-label { flex:0 0 auto; width:100%; min-width:0; height:auto; min-height:0; font-size:12rem; line-height:14rem; }
+.ss-aggregate .ss-group-kpi .ss-kpi-value { display:block; flex:0 0 auto; width:100%; min-width:0; height:auto; min-height:0; margin-top:1rem; font-size:20rem; line-height:23rem; white-space:nowrap; }
+.ss-aggregate .ss-group-count .ss-kpi-value { font-size:18rem; white-space:normal; overflow-wrap:break-word; }
 .ss-aggregate .ss-group-rate .ss-kpi-value { font-size:17rem; }
 .ss-group-sort-host { position:relative; display:flex; flex:0 0 auto; align-items:center; justify-content:center; width:auto; min-width:0; padding:0 3rem; text-align:center; }
 .ss-group-sort-host[data-ss-sort-display="empty"] { display:none; }
@@ -778,9 +776,13 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-extreme-cell.ss-sort-active-value .ss-extreme-link-cue { background:{{colors.extreme_link_hover_background}}; }
 .ss-group-stats > .ss-map-more-button { flex:0 0 72rem; align-self:center; width:72rem; min-width:72rem; margin-left:4rem; padding:3rem 4rem; font-size:11rem; line-height:16rem; }
 .ss-group-stats > .ss-map-more-button .ss-control-label { font-size:11rem; line-height:16rem; }
-.ss-aggregate.ss-compact-headline .ss-group-header { flex-wrap:wrap; }
-.ss-aggregate.ss-compact-headline .ss-group-name { flex:1 1 0rem; min-width:0; max-width:none; }
-.ss-aggregate.ss-compact-headline .ss-group-stats { flex:1 1 100%; justify-content:flex-end; width:100%; max-width:100%; flex-wrap:wrap; margin-top:3rem; }
+.ss-aggregate.ss-compact-headline .ss-group-header { display:block; }
+.ss-aggregate.ss-compact-headline .ss-group-identity { width:100%; }
+.ss-aggregate.ss-compact-headline .ss-group-stats { justify-content:flex-end; max-width:100%; flex-wrap:wrap; margin-top:3rem; }
+.ss-compact-headline .ss-group-sort-host { flex:0 0 196rem; width:196rem; max-width:100%; }
+.ss-compact-headline .ss-group-sort-host .ss-group-sort-value { width:100%; }
+.ss-compact-headline .ss-group-sort-caption { min-width:0; max-width:100%; }
+.ss-compact-headline .ss-group-sort-caption-text { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .ss-more-panel { display:flex; flex-wrap:wrap; align-items:flex-start; padding:5rem 0 2rem; border-top:1rem solid {{colors.group_tabs_border_bottom}}; font-size:13rem; line-height:18rem; overflow-wrap:break-word; }
 .ss-more-panel > p { width:100%; margin:3rem 5rem; }
 .ss-more-title { margin:4rem 5rem; color:{{colors.session_tab_active_text}}; font-size:13rem; line-height:18rem; }
@@ -805,6 +807,15 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-map-battle-wn8 { display:block; flex:0 0 auto; min-width:68rem; margin-right:8rem; color:{{colors.kpi_wn8_text}}; font-size:12rem; line-height:16rem; text-align:right; white-space:nowrap; }
 .ss-map-battle-wn8-label { color:{{colors.kpi_label_text}}; }
 .ss-map-battle-open { flex:0 0 auto; min-width:64rem; max-width:100%; height:26rem; min-height:26rem; padding:3rem 7rem; }
+/* Wide history cards retain the chronological DOM order across both columns. */
+.ss-history-two-columns .ss-history-body { display:flex; flex-direction:row; flex-wrap:wrap; align-items:stretch; align-content:flex-start; padding:4rem 5rem 0; max-height:324rem; }
+.ss-history-two-columns .ss-history-paged { height:324rem; }
+.ss-history-two-columns .ss-map-battle-row { flex:0 0 48.8%; width:48.8%; margin:0 0 5rem; border:1rem solid {{colors.details_separator_border_top}}; border-radius:{{radii.table_row}}rem; }
+.ss-history-two-columns .ss-map-battle-row:nth-child(odd) { margin-right:2%; }
+.ss-history-two-columns .ss-map-battle-info { flex:0 0 100%; width:100%; margin:0 0 2rem; }
+.ss-history-two-columns .ss-map-battle-date { margin-right:0; }
+.ss-history-two-columns .ss-map-battle-outcome { flex:1 1 0rem; }
+.ss-history-two-columns .ss-map-battle-wn8 { min-width:0; }
 .ss-map-battles-pagination, .ss-map-pagination { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; min-width:0; width:100%; padding:6rem; border-top:1rem solid {{colors.details_separator_border_top}}; }
 .ss-map-battles-pagination > .ss-control, .ss-map-pagination > .ss-control { flex:0 0 auto; min-width:64rem; max-width:100%; height:26rem; min-height:26rem; padding:3rem 7rem; }
 .ss-map-battles-page, .ss-map-page-status { display:block; flex:1 1 80rem; min-width:0; margin:0 4rem; color:{{colors.list_meta_text}}; font-size:11rem; line-height:16rem; text-align:center; }
@@ -815,11 +826,11 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group.ss-battle-target { outline:none; border-color:{{colors.session_tab_marker_background}}; }
 .ss-battle-selection-banner { display:flex; align-items:center; position:absolute; z-index:4; top:-10rem; right:6rem; max-width:95%; margin:0; padding:1rem 6rem; border:1rem solid {{colors.session_tab_marker_background}}; border-radius:{{radii.control}}rem; background:{{colors.table_header_background_start}}; color:{{colors.session_tab_marker_background}}; font-size:12rem; font-weight:bold; line-height:16rem; }
 .ss-battle-selection-label { display:block; min-width:0; }
-/* Keep narrow single-lane controls on the existing border overlay. Buttons
-   retain their parents and handlers so selected-battle return stays owned. */
+/* The narrow border actions share the card's positioning context. */
 .ss-group.ss-card-border-more { padding-top:13rem; }
-.ss-card-border-more .ss-more-button { position:absolute; z-index:4; top:-10rem; right:6rem; width:82rem; min-width:82rem; max-width:82rem; height:20rem; min-height:20rem; margin:0; padding:0 5rem; }
-.ss-card-border-more .ss-battle-selection-banner { right:92rem; max-width:70%; flex-direction:row-reverse; }
+.ss-card-border-more > .ss-more-button { position:absolute; z-index:4; top:-10rem; right:6rem; width:82rem; min-width:82rem; max-width:82rem; height:20rem; min-height:20rem; margin:0; padding:0 5rem; }
+.ss-card-border-more .ss-battle-selection-banner { right:92rem; max-width:60%; height:20rem; padding-top:0; padding-bottom:0; flex-direction:row-reverse; white-space:nowrap; }
+.ss-card-border-more .ss-battle-selection-label { flex:0 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ss-card-border-more .ss-battle-return { margin-left:5rem; margin-right:0; }
 .ss-battle-return { display:block; position:relative; flex:0 0 20rem; width:20rem; min-width:20rem; height:18rem; min-height:18rem; padding:0; margin:0 5rem 0 0; border:0; border-radius:{{radii.extreme_link}}rem; background:{{colors.extreme_link_background}}; color:{{colors.extreme_link_text}}; cursor:pointer; }
 .ss-battle-return:hover, .ss-battle-return:focus { background:{{colors.extreme_link_hover_background}}; outline:1rem solid {{colors.session_tab_marker_background}}; outline-offset:0; }
@@ -854,6 +865,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-more-columns { display:block; width:100%; min-width:0; }
 .ss-more-columns-paired { display:flex; flex-wrap:nowrap; align-items:flex-start; }
 .ss-more-mission-block { flex:0 0 auto; min-width:0; max-width:100%; width:100%; padding:0 0 4rem; }
+.ss-more-mission-continuation { flex:0 0 100%; margin-top:3rem; border-top:1rem solid {{colors.details_separator_border_top}}; }
 .ss-more-reward-block { flex:1 1 220rem; min-width:0; max-width:100%; padding:0 0 4rem; }
 /* The current point total stays beside its heading. Additional point sources
    wrap as complete cells, keeping the numerical strip above both columns. */
@@ -920,6 +932,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group .ss-paired-tables .ss-metric-name { flex:1 1 0rem; min-width:0; width:0; }
 .ss-group .ss-paired-tables .ss-metric-number { flex:0 0 auto; min-width:0; }
 .ss-group .ss-paired-tables .ss-economy { padding-top:0; margin-top:0; border-top:0; }
+.ss-card-border-more .ss-paired-tables .ss-performance { padding-right:9rem; }
+.ss-group.ss-card-border-more .ss-paired-tables .ss-economy { padding-left:8rem; border-left:1rem solid {{colors.economy_separator_border_left}}; }
 .ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-money-head > .ss-money-label, .ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-label { width:35%; }
 .ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-money-head > .ss-money-value, .ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-value { width:21.666%; }
 .ss-group .ss-paired-tables .ss-economy:not(.ss-long-finance):not(.ss-credit-compact) .ss-credit-label-column { flex-basis:35%; width:35%; }

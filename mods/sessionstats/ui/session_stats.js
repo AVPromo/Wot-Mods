@@ -683,11 +683,9 @@
         var rgb = parseInt(color.slice(1, 3), 16) + ',' + parseInt(color.slice(3, 5), 16) + ',' +
             parseInt(color.slice(5, 7), 16);
         border.style.borderColor = 'rgba(' + rgb + ',0.62)';
-        // Explicit palette colors keep the raised edge and halo native-safe.
-        // Shadow layers strengthen depth without increasing the 1rem border.
-        border.style.boxShadow = '0 0 5rem rgba(' + rgb + ',0.36), ' +
-            '0 2rem 4rem rgba(0,0,0,0.5), inset 0 1rem 1rem rgba(' + rgb + ',0.7), ' +
-            'inset 0 -1rem 2rem rgba(0,0,0,0.72)';
+        // A bright close halo fades into two softer, centered shadows.
+        border.style.boxShadow = '0 0 4rem rgba(' + rgb + ',0.78), ' +
+            '0 0 12rem rgba(' + rgb + ',0.32), 0 0 20rem rgba(' + rgb + ',0.12)';
         card.setAttribute('data-wn8-border-value', String(Math.round(value)));
         return card;
     }
@@ -2740,6 +2738,50 @@
             if (card.style.marginRight !== margin) { card.style.marginRight = margin; }
         });
     }
+    function layoutMissionDetails(columns, missions, bonus, missionWidth, width, scale) {
+        var body = missions.querySelector('.ss-more-body');
+        var key = [missionWidth, width, scale, !!bonus].join(':');
+        if (columns._ssMissionLayout === key) { return; }
+        var continuation = columns._ssMissionContinuation;
+        if (continuation) {
+            Array.prototype.slice.call(continuation.querySelectorAll('.ss-more-mission')).forEach(function (mission) {
+                body.appendChild(mission);
+            });
+            continuation.parentNode.removeChild(continuation);
+            columns._ssMissionContinuation = null;
+            body.removeAttribute('data-mission-columns');
+        }
+        layoutMissionRows(missions, missionWidth);
+        var cards = Array.prototype.slice.call(body.querySelectorAll('.ss-more-mission'));
+        if (bonus && width >= 680 && missionWidth < 440 && cards.length >= 4) {
+            var bonusBox = bonus.getBoundingClientRect(), first = cards[0].getBoundingClientRect();
+            if (!(bonusBox.height > 0) || !(first.height > 0) || Math.abs(first.width / scale - missionWidth) > 1) {
+                // On native first paint, measure once more after the explicit widths settle.
+                if (columns._ssMissionLayoutWait !== key) { columns._ssMissionLayoutWait = key; queueResize(); }
+                return;
+            }
+            // Move at least a pair of missions only once the bonus matrix has
+            // ended. Both sections retain their headings and the original order.
+            var split = 0;
+            while (split < cards.length - 2) {
+                split += 1;
+                if (cards[split - 1].getBoundingClientRect().bottom >= bonusBox.bottom - scale) { break; }
+            }
+            if (cards[split - 1].getBoundingClientRect().bottom >= bonusBox.bottom - scale) {
+                continuation = element('div', 'ss-more-mission-block ss-more-mission-continuation');
+                columns.parentNode.insertBefore(continuation, columns.nextSibling);
+                columns._ssMissionContinuation = continuation;
+                append(continuation, element('h3', 'ss-more-title', t('more.missions')));
+                var tail = rewardTable(continuation, 'ss-more-missions');
+                cards.slice(split).forEach(function (mission) { tail.appendChild(mission); });
+                body.removeAttribute('data-mission-columns');
+                layoutMissionRows(missions, missionWidth);
+                layoutMissionRows(continuation, width);
+            }
+        }
+        columns._ssMissionLayout = key;
+        columns._ssMissionLayoutWait = null;
+    }
     function layoutMoreColumns(card, availableWidth) {
         var columns = card.querySelector('.ss-more-columns');
         if (!columns) { return; }
@@ -2766,7 +2808,7 @@
             missions.style.width = missionWidth + 'rem';
             missions.style.flex = paired ? '0 0 ' + missionWidth + 'rem' : '0 0 auto';
             missions.style.minWidth = paired ? minimumMissionWidth + 'rem' : '0rem';
-            layoutMissionRows(missions, missionWidth);
+            layoutMissionDetails(columns, missions, paired ? bonus : null, missionWidth, width, scale);
         }
     }
     function attachBattleMore(card, header, battle) {
@@ -3592,8 +3634,9 @@
             }
             state.groupCards.push(group); page.cards.push(group);
             header = append(group, element('div', 'ss-group-header'));
-            appendVisual(header, item);
-            identity = append(header, element('div', 'ss-group-name'));
+            var identityRow = battle ? header : append(header, element('div', 'ss-group-identity'));
+            appendVisual(identityRow, item);
+            identity = append(identityRow, element('div', 'ss-group-name'));
             heading = append(identity, element('div', 'ss-group-heading'));
             append(heading, element('h2', 'ss-group-title', item.name || t('unknown')));
             groupCoverage(heading, stats, battle);
@@ -3628,7 +3671,7 @@
             else if (state.group === 'maps' || state.group === 'vehicles') {
                 attachMapMore(group, header, item);
                 var more = header.querySelector('.ss-map-more-button');
-                if (more) { headline.appendChild(more); headline.className += ' ss-group-stats-more'; }
+                if (more) { headline.appendChild(more); }
             }
         }
         page.lanes[0].appendChild(fragment);
@@ -3847,22 +3890,19 @@
         button.setAttribute('aria-controls', helpTooltip.id);
     }
     function layoutCardBorderControls(card, logicalWidth, twoColumns) {
-        var docked = !twoColumns && logicalWidth < 680 && !!card.querySelector('.ss-more-button');
+        var more = card.querySelector('.ss-more-button');
+        if (!more) { return false; }
+        var docked = !twoColumns && logicalWidth < 680;
         card.classList[docked ? 'add' : 'remove']('ss-card-border-more');
-        var identity = card.querySelector('.ss-group-header > .ss-group-name');
-        if (identity && card.classList.contains('ss-aggregate')) {
-            if (docked) {
-                // Reserve the shipped thumbnail lane before native first paint;
-                // a transient text/image rectangle must not collapse the name.
-                var thumb = card.querySelector('.ss-group-header > .ss-group-thumb');
-                var identityWidth = Math.max(1, logicalWidth - 14 - (thumb ? 62 : 0));
-                identity.style.flex = '0 0 ' + identityWidth + 'rem';
-                identity.style.width = identityWidth + 'rem';
-                card._ssDockIdentity = true;
-            } else if (card._ssDockIdentity) {
-                identity.style.flex = ''; identity.style.width = '';
-                card._ssDockIdentity = false;
-            }
+        var home = card.querySelector('.ss-group-stats') || card.querySelector('.ss-group-header');
+        var holder = docked ? card : home;
+        if (more.parentNode !== holder) {
+            // In Gameface an absolute button nested in a flex item can use
+            // that item's geometry. Dock it directly to the card, like Back.
+            var focused = document.activeElement === more;
+            if (docked) { holder.insertBefore(more, holder.firstChild); }
+            else { holder.appendChild(more); }
+            if (focused) { focusControl(more); }
         }
         return docked;
     }
@@ -3914,12 +3954,17 @@
         var owned = [], cards = state.groupCards || [], total = state.renderedFeed ? state.renderedFeed.total : state.list.length;
         cards.forEach(function (card, index) {
             var borderControls = layoutCardBorderControls(card, Math.min(width, cardWidth), wide);
-            if (state.group !== 'battles') {
+            var headline = card.querySelector('.ss-group-stats');
+            if (headline) {
                 var hasSortValue = !!card.querySelector('.ss-group-sort-value');
                 var compactHeadline = borderControls || Math.min(width, cardWidth) < (hasSortValue ? 680 : 500);
                 if (card.classList.contains('ss-compact-headline') !== compactHeadline) {
                     card.classList[compactHeadline ? 'add' : 'remove']('ss-compact-headline');
                 }
+                // Explicit block rows avoid percentage flex bases and wrapping
+                // against a transient native rectangle during live resizing.
+                var headlineWidth = compactHeadline ? Math.max(1, Math.min(width, cardWidth) - 14) + 'rem' : '';
+                if (headline.style.width !== headlineWidth) { headline.style.width = headlineWidth; }
             }
             if (state.group === 'battles') {
                 // The card's assigned logical width is independent of its
@@ -3932,6 +3977,7 @@
             if (state.group !== 'battles') {
                 layoutAggregateCaptions(card);
                 layoutAggregateTables(card, Math.max(1, Math.min(width, cardWidth) - 14));
+                card.classList[wide && cardWidth >= 700 ? 'add' : 'remove']('ss-history-two-columns');
             } else {
                 layoutBattleTables(card, Math.max(1, Math.min(width, cardWidth) - 14));
             }

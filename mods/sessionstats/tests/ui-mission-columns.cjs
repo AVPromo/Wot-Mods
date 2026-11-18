@@ -2,7 +2,7 @@
 const fs=require('fs'),path=require('path');
 async function settled(page,scale,width){
   await page.waitForFunction(({scale,width})=>{
-    const block=document.querySelector('.ss-more-mission-block'),body=block&&block.querySelector('.ss-more-body');
+    const block=document.querySelector('.ss-more-columns > .ss-more-mission-block'),body=block&&block.querySelector('.ss-more-body');
     if(!body||!window.__nativeSize||__nativeSize[0]!==width*scale)return false;
     const bounds=block.getBoundingClientRect(),cards=[...body.querySelectorAll('.ss-more-mission')];
     const count=cards.length>1&&bounds.width/scale>=440?2:1;
@@ -64,8 +64,8 @@ module.exports=async({browser,nativeHost,check})=>{
             model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();},width);
           const more=page.locator('.ss-battle .ss-more-button');
           if(await more.getAttribute('aria-expanded')!=='true')await more.click();await settled(page,scale,2100);
-          const result=await page.locator('.ss-more-mission-block').evaluate(block=>({width:block.getBoundingClientRect().width/parseFloat(document.documentElement.style.fontSize),
-            count:Number(block.querySelector('.ss-more-body').getAttribute('data-mission-columns')),cards:block.querySelectorAll('.ss-more-mission').length}));
+          const result=await page.locator('.ss-more-columns > .ss-more-mission-block').evaluate(block=>({width:block.getBoundingClientRect().width/parseFloat(document.documentElement.style.fontSize),
+            count:Number(block.querySelector('.ss-more-body').getAttribute('data-mission-columns')),cards:block.closest('.ss-more-panel').querySelectorAll('.ss-more-mission').length}));
           check('Mission rows reflow after a narrow/wide transition at'+width+'px/'+scale+'x: '+JSON.stringify(result),
             result.count===(width===500?2:1)&&result.cards===4);
         }
@@ -78,6 +78,55 @@ module.exports=async({browser,nativeHost,check})=>{
           const body=block.querySelector('.ss-more-body'),last=body.lastElementChild,box=block.getBoundingClientRect(),card=last.firstElementChild.getBoundingClientRect();
           return body.children.length===3&&last.children.length===1&&block.querySelectorAll('.ss-more-mission').length===5&&Math.abs(card.width-box.width)<=scale;
         },scale));
+        const splits=[];
+        for(const rich of [false,true]){
+          await page.evaluate(rich=>{
+            const data=JSON.parse(model.payload),battle=data.scopes.launch.battles[0];
+            data.account_key+='-mission-tail';data.appearance.wide_card_widths.battles=720;
+            battle.details.bonuses=rich?{eventCredits:80000,eventCrystal:50,wotPlusCredits:7321,wotPlusXP:246,wotPlusFreeXP:12,wotPlusCrewXP:246,
+              premiumCredits:16269,premiumXP:547,premiumFreeXP:28,premiumCrewXP:547,dailyXPFactor10:20,additionalXPFactor10:30}:
+              {eventCredits:80000};
+            battle.details.missions={};
+            for(let index=0;index<8;index++)battle.details.missions[index]={kind:'daily',name:'Ordered objective '+index,status:'completed',
+              description:index===2?'A long objective with a readable progress description. '.repeat(3):''};
+            model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();
+          },rich);
+          await page.locator('.ss-battle .ss-more-button').click();await settled(page,scale,2100);
+          const panel=page.locator('.ss-more-panel');
+          const layout=await panel.evaluate((panel,scale)=>{
+            const bonus=panel.querySelector('.ss-more-bonus-block').getBoundingClientRect(),
+              continuation=panel.querySelector('.ss-more-mission-continuation'),
+              first=[...panel.querySelectorAll('.ss-more-columns .ss-more-mission')],
+              cards=[...panel.querySelectorAll('.ss-more-mission')];
+            if(!continuation)return {first:first.length,compacted:false};
+            const bounds=continuation.getBoundingClientRect(),tail=[...continuation.querySelectorAll('.ss-more-mission')],
+              [left,right]=tail.map(mission=>mission.getBoundingClientRect());
+            window.__missionTail=continuation;window.__missionTailCards=tail;
+            return {first:first.length,ordered:cards.every((mission,index)=>mission.querySelector('strong').textContent==='Ordered objective '+index),
+              compacted:cards.length===8 && first.length+tail.length===8 && !!left && !!right &&
+                continuation.querySelector('.ss-more-title').textContent==='Missions' && bounds.top>=bonus.bottom-scale &&
+                left.left<bonus.right && Math.abs(left.top-right.top)<=scale && left.right<=right.left-scale && right.right<=bounds.right+scale};
+          },scale);
+          check('Wide More fits additional missions below '+(rich?'taller':'shorter')+' bonuses at'+scale*100+'%: '+JSON.stringify(layout),
+            layout.compacted&&layout.ordered);
+          splits.push(layout.first);
+          await page.evaluate(()=>window.dispatchEvent(new Event('resize')));await settled(page,scale,2100);
+          check('An unchanged wide More retains the same continuation and mission nodes at'+scale*100+'%',
+            await panel.evaluate(panel=>panel.querySelector('.ss-more-mission-continuation')===__missionTail && __missionTailCards.every(card=>card.isConnected)));
+        }
+        check('A taller bonus table keeps more missions beside it before continuing at'+scale*100+'%: '+splits.join(', '),splits[0]<splits[1]);
+        await page.evaluate(()=>{
+          const data=JSON.parse(model.payload);
+          data.appearance.wide_card_widths.battles=500;
+          model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();
+        });
+        const compactMore=page.locator('.ss-battle .ss-more-button');
+        if(await compactMore.getAttribute('aria-expanded')!=='true')await compactMore.click();
+        await settled(page,scale,2100);
+        check('The compact card restores a single mission section with all eight results at'+scale*100+'%',
+          await page.locator('.ss-more-panel').evaluate(panel=>!panel.querySelector('.ss-more-mission-continuation') &&
+            [...panel.querySelectorAll('.ss-more-mission')].map(mission=>mission.querySelector('strong').textContent).join('|')===
+              Array.from({length:8},(_,index)=>'Ordered objective '+index).join('|')));
       }
     }
   }finally{await page.close();}
