@@ -3985,8 +3985,9 @@
         var identity = card.querySelector('.ss-group-identity');
         var compactMeta = !stacked && availableIdentity < (wide || ultraWide ? 240 : 176), free = identity.querySelector('.ss-free-xp');
         card.classList[compactMeta ? 'add' : 'remove']('ss-compact-aggregate-meta');
+        var title = identity.querySelector('.ss-group-title');
+        title.classList[wide || ultraWide ? 'add' : 'remove']('ss-caption-ellipsis');
         if (wide || ultraWide) {
-            var title = identity.querySelector('.ss-group-title');
             aggregateCaptionHelp(title, title.textContent);
         }
         if (free) {

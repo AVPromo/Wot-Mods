@@ -97,7 +97,7 @@ module.exports=async({browser,nativeHost,check})=>{
             title=card.querySelector('.ss-group-title'),titleBox=rect(title),titleInk=ink(title),stats=card.querySelector('.ss-group-stats'),more=card.querySelector('.ss-more-button'),
             button=more&&rect(more),expectedDock=!two&&bounds.width<680,docked=card.classList.contains('ss-card-border-more'),failures=[];
           const titleFits=titleInk.every(part=>inside(part,titleBox)),titleStyle=getComputedStyle(title),
-            titleEllipsis=titleBox.width>20&&titleStyle.textOverflow==='ellipsis'&&titleStyle.overflowX==='hidden'&&titleStyle.whiteSpace==='nowrap'&&
+            titleEllipsis=titleBox.width>20&&title.classList.contains('ss-caption-ellipsis')&&titleStyle.textOverflow==='ellipsis'&&titleStyle.overflowX==='hidden'&&titleStyle.whiteSpace==='nowrap'&&
               title.getAttribute('data-ss-help')===title.textContent&&title.getAttribute('tabindex')==='0';
           if(identity.width<72||!titleInk.length||(!titleFits&&!titleEllipsis))failures.push('squeezed-identity');
           if(['Cliff','Klondike'].includes(title.textContent)&&titleInk.some(part=>Math.abs(part.top-titleInk[0].top)>1))failures.push('vertical-short-name');

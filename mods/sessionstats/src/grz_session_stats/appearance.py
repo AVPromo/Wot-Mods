@@ -783,7 +783,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-wide-aggregate-headline .ss-group-heading,
 .ss-ultra-wide-headline .ss-group-heading { flex-wrap:nowrap; }
 .ss-wide-aggregate-headline .ss-group-title,
-.ss-ultra-wide-headline .ss-group-title { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; overflow-wrap:normal; cursor:help; }
+.ss-ultra-wide-headline .ss-group-title { flex:0 1 auto; }
 .ss-wide-aggregate-headline .ss-group-coverage,
 .ss-wide-aggregate-headline .ss-group-heading > .ss-info-button { margin-left:4rem; }
 .ss-wide-aggregate-headline .ss-group-stats > .ss-map-more-button { margin-left:0; }
