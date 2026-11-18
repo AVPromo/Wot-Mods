@@ -39,7 +39,13 @@ def selected(paths, workflows=WORKFLOWS):
 
 class PrBuildScopingTests(unittest.TestCase):
     def test_medkit_changes_do_not_build_sessionstats(self):
-        for path in ('source/mod_staysharp_medkit.py', 'source/build_audio_bank.py',
+        for path in ('mods/staysharp/src/mod_staysharp_medkit.py',
+                     'mods/staysharp/tools/build_wotmod.py',
+                     'mods/staysharp/tests/test_packaging.py',
+                     'mods/staysharp/assets/voices/manifest.json',
+                     'mods/staysharp/VERSION',
+                     'mods/staysharp/README.md',
+                     'source/mod_staysharp_medkit.py', 'source/build_audio_bank.py',
                      'assets/voices/pl.wav.b85', 'assets/voices/manifest.json',
                      'VERSION', 'staysharp.medkit.example.json', 'CHANGELOG.md',
                      'docs/AUDIO.md', 'docs/INSTALACJA.md', 'tests/test_packaging.py',
