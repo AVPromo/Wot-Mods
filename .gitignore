@@ -31,6 +31,10 @@ __pycache__/
 /mods/*
 !/mods/sessionstats/
 !/mods/staysharp/
+!/mods/aimtimer/
+!/mods/rangefinder/
+/mods/aimtimer/dist/
+/mods/rangefinder/dist/
 /mods/staysharp/dist/
 !/mods/sessionstats/third_party/openwg/net.openwg.gameface_1.2.2.wotmod
 /mods/sessionstats/dist/
