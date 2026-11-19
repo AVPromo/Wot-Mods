@@ -4,8 +4,9 @@
 |---|---|---|
 | Session Stats — WN8, XP, finances, session history | [mods/sessionstats](mods/sessionstats) | `Session-Stats-v<version>.zip`, including OpenWG and configuration examples |
 | Stay Sharp — Medkit Reminder | [mods/staysharp](mods/staysharp) | `StaySharp-Medkit-v<version>.zip`, including installation paths and a configuration example |
+| GRZ Rangefinder — distance readout | [mods/rangefinder](mods/rangefinder) | `GRZ_Rangefinder-v<version>.zip` |
 
-Both mods can be installed independently. [Latest shared release snapshot](../../releases/latest). Each mod builds independently; unchanged installers are carried forward byte-for-byte unless the target game directory changes. See [release flow](docs/MULTIMOD_RELEASES.md).
+The mods can be installed independently. [Latest shared release snapshot](../../releases/latest). Each mod builds independently; unchanged installers are carried forward byte-for-byte unless the target game directory changes. See [release flow](docs/MULTIMOD_RELEASES.md).
 Sources, tests and licenses are separate; the Session Stats license does not cover the medkit mod.
 Integration rules: [mods/sessionstats/README.md](mods/sessionstats/README.md).
 
