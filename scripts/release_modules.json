@@ -26,6 +26,19 @@
         "mods/sessionstats/**",
         "scripts/sessionstats/**"
       ]
+    },
+    {
+      "id": "rangefinder",
+      "display_name": "GRZ Rangefinder",
+      "base_version_file": "mods/rangefinder/VERSION",
+      "installer_prefix": "GRZ_Rangefinder-v",
+      "source_paths": [
+        "mods/rangefinder/**",
+        "scripts/reticles/**",
+        "scripts/sessionstats/python27.sh",
+        "mods/staysharp/assets/openwg_gameface_1.2.2.wotmod.b85",
+        "mods/staysharp/assets/OPENWG_LICENSE"
+      ]
     }
   ],
   "shared_build_paths": [
