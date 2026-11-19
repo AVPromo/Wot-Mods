@@ -85,6 +85,12 @@ print('Planned Hangar version/client build is reproducible and privacy-audited')
 PY
     source_dir=mods/hangarsync/dist
     ;;
+  aimtimer|rangefinder)
+    bash scripts/sessionstats/python27.sh
+    export PYTHON27="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sessionstats-cpython27/Python-2.7.18/python"
+    bash scripts/reticles/validate.sh "$module" "$version"
+    source_dir="mods/$module/dist"
+    ;;
   *)
     echo "Unknown module builder: $module" >&2
     exit 2
