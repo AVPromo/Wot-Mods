@@ -74,6 +74,10 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   assert.strictEqual(controls['ss-sort-off'].getAttribute('aria-label'),'sort.label');
   assert.strictEqual(selects.metric.trigger.disabled,true,'Wide Off disables the remembered metric dropdown');
   assert.strictEqual(selects.direction.trigger.disabled,true);
+  assert.strictEqual(statistic.style.display,'','Off still displays the remembered XP statistic');
+  assert.strictEqual(statistic.getAttribute('aria-hidden'),'false');
+  assert.strictEqual(selects.statistic.trigger.disabled,true);
+  assert(!controls['ss-sorting'].classList.contains('ss-sort-without-statistic'));
   assert.strictEqual(selects.chronology.trigger.disabled,false,'Off restores the independent date preference');
   assert(!selects.chronology.trigger.classList.contains('ss-select-disabled'),'Off clears the disabled paint from ordinary ordering');
   controls['ss-sort-off'].onclick();assert.strictEqual(commands.at(-1).metric,'xp_received','Metric On restores the last non-Off metric');ack();
@@ -93,22 +97,29 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   state.scope='launch';state.payload.loading=false;state.group='battles';render();
   const battleBefore=commands.length;context.changeOrder('statistic','max');
   assert.strictEqual(commands.length,battleBefore,'Battles rejects stale aggregate-statistic callbacks');
-  assert.strictEqual(statistic.style.visibility,'hidden');assert.strictEqual(statistic.getAttribute('aria-hidden'),'true');assert.strictEqual(selects.statistic.trigger.disabled,true);
+  const assertNoStatistic=description=>{
+    assert.strictEqual(statistic.style.display,'none',description);
+    assert.strictEqual(statistic.getAttribute('aria-hidden'),'true');
+    assert.strictEqual(selects.statistic.trigger.disabled,true);
+    assert(controls['ss-sorting'].classList.contains('ss-sort-without-statistic'));
+  };
+  assertNoStatistic('Battles omits the aggregate statistic field');
   context.changeOrder('metric','battles');assert.strictEqual(commands.length,battleBefore,'Battles rejects the aggregate count metric');
   for(const chronology of ['first_desc','last_asc']){context.changeOrder('chronology',chronology);assert.strictEqual(commands.length,battleBefore,'Battles rejects a retained aggregate-date callback');}
   state.group='vehicles';scope.ordering.vehicles.metric='battles';render();
-  assert.strictEqual(statistic.style.visibility,'hidden','Recorded counts keep an inaccessible reserved statistic slot');
-  assert.strictEqual(statistic.style.display,'');assert.strictEqual(statistic.getAttribute('aria-hidden'),'true');
+  assertNoStatistic('Recorded counts omit the inapplicable statistic field');
   const countBefore=commands.length;context.changeOrder('statistic','max');assert.strictEqual(commands.length,countBefore);
+  controls['ss-sort-off'].onclick();ack();assertNoStatistic('Off collapses the remembered count toolbar');
+  controls['ss-sort-off'].onclick();assert.strictEqual(commands.at(-1).metric,'battles');ack();
   const rateOrders=JSON.parse(JSON.stringify(scope.ordering));
   for(const group of ['vehicles','maps','tiers']){
     state.group=group;scope.ordering[group]={metric:'win_rate',statistic:'max',direction:'desc',chronology:'newest'};render();
-    assert.strictEqual(statistic.style.visibility,'hidden','Win rate keeps its inapplicable statistic out of presentation in '+group);
-    assert.strictEqual(statistic.style.display,'');assert.strictEqual(statistic.getAttribute('aria-hidden'),'true');
-    assert.strictEqual(selects.statistic.trigger.disabled,true);
+    assertNoStatistic('Win rate omits the inapplicable statistic field in '+group);
     const beforeRate=commands.length;context.changeOrder('statistic','min');assert.strictEqual(commands.length,beforeRate,'Retained statistic callbacks cannot alter win-rate sorting');
     const option=context.selectOptions.metric.findIndex(choice=>choice[0]==='win_rate');
     assert(option>=0&&selects.metric.options[option].style.display==='','Win-rate sorting is offered in '+group);
+    controls['ss-sort-off'].onclick();ack();assertNoStatistic('Off collapses the remembered win-rate toolbar in '+group);
+    controls['ss-sort-off'].onclick();assert.strictEqual(commands.at(-1).metric,'win_rate');ack();
   }
   state.group='battles';scope.ordering.battles={metric:'win_rate',statistic:'max',direction:'asc',chronology:'oldest'};render();
   const rateOption=context.selectOptions.metric.findIndex(choice=>choice[0]==='win_rate');
@@ -143,7 +154,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   assert.strictEqual(commands.length,destroyed);assert.strictEqual(controls['ss-filter-loading'].style.visibility,'hidden','Teardown retires callbacks and the activity indicator');
   // A fixed full-row budget must ignore both stale native rectangles and
   // selected metrics. Widening is coalesced; shrinking and cleanup retire it.
-  const bar=controls['ss-list-controls']=new Node();let panelWidth=900,queued=0;
+  const bar=controls['ss-list-controls']=new Node();let panelWidth=874,queued=0;
   const raf=[];context.window={requestAnimationFrame:callback=>raf.push(callback)};
   context.resizePanelDimensions=()=>({width:panelWidth+38});
   context.scrollContentInset=()=>{throw Error('Filter mode must not read a live native gutter');};
@@ -154,7 +165,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   const flush=()=>{let count=0;while(raf.length){assert(count++<30,'Filter debounce is bounded');raf.shift()();}};
   state.destroyed=false;state.group='vehicles';state.payload.viewport={width:3840,height:2400};
   for(const scale of [1,2]){
-    state.nativeScale=scale;state.wideFilters=undefined;state.filterLayoutWidth=null;panelWidth=900;render();
+    state.nativeScale=scale;state.wideFilters=undefined;state.filterLayoutWidth=null;panelWidth=874;render();
     context.layoutFilterControls();assert.strictEqual(state.wideFilters,false);
     for(const metric of ['off','xp_base','win_rate','battles']){
       scope.ordering.vehicles.metric=metric;render();
@@ -163,7 +174,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
       assert.strictEqual(bar.classList.contains('ss-filters-wide'),false);
       assert.strictEqual(controls['ss-sort-off'].style.display,'none');
     }
-    panelWidth=903;context.layoutFilterControls();
+    panelWidth=875;context.layoutFilterControls();
     assert.strictEqual(state.wideFilters,false,'Promotion waits until resizing settles');
     assert.strictEqual(raf.length,1);
     for(let attempt=0;attempt<5;attempt++)context.layoutFilterControls();
@@ -172,30 +183,30 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
     assert.strictEqual(state.wideFilters,false,'Six fast frames do not acknowledge the owned eight-frame promotion');
     assert.strictEqual(bar.getAttribute('data-filter-layout'),'wrapped');
     flush();assert.strictEqual(state.wideFilters,true);assert.strictEqual(bar.getAttribute('data-filter-layout'),'wide');
-    panelWidth=800;context.layoutFilterControls();panelWidth=904;context.layoutFilterControls();
+    panelWidth=800;context.layoutFilterControls();panelWidth=876;context.layoutFilterControls();
     const retained=raf.shift(),scheduler=context.window.requestAnimationFrame;
     context.window.requestAnimationFrame=undefined;retained();
     assert.strictEqual(state.wideFilters,true,'A retained promotion completes through the no-RAF fallback');
     assert.strictEqual(state.filterLayoutQueued,false,'Losing optional RAF releases promotion ownership');
     context.window.requestAnimationFrame=scheduler;
-    panelWidth=800;context.layoutFilterControls();panelWidth=904;context.layoutFilterControls();flush();
+    panelWidth=800;context.layoutFilterControls();panelWidth=876;context.layoutFilterControls();flush();
     assert.strictEqual(state.wideFilters,true,'Restored RAF supports a fresh narrow-to-wide promotion');
-    panelWidth=800;context.layoutFilterControls();panelWidth=904;context.layoutFilterControls();
+    panelWidth=800;context.layoutFilterControls();panelWidth=876;context.layoutFilterControls();
     const shrinking=raf.shift();context.window.requestAnimationFrame=undefined;panelWidth=800;shrinking();
     assert.strictEqual(state.wideFilters,false,'Losing RAF cannot bypass the current narrow-width guard');
     assert.strictEqual(state.filterLayoutQueued,false);context.window.requestAnimationFrame=scheduler;
-    panelWidth=904;context.layoutFilterControls();const resizing=raf.shift();state.resize={};
+    panelWidth=876;context.layoutFilterControls();const resizing=raf.shift();state.resize={};
     context.window.requestAnimationFrame=undefined;resizing();
     assert.strictEqual(state.wideFilters,false,'Losing RAF cannot promote during an active resize');
     assert.strictEqual(state.filterLayoutQueued,false);context.window.requestAnimationFrame=scheduler;state.resize=null;
     context.layoutFilterControls();flush();
     const before=queued;for(let attempt=0;attempt<5;attempt++)context.layoutFilterControls();
     assert.strictEqual(queued,before,'A settled mode cannot recursively schedule layout');
-    panelWidth=902;context.layoutFilterControls();assert.strictEqual(state.wideFilters,false,'Shrinking falls back immediately');
-    panelWidth=904;context.layoutFilterControls();assert.strictEqual(raf.length,1);
+    panelWidth=874;context.layoutFilterControls();assert.strictEqual(state.wideFilters,false,'Shrinking falls back immediately');
+    panelWidth=876;context.layoutFilterControls();assert.strictEqual(raf.length,1);
     panelWidth=800;context.layoutFilterControls();flush();assert.strictEqual(state.wideFilters,false,'Stale promotion cannot undo a newer shrink');
-    panelWidth=904;context.layoutFilterControls(true);assert.strictEqual(state.wideFilters,true,'Gesture release flushes the final mode');
-    panelWidth=800;context.layoutFilterControls();panelWidth=904;context.layoutFilterControls();
+    panelWidth=876;context.layoutFilterControls(true);assert.strictEqual(state.wideFilters,true,'Gesture release flushes the final mode');
+    panelWidth=800;context.layoutFilterControls();panelWidth=876;context.layoutFilterControls();
     state.destroyed=true;context.cancelFilterLayout();flush();assert.strictEqual(state.wideFilters,false,'Destroyed views retire queued layout work');
     state.destroyed=false;
   }

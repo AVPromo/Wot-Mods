@@ -1581,16 +1581,15 @@
     function renderSelects(scope) {
         var options = getOrder(scope), field, index, remembered = rememberedMetric(scope, options.metric);
         var statistic = document.querySelector('.ss-sort-statistic'), off = document.getElementById('ss-sort-off');
+        var sorting = document.getElementById('ss-sorting');
         var statisticMetric = options.metric === 'off' ? remembered : options.metric;
         var applicable = state.group !== 'battles' && statisticMetric !== 'battles' && statisticMetric !== 'win_rate';
         if (statistic) {
-            // Keep its logical slot so metric changes never recenter the row.
-            // Invisible, disabled controls do not suggest a statistic for rates/counts.
-            statistic.style.display = '';
-            statistic.style.visibility = applicable ? '' : 'hidden';
+            statistic.style.display = applicable ? '' : 'none';
             statistic.setAttribute('aria-hidden', String(!applicable));
             if (!applicable && state.openSelect === selects.statistic) { closeSelect(false); }
         }
+        if (sorting) { sorting.classList[applicable ? 'remove' : 'add']('ss-sort-without-statistic'); }
         if (off) {
             off.style.display = state.wideFilters ? 'flex' : 'none';
             off.disabled = orderingUnavailable(scope); off.setAttribute('aria-disabled', String(off.disabled));
@@ -1607,7 +1606,7 @@
             var control = selects[field], labelKey = field === 'chronology' ? 'sort.chronology' : 'sort.' + field;
             var disabled = orderingUnavailable(scope) ||
                 (field === 'chronology' && options.metric !== 'off') ||
-                (field === 'statistic' && (state.group === 'battles' || options.metric === 'battles' || options.metric === 'win_rate')) ||
+                (field === 'statistic' && !applicable) ||
                 (field === 'metric' && state.wideFilters && options.metric === 'off') ||
                 (options.metric === 'off' && (field === 'statistic' || field === 'direction'));
             if (control.setOwner) { control.setOwner({context:viewContext(), group:state.group}); }
@@ -1722,11 +1721,10 @@
         if (state.destroyed || !controls || !state.payload || !currentScope()) { return; }
         var width = filterLayoutWidth();
         if (!width) { return; }
-        // One invariant row budget, including Statistic even when hidden:
-        // metadata150 + pagination340 + sorting357 + gaps16 + activity28 +
-        // slack12 = 903rem. Neither the current metric nor a trial CSS layout
-        // can change the breakpoint. CSS reserves the same metadata slot.
-        var wide = width >= 903;
+        // Fit the largest control set: 150 meta + 340 pager + 357 sort +
+        // 16 gaps + 12 spare. A metric change can compact the row without
+        // moving controls between rows. The loading overlay has its own layer.
+        var wideWidth = 875, wide = width >= wideWidth;
         if (state.filterLayoutWidth !== width) {
             state.filterLayoutWidth = width;
             state.filterLayoutDue = Date.now() + 120;
@@ -1748,7 +1746,7 @@
             if (current !== state.filterLayoutWidth) {
                 state.filterLayoutWidth = current; state.filterLayoutDue = Date.now() + 120; state.filterLayoutFrames = 0;
             }
-            if (current < 903 || state.resize) { state.filterLayoutQueued = false; layoutFilterControls(); return; }
+            if (current < wideWidth || state.resize) { state.filterLayoutQueued = false; layoutFilterControls(); return; }
             state.filterLayoutFrames += 1;
             if (Date.now() >= state.filterLayoutDue || state.filterLayoutFrames >= 8 ||
                     typeof window.requestAnimationFrame !== 'function') {
@@ -3968,15 +3966,17 @@
     }
     function layoutAggregateHeadline(card, headline, width, docked, twoColumns) {
         var ultraWide = width + 14 >= 700, wide = twoColumns && !ultraWide;
-        var combined = ultraWide && headline.querySelector('[data-wn8-kind="combined"]');
         var count = headline.querySelector('.ss-group-count');
         var smallCount = wide && count.querySelector('.ss-kpi-value').textContent.length <= 4;
         var countWidth = smallCount ? '48rem' : '';
         if (count.style.flexBasis !== countWidth) { count.style.flexBasis = countWidth; }
         if (count.style.width !== countWidth) { count.style.width = countWidth; }
-        var statsWidth = (combined ? 226 : 194) - (smallCount ? 12 : 0);
+        var statsWidth = 194 - (smallCount ? 12 : 0);
         var actionWidth = !docked && headline.querySelector('.ss-map-more-button') ? (wide ? 72 : 76) : 0;
         var sortWidth = card._ssSortWidth || 0;
+        var wn8Extra = 32;
+        var wideWN8 = ultraWide || width - statsWidth - sortWidth - actionWidth - wn8Extra >= 240;
+        if (wideWN8) { statsWidth += wn8Extra; }
         if (sortWidth) {
             // Spend the extra width on the localized caption after reserving
             // room for the thumbnail, name and vehicle metadata.
@@ -3994,6 +3994,7 @@
         card.classList[inlineDocked ? 'add' : 'remove']('ss-inline-docked-headline');
         card.classList[wide ? 'add' : 'remove']('ss-wide-aggregate-headline');
         card.classList[ultraWide ? 'add' : 'remove']('ss-ultra-wide-headline');
+        card.classList[wideWN8 ? 'add' : 'remove']('ss-wn8-caption-wide');
         var identity = card.querySelector('.ss-group-identity');
         var compactMeta = !stacked && availableIdentity < (wide || ultraWide ? 240 : 176);
         card.classList[compactMeta ? 'add' : 'remove']('ss-compact-aggregate-meta');

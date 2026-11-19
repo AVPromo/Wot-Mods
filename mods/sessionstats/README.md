@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.28 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.29 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -378,6 +378,8 @@ navigation initially opened a later page.
 The grouping and sorting bar pins inside the scroll viewport. Filter changes
 retain the current pixel offset, rebuilding the loaded window atomically for
 a new ordering or index revision. New account histories start at the top.
+The sort controls use a shorter strip when the selected metric has no
+statistic choice. Overall row placement follows the available panel width.
 
 Map and vehicle history pagers update up to ten rows in place, including cards
 on an earlier loaded global page. The main scroll area shows all rows on the

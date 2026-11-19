@@ -12,18 +12,20 @@ module.exports=async({browser,nativeHost,check})=>{
   const scaleResults=await Promise.allSettled([1,2].map(async scale=>{
     const page=await nativeHost(browser,{initialViewport:{width:3840,height:2400},viewport:{width:3840,height:2400,scale}});
     try{
-      for(const [language,messages]of Object.entries(catalogs))for(const width of [550,700,920])
+      for(const [language,messages]of Object.entries(catalogs))for(const width of [365,550,700,912])
         for(const group of ['vehicles','battles'])for(const metric of group==='vehicles'?['off','win_rate','xp_base']:['off','xp_base']){
           await page.evaluate(({scale,language,messages,width,group,metric})=>{
             const payload=JSON.parse(model.payload),scope=payload.scopes.launch;
             payload.account_key='synthetic-filter-position-'+scale+'-'+language;
             payload.localization={language,messages};payload.window_size=[width,850];
+            payload.viewport={width:width<625?width*scale+20:3840,height:2400,scale};
             payload.appearance={window_settings:{background_transparency:0,maximized:false,restored_width:width,restored_height:850}};
             scope.ordering[group]={metric,statistic:'avg',direction:'desc',chronology:'newest'};
             model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();document.getElementById('ss-group-'+group).onclick();
           },{scale,language,messages,width,group,metric});await frames(page);
           const rows=await page.evaluate(()=>{
             const bar=document.getElementById('ss-list-controls'),box=bar.getBoundingClientRect(),rows=[];
+            const frame=document.getElementById('ss-sorting'),field=frame.querySelector('.ss-sort-statistic');
             for(const child of bar.children){
               if(child.id==='ss-filter-loading')continue;
               const rect=child.getBoundingClientRect();if(rect.width<=0||rect.height<=0)continue;
@@ -32,11 +34,15 @@ module.exports=async({browser,nativeHost,check})=>{
               let row=rows.find(row=>Math.abs(row.bottom-rect.bottom)<=1);if(!row){row={bottom:rect.bottom,left,right};rows.push(row);}
               row.left=Math.min(row.left,left);row.right=Math.max(row.right,right);
             }
-            return {mode:bar.getAttribute('data-filter-layout'),center:box.left+box.width/2,
+            return {mode:bar.getAttribute('data-filter-layout'),width:Number(bar.getAttribute('data-filter-width')),
+              center:box.left+box.width/2,sortingWidth:frame.getBoundingClientRect().width,statisticWidth:field.getBoundingClientRect().width,
               rows:rows.map(row=>({...row,center:(row.left+row.right)/2}))};
           });
-          check('Wrapped visible rows center in '+language+' '+group+'/'+metric+' '+width+'px at '+scale+'x: '+JSON.stringify(rows),
-            rows.mode==='wrapped'&&rows.rows.length>0&&rows.rows.every(row=>Math.abs(row.center-rows.center)<=4*scale));
+          const hasStatistic=group==='vehicles'&&metric!=='win_rate';
+          const expected=hasStatistic?294:width===365?235:229;
+          check('Wrapped controls compact and center in '+language+' '+group+'/'+metric+' '+width+'px at '+scale+'x: '+JSON.stringify(rows),
+            rows.mode==='wrapped'&&rows.width===width-38&&rows.rows.length>0&&rows.rows.every(row=>Math.abs(row.center-rows.center)<=4*scale)&&
+            Math.abs(rows.sortingWidth/scale-expected)<=0.5&&(rows.statisticWidth>0)===hasStatistic);
         }
       await page.evaluate(scale=>{
         const payload=JSON.parse(model.payload),scope=payload.scopes.launch,sample=scope.vehicles[0];
