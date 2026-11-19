@@ -2,6 +2,7 @@
 
 | Mod | Source and instructions | Releases |
 |---|---|---|
+| GRZ AimTimer — estimated aiming time | [mods/aimtimer](mods/aimtimer) | `GRZ_AimTimer-v<version>.zip` |
 | Session Stats — WN8, XP, finances, session history | [mods/sessionstats](mods/sessionstats) | `Session-Stats-v<version>.zip`, including OpenWG and configuration examples |
 | Stay Sharp — Medkit Reminder | [mods/staysharp](mods/staysharp) | `StaySharp-Medkit-v<version>.zip`, including installation paths and a configuration example |
 

@@ -2,6 +2,19 @@
   "schema_version": 1,
   "modules": [
     {
+      "id": "aimtimer",
+      "display_name": "GRZ AimTimer",
+      "base_version_file": "mods/aimtimer/VERSION",
+      "installer_prefix": "GRZ_AimTimer-v",
+      "source_paths": [
+        "mods/aimtimer/**",
+        "scripts/reticles/**",
+        "scripts/sessionstats/python27.sh",
+        "mods/staysharp/assets/openwg_gameface_1.2.2.wotmod.b85",
+        "mods/staysharp/assets/OPENWG_LICENSE"
+      ]
+    },
+    {
       "id": "staysharp",
       "display_name": "Stay Sharp Medkit",
       "base_version_file": "mods/staysharp/VERSION",
