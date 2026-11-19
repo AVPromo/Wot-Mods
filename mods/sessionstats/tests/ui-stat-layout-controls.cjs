@@ -94,7 +94,7 @@ module.exports=async({browser,nativeHost,check})=>{
           const result={header:header.height/scale,card:card.getBoundingClientRect().height/scale,
             identityWidth:name.width/scale,identityUsed:(Math.max(...used.map(rect=>rect.right))-name.left)/scale,
             kpiWidths:[...card.querySelectorAll('.ss-group-kpi')].map(node=>node.getBoundingClientRect().width/scale),
-            wideCombined:card.querySelector('.ss-group-wn8-kpi').getAttribute('data-wn8-kind')==='combined',
+            wn8Kind:card.querySelector('.ss-group-wn8-kpi').getAttribute('data-wn8-kind'),
             content:Math.max(name.height,stats.height)/scale,badge:null};
           if(badge){
             const caption=badge.querySelector('.ss-group-sort-caption'),value=badge.querySelector('.ss-group-sort-number'),box=badge.getBoundingClientRect();
@@ -121,9 +121,9 @@ module.exports=async({browser,nativeHost,check})=>{
         },scale);
         check('The headline reserves only its actual content height '+metric+'/'+statistic+'/'+scale,
           geometry.header>=geometry.content&&geometry.header<=geometry.content+3);
-        check('Core KPI columns stay compact and the wide Combined WN8 caption gets extra width '+metric+'/'+statistic+'/'+scale,
-          geometry.kpiWidths.length===3&&geometry.kpiWidths.slice(0,2).every((width,index)=>Math.abs(width-[60,62][index])<=0.5)&&
-          (geometry.wideCombined?geometry.kpiWidths[2]>=86&&geometry.kpiWidths[2]<=110:Math.abs(geometry.kpiWidths[2]-72)<=0.5));
+        check('Wide headers keep compact count and win rate columns and give the current WN8 caption room '+metric+'/'+statistic+'/'+scale,
+          geometry.wn8Kind===(metric==='battle_wn8'?statistic:'combined')&&geometry.kpiWidths.length===3&&
+          geometry.kpiWidths.every((width,index)=>Math.abs(width-[60,62,104][index])<=0.5));
         check('KPI labels and figures stay close together at their natural height '+metric+'/'+statistic+'/'+scale,await naturalKPIBoxes(page));
         if(geometry.badge){
           const b=geometry.badge;
