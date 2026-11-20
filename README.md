@@ -24,6 +24,10 @@ Rapid merges and retries are safe: a later commit includes earlier unshipped cha
 
 See [release architecture and race conditions](docs/MULTIMOD_RELEASES.md), [operator/agent guide](docs/RELEASE_AGENT_GUIDE.md), and [build instructions](docs/BUILD_RELEASE.md).
 
+### Session Stats visual matrix
+
+On an open pull request from this repository that includes the matrix test harness, a maintainer can post a new comment containing only `/sessionstats-matrix` for the full run across all date ranges. Use `/sessionstats-matrix smoke` for a quick report check or `/sessionstats-matrix full` for all sort variants in the primary date ranges. Open the run named **Session Stats matrix · PR #…** in Actions, download `sessionstats-matrix-html`, and open `index.html` from the extracted archive. The report uses synthetic data and test artwork.
+
 [Release protection and owner re-attestation](docs/BUILD_RELEASE.md#existing-release-protection-and-owner-re-attestation).
 
 ## Privacy and safety
