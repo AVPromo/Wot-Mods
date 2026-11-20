@@ -2,7 +2,9 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
+import random
 import re
 import struct
 import sys
@@ -10,6 +12,8 @@ from tempfile import TemporaryDirectory
 from datetime import datetime, time as midnight, timedelta
 from zoneinfo import ZoneInfo
 import zlib
+
+from history_profile import load_profile
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,6 +27,14 @@ PAGE = re.compile(r'[0-9]{1,8}\Z')
 DAY = 86400
 REFERENCE_TIME = datetime(2026, 11, 20, 12, tzinfo=ZoneInfo(TIMEZONE)).timestamp()
 VEHICLE_CLASSES = ('lightTank', 'mediumTank', 'heavyTank', 'AT_SPG', 'SPG')
+PROFILE_SETTINGS = {
+    'completion': {'low': .70, 'middle': .83, 'high': .96},
+    'wins': {'low': .35, 'middle': .50, 'high': .65},
+    'base_credits': {'low': .08, 'middle': .50, 'high': .80},
+    'base_xp': {'low': .65, 'middle': 1, 'high': 1.35},
+    'credits_income': {'low': .60, 'middle': 1, 'high': 1.55},
+    'credits_costs': {'low': .50, 'middle': 1, 'high': 1.55},
+}
 
 
 def example_details(i):
@@ -35,7 +47,11 @@ def example_details(i):
             'bonuses': {'eventCredits': 15000, 'eventXP': 320}}
 
 
-def example_battles(sunday, launch, previous, manual, manual_previous):
+def example_battles(sunday, launch, previous, manual, manual_previous, profile=None):
+    # The generator knows only broad bands. Its calendar, identifiers, names,
+    # row count and pseudorandom stream are independent of the input history.
+    settings = {metric: PROFILE_SETTINGS[metric][level] for metric, level in profile.items()} if profile else None
+    generator = random.Random(20261120)
     for i in range(344):
         recent = i >= 291
         if not recent:
@@ -55,8 +71,18 @@ def example_battles(sunday, launch, previous, manual, manual_previous):
         costs = 41000 + i % 21 * 975
         income = 84000 + i % 17 * 6310
         known_base = recent or i % 15 == 1
-        base = (0 if i % 19 == 0 else 44000 + i % 20 * 8500) if known_base else None
         xp = 71 + i * 223 % 1603
+        if settings:
+            completion_roll, win_roll, credit_roll = (generator.random() for _ in range(3))
+            if not recent and i != 2:
+                pending = completion_roll >= settings['completion']
+            if outcome != 'draw':
+                outcome = 'win' if win_roll < settings['wins'] else 'loss'
+            known_base = recent or credit_roll < settings['base_credits']
+            costs = round(costs * settings['credits_costs'])
+            income = round(income * settings['credits_income'])
+            xp = round(xp * settings['base_xp'])
+        base = (0 if i % 19 == 0 else 44000 + i % 20 * 8500) if known_base else None
         vehicle_name = ('Training vehicle ' if vehicle % 5 else 'Long experimental training vehicle ') + str(vehicle)
         row = {'arena_id': f'local-battle-{i:03}', 'started_at': started, 'mode': 'random',
                'vehicle_id': vehicle, 'vehicle_name': vehicle_name, 'vehicle_tier': 1 + vehicle % 11,
@@ -67,7 +93,8 @@ def example_battles(sunday, launch, previous, manual, manual_previous):
         if not pending:
             row.update(ended_at=started + 400, outcome=outcome, damage=140 + i * 287 % 7920, frags=i % 5,
                        spots=i % 7, defense=i % 4, xp_base=xp,
-                       xp_received=13590 if i == 2 else xp * (1 + i % 7), free_xp=6 + i * 37 % 810,
+                       xp_received=(20000 if settings else 13590) if i == 2 else xp * (1 + i % 7),
+                       free_xp=6 + i * 37 % 810,
                        currencies={'credits': {'income': income, 'costs': costs, 'net': income - costs,
                                                'income_base': base, 'net_base': base - costs if base is not None else None},
                                    'bonds': {'income': i % 35, 'costs': 0, 'net': i % 35}},
@@ -75,7 +102,7 @@ def example_battles(sunday, launch, previous, manual, manual_previous):
         yield row
 
 
-def example_service(service_class, clean_record, directory, *, installation=False):
+def example_service(service_class, clean_record, directory, *, installation=False, profile=None):
     sunday = datetime(2026, 11, 15, tzinfo=ZoneInfo(TIMEZONE)).timestamp()
     first, split = sunday - 14 * DAY, sunday - 1800
     expected = {'header': {'version': 'example', 'source': 'synthetic'}, 'data': [
@@ -94,7 +121,7 @@ def example_service(service_class, clean_record, directory, *, installation=Fals
     state['time_points'] = {'b' * 32: sunday, 'c' * 32: sunday + DAY, 'd' * 32: sunday + 3 * DAY}
     state['time_point_names'] = {'b' * 32: 'Practice week', 'c' * 32: 'Monday review', 'd' * 32: 'Later review'}
     state['battles'] = {}
-    for row in example_battles(sunday, launch, previous, manual, manual_previous):
+    for row in example_battles(sunday, launch, previous, manual, manual_previous, profile):
         metadata = {key: row[key] for key in ('_manual_id', '_launch_id', '_updated_at', '_result_seen', 'revision')}
         state['battles'][row['arena_id']] = {**clean_record(row), **metadata}
     # Match the in-memory fixture pattern used by the existing core-backed
@@ -230,7 +257,7 @@ def test_ranges(now, points, has_installation):
 
 
 class Backend:
-    def __init__(self, source, scratch):
+    def __init__(self, source, scratch, *, profile=None, game_client=None):
         sys.path.insert(0, str(source / 'src'))
         from grz_session_stats import VERSION
         from grz_session_stats.appearance import build_presentation, default_config
@@ -241,6 +268,7 @@ class Backend:
         from grz_session_stats.visuals import enrich_snapshot
 
         self.version = VERSION
+        self.fixture = 'local-aggregate' if profile else 'synthetic'
         self.instance_label = message('scope.instance')
         self.defaults = {group: TIER_ORDER if group == 'tiers' else DEFAULT_ORDER for group in GROUPS}
         self.orders = {group: list(sort_orders(group, self.defaults[group], valid_order))
@@ -256,8 +284,8 @@ class Backend:
         self.map_preview_mode = self.presentation.get('map_preview_mode', 'image')
         self.localizers = {language: Localizer(language, date_settings=resolve_date_settings(
             language, overrides=config['date_time'])) for language in SUPPORTED}
-        self.service = example_service(StatsService, _clean_record, scratch)
-        self.installation = example_service(StatsService, _clean_record, scratch, installation=True)
+        self.service = example_service(StatsService, _clean_record, scratch, profile=profile)
+        self.installation = example_service(StatsService, _clean_record, scratch, installation=True, profile=profile)
         self.records = dict(self.service._state['battles'])
         self.ranges = test_ranges(REFERENCE_TIME, self.service.timeline_snapshot()['time_points'], True)
         self.resolver = ExampleArt(scratch / 'assets')
@@ -267,12 +295,15 @@ class Backend:
             {'id': identifier, 'outcome': row.get('outcome')} for identifier, row in self.records.items()]}}},
             self.records, resolver=self.resolver, map_preview_mode=self.map_preview_mode)
         self.assets = {'images': self.resolver.images, 'fonts': {}}
+        if game_client is not None:
+            from game_assets import overlay_game_assets
+            overlay_game_assets(game_client, scratch, self.assets)
 
     def inventory(self):
         return {'version': self.version, 'ranges': list(self.ranges.values()), 'groups': GROUPS,
                 'orders': self.orders, 'languages': list(self.localizers), 'timezone': TIMEZONE,
                 'assets': self.assets, 'asset_root': self.asset_root.as_posix(),
-                'fixture': 'synthetic', 'reference_time': REFERENCE_TIME}
+                'fixture': self.fixture, 'reference_time': REFERENCE_TIME}
 
     def _scope(self, name):
         if name == 'instance' and self.installation:
@@ -387,9 +418,17 @@ class Backend:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, default=ROOT / 'WotMods-pr17-next/mods/sessionstats')
+    parser.add_argument('--profile', type=Path)
+    parser.add_argument('--game-client', type=Path)
     options = parser.parse_args()
-    with TemporaryDirectory(prefix='ss-test-', dir=ROOT) as temporary:
-        backend = Backend(options.source.resolve(), Path(temporary))
+    if os.environ.get('GITHUB_ACTIONS') == 'true' and (options.profile or options.game_client):
+        parser.error('Local QA inputs are not allowed in GitHub Actions.')
+    try:
+        profile = load_profile(options.profile) if options.profile else None
+    except ValueError as error:
+        parser.error(str(error))
+    with TemporaryDirectory(prefix='ss-test-') as temporary:
+        backend = Backend(options.source.resolve(), Path(temporary), profile=profile, game_client=options.game_client)
         for line in sys.stdin:
             identifier = None
             try:

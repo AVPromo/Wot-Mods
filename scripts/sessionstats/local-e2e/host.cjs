@@ -6,8 +6,11 @@ const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 
-function startBackend(python, source) {
-  const child = spawn(python, ['-B', '-u', path.join(__dirname, 'backend.py'), '--source', source],
+function startBackend(python, source, {profile, gameClient}={}) {
+  const args=['-B','-u',path.join(__dirname,'backend.py'),'--source',source];
+  if(profile) args.push('--profile',profile);
+  if(gameClient) args.push('--game-client',gameClient);
+  const child = spawn(python, args,
     {stdio:['pipe', 'pipe', 'pipe'], windowsHide:true});
   const waiting = new Map();
   let sequence = 0, failure, diagnostic = '';
@@ -138,6 +141,7 @@ async function serve(source, inventory) {
   }));
   staticFiles.set('/session_stats.js', path.join(ui, 'session_stats.js'));
   staticFiles.set('/session_stats.css', path.join(ui, 'session_stats.css'));
+  staticFiles.set('/session_stats_camo.png', path.join(ui, 'session_stats_camo.png'));
   const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8',
     '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ttf':'font/ttf','.woff2':'font/woff2','.webp':'image/webp'};
   const cache = new Map([['/SessionStats.html',Buffer.from(document)],['/local-host.js',Buffer.from(bootstrap)]]);
@@ -163,10 +167,24 @@ async function openChromium(executable) {
   const browser=await chromium.launch({executablePath:executable,headless:true,args:['--disable-background-timer-throttling','--disable-renderer-backgrounding']});
   return {
     version:browser.version(),
-    async open({url,width,height}) {
-      const context=await browser.newContext({viewport:{width,height},timezoneId:'Europe/Warsaw',deviceScaleFactor:1,reducedMotion:'reduce'});
-      const page=await context.newPage();
-      try { await page.goto(url); }
+    async open({url,width,height,useWarhelios=false}) {
+      const context=await browser.newContext({viewport:{width,height},timezoneId:'Europe/Warsaw',deviceScaleFactor:1,reducedMotion:'reduce',
+        serviceWorkers:'block'});
+      const origin=new URL(url).origin;
+      let page;
+      try {
+        await context.route('**/*',route=>new URL(route.request().url()).origin===origin
+          ? route.continue() : route.abort());
+        page=await context.newPage();
+        await page.goto(url);
+        if(useWarhelios) {
+          const loaded=await page.evaluate(async()=>{
+            const faces=await Promise.all([document.fonts.load('400 14px Warhelios'),document.fonts.load('700 14px Warhelios')]);
+            return faces.every(items=>items.length>0);
+          });
+          if(!loaded) throw new Error('Chromium did not load both Warhelios fonts');
+        }
+      }
       catch(error) { await context.close(); throw error; }
       return {version:browser.version(),evaluate:(...args)=>page.evaluate(...args),press:key=>page.keyboard.press(key),
         click:(x,y)=>page.mouse.click(x,y), mouseMove:(x,y)=>page.mouse.move(x,y),

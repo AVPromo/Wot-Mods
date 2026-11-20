@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const {existsSync} = require('node:fs');
 const fs = require('node:fs/promises');
+const {homedir} = require('node:os');
 const path = require('node:path');
 const {parseArgs} = require('node:util');
 const {setTimeout: delay} = require('node:timers/promises');
@@ -25,7 +26,8 @@ function requested(values, option, defaults, cast) {
 
 function plan(inventory, values) {
   const smoke = values.suite === 'smoke';
-  const widths = requested(values,'widths',smoke?[365,780,1350]:standardWidths,true);
+  const build = values.suite === 'build';
+  const widths = requested(values,'widths',build?[625,1350]:smoke?[365,780,1350]:standardWidths,true);
   const heights = requested(values,'heights',[730,900],true);
   const names = requested(values,'ranges',null);
   const languages = requested(values,'languages',null);
@@ -34,16 +36,19 @@ function plan(inventory, values) {
   const allRanges = inventory.ranges;
   if (names && names.some(name=>!allRanges.some(range=>range.id===name))) throw new Error('Unknown date range');
   if (languages && languages.some(language=>!inventory.languages.includes(language))) throw new Error('Unknown language');
-  const ranges = allRanges.filter(range=>names ? names.includes(range.id) : !smoke || routes.has(range.id));
+  const ranges = allRanges.filter(range=>names ? names.includes(range.id) :
+    build ? range.id==='since-sunday' : !smoke || routes.has(range.id));
   const tasks = [];
   for(const width of widths) for(const height of heights) for(const range of ranges) {
-    const locales = languages || (!smoke && range.id==='since-sunday'&&[365,780,1350].includes(width) ? ['en','pl'] : ['en']);
+    if(build&&!values.widths&&!values.heights&&((width===625)!==(height===730))) continue;
+    const locales = languages || (!smoke&&!build && range.id==='since-sunday'&&[365,780,1350].includes(width) ? ['en','pl'] : ['en']);
     for(const language of locales) for(const group of inventory.groups) {
       const chronology = group==='tiers'?'tier_desc':'newest';
       const orders = inventory.orders[group].filter(order=>{
         const regular = order.metric==='off'&&order.chronology===chronology;
         const highlighted = order.metric===(group==='battles'?'xp_received':'win_rate') &&
           order.statistic==='avg' && order.direction==='desc' && order.chronology===chronology;
+        if (build) return width<875 ? highlighted : regular;
         if (smoke) return regular||highlighted;
         if (!routes.has(range.id) && !values['all-ranges']) return order.metric==='off';
         return language==='en'||languages||regular||highlighted;
@@ -53,6 +58,22 @@ function plan(inventory, values) {
   }
   if(!tasks.length) throw new Error('The selected matrix is empty');
   return tasks;
+}
+
+function planShard(tasks, shard) {
+  if (!shard) return tasks;
+  const match=/^(\d+)\/(\d+)$/.exec(shard);
+  assert(match,'Use --shard INDEX/TOTAL with 1-based integers');
+  const [index,total]=match.slice(1).map(Number);
+  assert(index>=1&&index<=total&&total<=tasks.length,'Shard is outside the available task range');
+  const load=Array.from({length:total},()=>0);
+  const owners=new Map();
+  for(const task of [...tasks].sort((a,b)=>b.orders.length-a.orders.length)) {
+    const owner=load.indexOf(Math.min(...load));
+    owners.set(task,owner);
+    load[owner]+=task.orders.length;
+  }
+  return tasks.filter(task=>owners.get(task)===index-1);
 }
 
 function decorate(payload, size) {
@@ -65,7 +86,7 @@ function decorate(payload, size) {
   return payload;
 }
 
-function session(driver, backend, inventory, out, hostSize, compare) {
+function session(driver, backend, inventory, out, hostSize, compare, screenshotOptions) {
   let size, model, submitted = 0;
   const screenshots = [];
   async function publish(payload) {
@@ -197,10 +218,10 @@ function session(driver, backend, inventory, out, hostSize, compare) {
     }
   }
   async function snapshot(relative) {
-    const key=relative.endsWith('.png')?relative:relative+'.png';
+    const key=relative+(screenshotOptions.type==='jpeg'?'.jpg':'.png');
     const filename=path.join(out,key);
     await fs.mkdir(path.dirname(filename),{recursive:true});
-    const bytes=await driver.screenshot({type:'png'});
+    const bytes=await driver.screenshot(screenshotOptions);
     await fs.writeFile(filename,bytes);
     let diff={};
     if(compare){
@@ -253,7 +274,7 @@ async function measure(driver) {
   });
 }
 
-async function runCase(ctx, task, order, version) {
+async function runCase(ctx, task, order, version, capture) {
   await ctx.applyOrder(task,order);
   await ctx.driver.evaluate(()=>{document.getElementById('ss-scroll').scrollTop=0; window.__localWheels=[];});
   await ctx.idle();
@@ -282,16 +303,17 @@ async function runCase(ctx, task, order, version) {
       assert(state.mounted>0,'Python returned results but the panel mounted no cards');
       if(state.resultsReached) assert(state.visible>0,'The results area is visible without any result cards');
     }
-    state.image=await ctx.snapshot(root+'/'+step);
+    if(capture==='all'||(capture==='final'&&step===3)) state.image=await ctx.snapshot(root+'/'+step);
     phases.push(state);
   }
   return {key:root,phases};
 }
 
-async function makeComparer(baseline, out, threshold, engine) {
+async function makeComparer(baseline, out, threshold, {engine, fixture, assets}) {
   if(!baseline) return null;
   const manifest=JSON.parse(await fs.readFile(path.join(baseline,'run.json'),'utf8'));
   assert.equal(manifest.engine,engine,'The reference must use the same rendering engine');
+  assert(manifest.fixture===fixture&&manifest.assets===assets,'The reference must use the same fixture and artwork source');
   const {PNG}=require('pngjs');
   return async (key,bytes,version,clockBounds)=>{
     assert.equal(manifest.renderer,version,'The reference must use the same renderer version');
@@ -323,52 +345,94 @@ async function makeComparer(baseline, out, threshold, engine) {
   };
 }
 
+async function reportPath(values) {
+  const privateInputs=values.profile||values['game-client'];
+  const root=privateInputs ? path.join(process.env.LOCALAPPDATA||homedir(),'SessionStatsQA','runs') : path.join(__dirname,'runs');
+  const out=path.resolve(values.out||path.join(root,new Date().toISOString().replaceAll(/[:.]/g,'-')+'-'+values.engine));
+  if(privateInputs) {
+    let ancestor=path.dirname(out);
+    while(!existsSync(ancestor)) ancestor=path.dirname(ancestor);
+    let real=await fs.realpath(ancestor);
+    while(true) {
+      assert(!existsSync(path.join(real,'.git')),'Save private QA reports outside any Git checkout');
+      const parent=path.dirname(real);
+      if(parent===real) break;
+      real=parent;
+    }
+    for(let parent=path.dirname(out);parent!==path.dirname(parent);parent=path.dirname(parent)) {
+      assert(!existsSync(path.join(parent,'.git')),'Save private QA reports outside any Git checkout');
+    }
+  }
+  return out;
+}
+
 function cli() {
-  const options={help:{type:'boolean'},plan:{type:'boolean'},engine:{type:'string',default:'gameface'},suite:{type:'string',default:'smoke'},
+  const options={help:{type:'boolean'},plan:{type:'boolean'},engine:{type:'string',default:'chromium'},suite:{type:'string',default:'smoke'},
     source:{type:'string',default:sourceDefault},out:{type:'string'},baseline:{type:'string'},threshold:{type:'string',default:'0.002'},
     python:{type:'string',default:process.env.SESSIONSTATS_PYTHON||'python'},chrome:{type:'string',default:process.env.GRZ_CHROME},
     player:{type:'string',default:process.env.GAMEFACE_PATH},widths:{type:'string'},heights:{type:'string'},
     ranges:{type:'string'},languages:{type:'string'},'all-ranges':{type:'boolean'}, 'matrix-only':{type:'boolean'},
-    'player-visible':{type:'boolean'},limit:{type:'string'}};
+    'player-visible':{type:'boolean'},limit:{type:'string'},profile:{type:'string'},'game-client':{type:'string'},
+    capture:{type:'string',default:'all'},'image-format':{type:'string',default:'png'},
+    'jpeg-quality':{type:'string'},shard:{type:'string'}};
   return parseArgs({options}).values;
 }
 
 async function main() {
   const values=cli();
-  if(values.help){console.log('node run.cjs --engine gameface|chromium --suite smoke|full [--plan] [--out folder]\n' +
+  if(values.help){console.log('node run.cjs --engine chromium|gameface --suite build|smoke|full [--plan] [--out folder]\n' +
     '  --player Player.exe --python python --chrome msedge.exe --source mods/sessionstats\n' +
     '  --widths 365,780 --heights 730,900 --ranges since-sunday --languages en,pl\n' +
     '  --all-ranges --matrix-only --limit 20 --baseline folder --threshold 0.002\n' +
+    '  --profile anonymous-profile.json --game-client path-to-WoT (local only)\n' +
+    '  --shard 1/16 --capture all|final|failures --image-format png|jpeg [--jpeg-quality 82]\n' +
     '  --player-visible allows a Gameface Player desktop window if it cannot run hidden');return;}
-  if(!['gameface','chromium'].includes(values.engine)||!['full','smoke'].includes(values.suite)) throw new Error('Unknown engine or suite');
+  if(!['gameface','chromium'].includes(values.engine)||!['full','smoke','build'].includes(values.suite)) throw new Error('Unknown engine or suite');
+  assert(['all','final','failures'].includes(values.capture),'Invalid screenshot capture mode');
+  assert(['png','jpeg'].includes(values['image-format']),'Invalid screenshot format');
+  const imageFormat=values['image-format'];
+  const jpegQuality=Number(values['jpeg-quality']??82);
+  assert(values['jpeg-quality']===undefined||
+    (imageFormat==='jpeg'&&Number.isInteger(jpegQuality)&&jpegQuality>=1&&jpegQuality<=100),
+    '--jpeg-quality requires JPEG and an integer from 1 to 100');
+  const screenshotOptions=imageFormat==='jpeg'?{type:'jpeg',quality:jpegQuality}:{type:'png'};
+  assert(values.engine==='chromium'||(values['image-format']==='png'&&!values['game-client']),
+    'Stock WoT assets and JPEG capture use Chromium');
+  assert(!values.baseline||(values.capture==='all'&&values['image-format']==='png'),'Baseline comparison needs PNG for every stage');
+  assert(!values.shard||values.limit===undefined,'Use either --limit or --shard');
+  if(process.env.GITHUB_ACTIONS==='true'&&(values.profile||values['game-client'])) {
+    throw new Error('GitHub Actions uses synthetic fixtures and test artwork only');
+  }
   if(!values.plan&&values.engine==='gameface'){
-    if(!values.player) throw new Error('Gameface Player is required. Set GAMEFACE_PATH or pass --player; Chromium is only used when requested explicitly.');
+    if(!values.player) throw new Error('Gameface Player is required. Set GAMEFACE_PATH or pass --player.');
     await fs.access(values.player);
   }
   const limit=values.limit===undefined?Infinity:Number(values.limit);
   assert(limit>0&&(limit===Infinity||Number.isInteger(limit)),'--limit must be a positive integer');
   const threshold=Number(values.threshold);
   assert(threshold>=0&&threshold<=1,'--threshold must be between 0 and 1');
+  const out=values.plan?null:await reportPath(values);
   const source=path.resolve(values.source);
-  const backend=startBackend(values.python,source);
+  const backend=startBackend(values.python,source,{profile:values.profile,gameClient:values['game-client']});
   let web, chromium;
   try {
     const inventory=await backend.ask('inventory');
-    const tasks=plan(inventory,values);
+    const tasks=planShard(plan(inventory,values),values.shard);
     const matrixSize=tasks.reduce((count,task)=>count+task.orders.length,0);
     const total=Math.min(limit,matrixSize);
     console.log(JSON.stringify({version:inventory.version,suite:values.suite,planned:total,available:matrixSize,
       profiles:new Set(tasks.map(task=>`${task.width}x${task.height}`)).size,ranges:[...new Set(tasks.map(task=>task.range))]}));
     if(values.plan) return;
-    const out=path.resolve(values.out||path.join(__dirname,'runs',new Date().toISOString().replaceAll(/[:.]/g,'-')+'-'+values.engine));
     await fs.mkdir(path.dirname(out),{recursive:true});
     await fs.mkdir(out);
     const ledger=await fs.open(path.join(out,'results.ndjson'),'a');
     const state={version:inventory.version,engine:values.engine,renderer:null,suite:values.suite,planned:total,
+      fixture:inventory.fixture||'synthetic',assets:values['game-client']?'local-game':'test-art',
+      capture:values.capture,shard:values.shard||null,
       completed:0,failed:0,interactions:0,interactionErrors:0,visualFailures:0,missingBaselines:0,finished:false};
     const write=()=>fs.writeFile(path.join(out,'run.json'),JSON.stringify(state,null,2)+'\n');
     try {
-      const compare=await makeComparer(values.baseline,out,threshold,values.engine);
+      const compare=await makeComparer(values.baseline,out,threshold,state);
       web=await serve(source,inventory);
       if(values.engine==='chromium') chromium=await openChromium(values.chrome);
       const native=values.engine==='gameface'?require('./gameface-player.cjs'):null;
@@ -377,13 +441,13 @@ async function main() {
         if(state.completed>=total) break;
         const [width,height]=profile.split('x').map(Number);
         const hostWidth=width+20,hostHeight=height+20;
-        const surface={url:web.url,width:hostWidth,height:hostHeight};
+        const surface={url:web.url,width:hostWidth,height:hostHeight,useWarhelios:!!values['game-client']};
         const driver=await (chromium?chromium.open(surface):native.launchGameface({
           ...surface,executable:path.resolve(values.player),allowVisible:!!values['player-visible']}));
         state.renderer=driver.version;
         state.windowMode=driver.windowMode||'headless';
         try {
-          const ctx=session(driver,backend,inventory,out,{hostWidth,hostHeight},compare);
+          const ctx=session(driver,backend,inventory,out,{hostWidth,hostHeight},compare,screenshotOptions);
           let written=0;
           const record=async result=>{
             const newShots=ctx.screenshots.slice(written);written=ctx.screenshots.length;
@@ -399,7 +463,7 @@ async function main() {
               let result;
               try {
                 if(!prepared) {await ctx.setup(task);prepared=true;}
-                result=await runCase(ctx,task,order,inventory.version); consecutive=0;
+                result=await runCase(ctx,task,order,inventory.version,values.capture); consecutive=0;
               }
               catch(error){
                 const key=label(task)+'/'+variant(order);
@@ -413,16 +477,18 @@ async function main() {
               if(consecutive>=8) throw new Error('Eight consecutive scenarios failed; see the diagnostic report');
             }
           }
-          if(!values['matrix-only']&&handledProfiles.size<2&&!handledProfiles.has(height)){
+          if(!values['matrix-only']&&(!values.shard||values.shard.startsWith('1/'))&&
+              handledProfiles.size<(values.suite==='build'?1:2)&&!handledProfiles.has(height)){
             handledProfiles.add(height);
             const {runInteractions}=require('./interactions.cjs');
-            const actionCtx={...ctx,resultName:'interactions/'+profile,snapshot:name=>ctx.snapshot('interactions/'+profile+'/'+name)};
+            const resultName='interactions/'+profile;
+            const actionCtx={...ctx,resultName,snapshot:name=>values.capture==='failures'?Promise.resolve(null):ctx.snapshot(resultName+'/'+name)};
             state.interactions++;
             try{const result=await runInteractions(actionCtx,{width,height,language:'en'});await record({key:actionCtx.resultName,interactions:result});}
             catch(error){
               state.interactionErrors++; console.error(`${actionCtx.resultName}: ${error.message}`);
               const result={key:actionCtx.resultName,error:error.message};
-              try{result.failureImage=await actionCtx.snapshot('failure');}
+              try{result.failureImage=await ctx.snapshot(resultName+'/failure');}
               catch(screenshotError){result.screenshotError=screenshotError.message;}
               await record(result);
             }

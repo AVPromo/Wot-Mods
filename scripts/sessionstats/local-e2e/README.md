@@ -1,6 +1,6 @@
 # Session Stats — lokalne testy E2E
 
-Uruchamiaj testy po zmianie interfejsu albo przed zbudowaniem paczki. Narzędzie ładuje rzeczywisty HTML, CSS i JavaScript moda. Bieżący kod Pythona liczy statystyki, filtruje zakresy i odpowiada na polecenia panelu. Symulowane są usługi okna WoT, a historie, obrazy i identyfikatory pochodzą z deterministycznych danych testowych. Przebieg działa bez klienta, logowania i dostępu do danych konta. Zdarzenia trafiają do widoku przez protokół sterowania rendererem.
+Chromium ładuje rzeczywisty HTML, CSS i JavaScript moda. Kod Pythona liczy statystyki, filtruje zakresy i odpowiada na polecenia panelu. Dane i usługi okna WoT są symulowane. Przebieg działa bez uruchamiania gry i bez logowania.
 
 ## Instalacja na Windows x64
 
@@ -15,13 +15,31 @@ $env:SESSIONSTATS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
 npm.cmd install
 ```
 
-Do natywnych zrzutów potrzebny jest samodzielny **Gameface Player**. W kliencie EU ustaliliśmy Cohtml **2.2.8.1**. Jeśli uzyskujesz SDK od Coherent Labs, poproś o Player **2.2.8.1** lub najbliższą wersję **2.2.8.x** dostępną do ewaluacji. Dostęp do tego wydania i uruchomienie z wyłączonym oknem pozostają do sprawdzenia na dostarczonym `Player.exe`. [Kontakt i wersja próbna](https://coherent-labs.com/frequently-asked-questions/) · [Dokumentacja Playera](https://docs.coherent-labs.com/cpp-gameface/quick_start/player/player/)
-
-Do prób w Chromium wystarczy albo zainstalować przeglądarkę Playwright, albo wskazać własnego Edge przez `--chrome`. [Instalacja przeglądarek Playwright](https://playwright.dev/docs/browsers)
+Skrypt PowerShell wykrywa Edge w standardowej lokalizacji. Możesz też zainstalować Chromium dostarczane przez Playwright albo podać ścieżkę do przeglądarki jako `--chrome`. [Instalacja przeglądarek Playwright](https://playwright.dev/docs/browsers)
 
 ```powershell
 npx.cmd playwright install chromium
 ```
+
+## Lokalne zasoby WoT i anonimowy profil
+
+Instalacja wymagania `requirements-local-assets.txt` dodaje Pillow do konwersji grafik map. Tryb lokalny odczytuje wprost z pakietów WoT oba fonty Warhelios i fabryczne grafiki dobrane do fikcyjnych map i pojazdów. Pakiety są otwierane tylko do odczytu. Fonty i grafiki trafiają do tymczasowego katalogu renderera i są kasowane po zakończeniu.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-local-assets.txt
+```
+
+Opcjonalny eksporter odczytuje zweryfikowaną lokalną historię i zapisuje szerokie przedziały statystyk po odrzuceniu rzadkich wartości. Backend losuje z przedziałów fikcyjne bitwy. Profil przechowuj poza repozytorium. Powstałe daty, identyfikatory, nazwy i kwoty są fikcyjne. Grafikę przypisuje numer testowego pojazdu lub mapy.
+
+```powershell
+$profil = Join-Path $env:LOCALAPPDATA 'SessionStatsQA/profil-lokalny.json'
+New-Item -ItemType Directory -Path (Split-Path -Parent $profil) -Force
+.\.venv\Scripts\python.exe -B anonymize_history.py --output $profil
+.\run-local.ps1 -Suite smoke -Profile $profil
+.\run-local.ps1 -Suite full -Profile $profil
+```
+
+Możesz wskazać inną instalację parametrem `-GameClient`. Raporty z lokalnym profilem lub grafikami powstają domyślnie w `%LOCALAPPDATA%/SessionStatsQA/runs/`. Zapis takich raportów wewnątrz checkoutu Git jest blokowany.
 
 ## Uruchamianie na żądanie
 
@@ -31,35 +49,36 @@ Sprawdź rozmiar i zakres konfiguracji bez uruchamiania renderera.
 node run.cjs --suite full --plan
 ```
 
-Sprawdź uruchomienie Playera w krótkiej próbie, a potem wykonaj pełny przebieg. Podaj ścieżkę do posiadanego `Player.exe` lub ustaw `GAMEFACE_PATH`.
-
-```powershell
-node run.cjs --suite smoke --player 'C:/Narzędzia/Gameface/Player/Player.exe'
-node run.cjs --suite full --player 'C:/Narzędzia/Gameface/Player/Player.exe'
-```
-
-Wersja przeglądarkowa jest dostępna jawnie przez `--engine chromium`. Użyj jej podczas pracy nad logiką i układem z danymi testowymi.
+Chromium jest domyślnym silnikiem. `build` sprawdza osiem przypadków i podstawowe interakcje, `smoke` rozszerza próbę na kilka szerokości i oba główne zakresy.
 
 ```powershell
 node run.cjs --engine chromium --suite smoke
 node run.cjs --engine chromium --suite full --chrome 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 ```
 
-`full` testuje wszystkie warianty sortowania dla pełnej historii i zakresu od niedzieli. Dla pozostałych zakresów sprawdza warianty chronologii. `--all-ranges` rozszerza pełne sortowanie na wszystkie przygotowane zakresy. Podstawowe widoki mają wysokość 730 lub 900 px i maksymalnie trzy ruchy kółkiem. Osobne scenariusze obejmują menu, kalendarz, rozwinięte szczegóły i powrót z wybranej bitwy.
+PowerShellowy `-Suite full` obejmuje wszystkie warianty sortowania we wszystkich przygotowanych zakresach. Przy bezpośrednim użyciu Node odpowiada mu `--suite full --all-ranges`. Sama opcja `--suite full` ogranicza sortowanie w mniej typowych zakresach do chronologii. Podstawowe widoki mają wysokość 730 lub 900 px i maksymalnie trzy ruchy kółkiem. Osobne scenariusze obejmują menu, kalendarz, rozwinięte szczegóły i powrót z wybranej bitwy.
+
+Pełna macierz wymaga dużo czasu i miejsca na dysku. Opcja `-FinalOnly` zachowuje wynik każdego przypadku i sprawdza wszystkie pozycje przewijania, a na dysku zapisuje końcowy zrzut JPEG lub zrzut błędu.
 
 ```powershell
-node run.cjs --suite full --all-ranges --player 'C:/Narzędzia/Gameface/Player/Player.exe'
+.\run-local.ps1 -Suite full -Plan -Profile $profil
 node run.cjs --engine chromium --suite full --widths 365,780 --heights 730,900 --ranges history,since-sunday --languages en,pl --limit 40
 node run.cjs --engine chromium --suite smoke --source '../WotMods-pr17-next/mods/sessionstats' --python 'C:/Python312/python.exe'
 ```
 
 `--source` wskazuje katalog `mods/sessionstats` z wybranego checkoutu. W repozytorium przebieg znajduje go automatycznie. W osobnym katalogu szuka też sąsiedniego `WotMods-pr17-next`. `--python` zastępuje ścieżkę z `SESSIONSTATS_PYTHON` lub polecenie `python`. W nowej sesji PowerShell ustaw `$env:SESSIONSTATS_PYTHON` ponownie, jeśli korzystasz z `.venv`. Pełną listę opcji wyświetla `node run.cjs --help`.
 
+## GitHub Actions
+
+Zwykły build uruchamia krótki zestaw w Chromium. Workflow **Session Stats Chromium matrix** uruchom ręcznie albo dodaj etykietę `sessionstats-full-matrix` na PR z gałęzi tego repozytorium. Etykieta i domyślny tryb ręczny `exhaustive` obejmują wszystkie warianty sortowania we wszystkich przygotowanych zakresach dat. Tryb `smoke` i etykieta `sessionstats-report-smoke` służą do krótkiej próby raportu. Ręczne uruchomienie z zakładki Actions jest dostępne po dodaniu workflow do domyślnej gałęzi.
+
+Każdy przebieg CI korzysta z fikcyjnych danych i grafik testowych. Job scalający publikuje `index.html`, `catalog.js` i odnośne zrzuty, w tym dostępne wyniki przy niepełnym przebiegu. Po rozpakowaniu artefaktu otwórz `index.html`. Pełna macierz na runnerze zapisuje ostatnią fazę każdego przypadku, a domyślny przebieg lokalny zapisuje wszystkie cztery.
+
 ## Raporty i porównania
 
-Polecenie wypisuje ścieżkę do nowego katalogu w `runs/`. Otwórz `index.html`, żeby przejrzeć przypadki i zrzuty. `run.json` zapisuje wersję i podsumowanie. `results.ndjson` zawiera wyniki pojedynczych przypadków i pomiary. `--out` pozwala nadać nowemu katalogowi własną nazwę.
+Polecenie wypisuje ścieżkę do nowego katalogu. Otwórz `index.html`, żeby przejrzeć przypadki i zrzuty. `run.json` zapisuje wersję i podsumowanie. `results.ndjson` zawiera wyniki pojedynczych przypadków i pomiary. `-OutputDirectory` lub `--out` pozwala wskazać nowy katalog.
 
-Po obejrzeniu pierwszego przebiegu możesz użyć go jako wzorca. Następny przebieg uruchom z tym samym rendererem, wersją, wymiarami i zakresem. `--threshold 0.002` dopuszcza domyślnie do 0,2% różniących się pikseli. Porównanie pomija wnętrze pola z bieżącym czasem w nagłówku. Dla różnic ponad próg raport zapisuje zrzut, wzorzec i obraz różnic.
+Po obejrzeniu pierwszego przebiegu możesz użyć go jako wzorca. Następny przebieg uruchom z tym samym rendererem, wersją, źródłem danych i grafik, wymiarami i zakresem. `--threshold 0.002` dopuszcza domyślnie do 0,2% różniących się pikseli. Porównanie pomija wnętrze pola z bieżącym czasem w nagłówku. Dla różnic ponad próg raport zapisuje zrzut, wzorzec i obraz różnic.
 
 ```powershell
 node run.cjs --engine chromium --suite smoke --out 'runs/wzorzec'
