@@ -1,4 +1,4 @@
-GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.29 (persistent data schema unchanged)
+GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.30 (persistent data schema unchanged)
 Release date: 2026-11-17.
 
 Target: World of Tanks PC Wargaming EU 2.4.1.1, Python 2.7 runtime.
@@ -82,7 +82,7 @@ to current launch just because received now. Use returned battle start time in a
 
 SNAPSHOT -> Window ViewModel string property `payload`
 {
- version: '0.9.29', account_key: string, generated_at: unix seconds,
+ version: '0.9.30', account_key: string, generated_at: unix seconds,
  expected: {version: string, ...}, warnings: [string],
  appearance: {panel_css:string, footer_css:string, scroll_speed:number},
  recovery: {pending:int, in_flight:int, states:{status_label:int}},
@@ -123,7 +123,8 @@ missing values are excluded and pending battles do not contribute a sample.
 The incremental and projected summaries expose the same selected-period distributions.
 The summary finance heading selects sum (All), min, avg or max and updates figure
 nodes in place. Credit income/net Base values remain unavailable in every mode
-unless that field covers all observed battles. Costs stay a shared actual expense.
+unless that field covers all received results and has at least one known value.
+Pending battles remain visible in recorded coverage. Costs stay a shared actual expense.
 Existing source actions keep their original metric/statistic and availability;
 changing the summary display mode does not retarget them to a different sample.
 MONEY = {income:number or null, costs:number or null, net:number or null,
@@ -143,8 +144,9 @@ separate base/received expense records in the supported client contract.
 Partial sums are sums of confirmed known values. Metric-specific availability
 remains in ARIA; info icons use at most three short localized sentences.
 Base-credit Min/Max source actions require the corresponding displayed currency
-field to cover every observed battle and have a finite total. Otherwise show
-disabled, inert placeholders; a complete selected range enables valid sources.
+field to cover every received report and have a finite total. Pending reports
+affect the overall battle count. Missing base fields in received reports show
+disabled, inert placeholders.
 Visible received/recorded coverage appears only
 in the global result headline and one generic badge beside a partial aggregate
 name; tables, metric labels, totals and the footer never repeat it. The single

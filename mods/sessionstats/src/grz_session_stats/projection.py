@@ -7,7 +7,7 @@ import math
 import uuid
 from collections import Counter
 
-from .core import (_number, _text, _OUTCOMES, _CURRENCIES, _BREAKDOWN,
+from .core import (_number, _text, _base_credit_complete, _OUTCOMES, _CURRENCIES, _BREAKDOWN,
                    _CREDIT_METRICS, _CREDIT_ALIASES, aggregate_stats, wn8_from_totals)
 from .localization import message
 from .loading import complete
@@ -233,7 +233,7 @@ class Totals(object):
                     if include_currency_series:
                         result['currency_series'][currency][key] = series.snapshot()
                     if key in ('income_base', 'net_base'):
-                        values[key + '_complete'] = bool(series.count) and series.count == result['observed_battles']
+                        values[key + '_complete'] = _base_credit_complete(series.count, count)
                         if not values[key + '_complete']:
                             values[key] = None
             result['currencies'][currency] = values
@@ -450,7 +450,7 @@ class ScopeIndex(object):
         field = dict(_CREDIT_METRICS).get(metric)
         series = group.totals.money['credits'][field] if field else group.totals.series.get(metric)
         if (field in ('income_base', 'net_base') and options['statistic'] == 'sum' and
-                (not series.count or series.count != group.totals.counts['observed_battles'])):
+                not _base_credit_complete(series.count, group.totals.counts['battles'])):
             return None
         return series.snapshot().get(options['statistic']) if series else None
 

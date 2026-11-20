@@ -1,5 +1,12 @@
 SESSION STATS — CHANGELOG
 
+0.9.30 • 2026-11-20
+• Keep dropdown options and keyboard focus reachable within low windows.
+• Keep the filter row count stable when a metric hides its statistic control.
+• Use received reports to decide whether base credit figures and their source battles are available.
+• Fit more data into narrow cards with space-aware XP and finance tables.
+• Use localized titles for missions whose names are missing from the battle report.
+
 0.9.29 • 2026-11-19
 • Collapse unused Statistic controls and center the filter strip within the panel.
 • Give WN8 captions more space in aggregate cards when the identity and other figures fit alongside them.

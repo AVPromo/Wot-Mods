@@ -131,6 +131,7 @@ module.exports=async ({browser,nativeHost,check})=>{
   const branches=[
     ['totals',()=>require('./ui-sort-totals.cjs')({browser,nativeHost,check})],
     ['chronology and controls',chronologyAndControls],
+    ['menu bounds',()=>require('./ui-select-bounds.cjs')({browser,nativeHost,check})],
     ['extrema',()=>require('./ui-sort-extrema.cjs')({browser,nativeHost,check})]
   ];
   const results=await Promise.allSettled(branches.map(async([name,run])=>{

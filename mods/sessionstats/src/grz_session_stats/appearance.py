@@ -385,6 +385,9 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-warning-message { display:block; flex:0 1 auto; min-width:0; max-width:100%; text-align:left; }
 .ss-sort-partial-icon { width:14rem; height:14rem; margin-left:4rem; vertical-align:-2rem; }
 .ss-list-controls.ss-filters-wrapped, .ss-list-controls.ss-filters-wide { justify-content:center; }
+.ss-list-controls.ss-filters-inline { flex-wrap:nowrap; }
+.ss-filter-row-break { display:none; width:100%; height:0; flex:0 0 100%; }
+.ss-filters-wrapped:not(.ss-filters-inline) .ss-filter-row-break { display:block; }
 .ss-filters-wrapped .ss-list-meta, .ss-filters-wrapped .ss-pagination, .ss-filters-wrapped .ss-sorting { margin-left:4rem; margin-right:4rem; }
 .ss-filters-wrapped .ss-list-meta { justify-content:center; }
 .ss-filters-wrapped .ss-sorting { flex:0 1 294rem; width:294rem; justify-content:center; }
@@ -398,9 +401,10 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-filter-loading .ss-page-spinner:before { width:44rem; height:44rem; border-width:4rem; border-radius:{{radii.garage_spinner}}em; }
 .ss-filter-loading-label { display:block; max-width:260rem; margin-top:6rem; font-size:16rem; line-height:21rem; }
 .ss-is-loading #ss-summary, .ss-is-loading #ss-groups { filter:blur(1.25rem); }
-.ss-filters-wide .ss-list-meta { flex:0 0 150rem; width:150rem; max-width:150rem; }
-.ss-filters-wide .ss-list-meta > span { white-space:nowrap; }
-.ss-filters-wide .ss-pagination { flex:0 0 340rem; }
+.ss-filters-inline .ss-list-meta, .ss-filters-wide .ss-list-meta { flex:0 0 150rem; width:150rem; max-width:150rem; }
+.ss-filters-inline .ss-list-meta > span, .ss-filters-wide .ss-list-meta > span { white-space:nowrap; }
+.ss-filters-inline .ss-pagination, .ss-filters-wide .ss-pagination { flex:0 0 340rem; }
+.ss-filters-inline .ss-sorting { flex-shrink:0; }
 .ss-filters-wide .ss-sorting { flex:0 0 357rem; width:357rem; max-width:357rem; padding:0 5rem; border:1rem solid {{colors.details_separator_border_top}}; border-radius:{{radii.control}}rem; background:{{colors.group_card_background_end}}; }
 .ss-filters-wide .ss-sorting.ss-sort-without-statistic { flex-basis:287rem; width:287rem; max-width:287rem; }
 .ss-filters-wide .ss-sorting.ss-sort-without-statistic .ss-sort-off { margin-right:0; }
@@ -480,13 +484,13 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
   .ss-group .ss-detail-title { display:none; }
 }
 @media (max-width:400px) {
-  /* Keep full financial amounts readable even in a narrow game viewport.
-     The row label takes a separate line; the three number columns stay equal. */
-  .ss-metric-head, .ss-metric-row, .ss-money-head, .ss-money-row { flex-wrap:wrap; }
-  .ss-metric-head .ss-metric-name, .ss-money-head .ss-money-label { display:none; }
-  .ss-metric-head .ss-metric-count, .ss-money-head .ss-money-label.ss-money-count { display:block; width:100%; padding:0 4rem; }
-  .ss-metric-name, .ss-money-label { width:100%; padding-bottom:1rem; }
-  .ss-metric-number, .ss-money-value { width:33.333%; }
+  /* The narrow summary keeps its own layout. Card tables use their lane widths. */
+  .ss-summary-details .ss-metric-head, .ss-summary-details .ss-metric-row,
+  .ss-summary-details .ss-money-head, .ss-summary-details .ss-money-row { flex-wrap:wrap; }
+  .ss-summary-details .ss-metric-head .ss-metric-name, .ss-summary-details .ss-money-head .ss-money-label { display:none; }
+  .ss-summary-details .ss-metric-head .ss-metric-count, .ss-summary-details .ss-money-head .ss-money-label.ss-money-count { display:block; width:100%; padding:0 4rem; }
+  .ss-summary-details .ss-metric-name, .ss-summary-details .ss-money-label { width:100%; padding-bottom:1rem; }
+  .ss-summary-details .ss-metric-number, .ss-summary-details .ss-money-value { width:33.333%; }
 }
 @media (max-width:380px) {
   .ss-game-mode { display:none; }
@@ -528,7 +532,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-sort-metric .ss-select-trigger { padding-top:1rem; padding-bottom:1rem; }
 .ss-sort-metric .ss-select-trigger .ss-control-label { font-size:11rem; line-height:13rem; white-space:normal; }
 .ss-select-arrow { display:block; flex-shrink:0; width:6rem; height:6rem; margin:-3rem 3rem 0 6rem; border-right:1rem solid currentColor; border-bottom:1rem solid currentColor; transform:rotate(45deg); }
-.ss-select-options { position:absolute; top:100%; left:0; z-index:20; min-width:100%; width:180rem; max-width:260rem; padding:3rem; border:1rem solid {{colors.list_meta_text}}; border-radius:{{radii.group_tabs}}rem; background:{{colors.window_background}}; box-shadow:0 3rem 8rem {{colors.title_text_shadow}}; }
+.ss-select-options { position:absolute; top:100%; left:0; z-index:20; min-width:100%; width:180rem; max-width:260rem; padding:3rem; overflow-y:auto; overflow-x:hidden; border:1rem solid {{colors.list_meta_text}}; border-radius:{{radii.group_tabs}}rem; background:{{colors.window_background}}; box-shadow:0 3rem 8rem {{colors.title_text_shadow}}; }
 .ss-sorting .ss-select-options { width:100%; }
 .ss-sort-direction .ss-select-options { left:auto; right:0; }
 .ss-select-option { width:100%; min-height:28rem; padding:4rem 5rem; border:0; border-radius:{{radii.control}}rem; background:{{colors.body_background}}; color:{{colors.list_meta_text}}; justify-content:flex-start; }
@@ -953,8 +957,8 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-aggregate .ss-metric-name .ss-cell-value, .ss-paired-tables .ss-credit-label-text { overflow-wrap:break-word; }
 .ss-group .ss-details.ss-paired-tables { flex-wrap:nowrap; align-items:flex-start; }
 .ss-paired-tables .ss-performance { justify-content:flex-start; }
-.ss-group .ss-paired-tables .ss-metric-name { flex:1 1 0rem; min-width:0; width:0; }
-.ss-group .ss-paired-tables .ss-metric-number { flex:0 0 auto; min-width:0; }
+.ss-aggregate .ss-performance:not(.ss-metric-compact) .ss-metric-name { flex:1 1 0rem; min-width:0; width:0; }
+.ss-aggregate .ss-performance .ss-metric-number { flex:0 0 auto; min-width:0; }
 .ss-group .ss-paired-tables .ss-economy { padding-top:0; margin-top:0; border-top:0; }
 .ss-card-border-more .ss-paired-tables .ss-performance { padding-right:9rem; }
 .ss-group.ss-card-border-more .ss-paired-tables .ss-economy { padding-left:8rem; border-left:1rem solid {{colors.economy_separator_border_left}}; }
@@ -986,14 +990,11 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-money-head > .ss-money-label, .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-label { width:24.5%; }
 .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-money-head > .ss-money-value, .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-money-row:not(.ss-credit-pair) > .ss-money-value { width:25.166%; }
 .ss-card-layout:not(.ss-narrow-cards) .ss-battle .ss-economy.ss-long-finance:not(.ss-credit-compact) .ss-credit-label-column { flex-basis:24.5%; width:24.5%; }
-.ss-narrow-cards .ss-group .ss-performance, .ss-narrow-cards .ss-group .ss-economy { flex-basis:100%; }
-.ss-narrow-cards .ss-group .ss-performance { padding-right:0; }
-.ss-narrow-cards .ss-group .ss-economy { padding:5rem 0 0; margin-top:3rem; border-left:0; border-top:1rem solid {{colors.details_separator_border_top}}; }
-.ss-narrow-cards .ss-group .ss-metric-head, .ss-narrow-cards .ss-group .ss-metric-row, .ss-narrow-cards .ss-group .ss-money-head, .ss-narrow-cards .ss-group .ss-money-row { flex-wrap:wrap; }
-.ss-narrow-cards .ss-group .ss-metric-head .ss-metric-name, .ss-narrow-cards .ss-group .ss-money-head .ss-money-label { display:none; }
-.ss-narrow-cards .ss-group .ss-metric-head .ss-metric-count, .ss-narrow-cards .ss-group .ss-money-head .ss-money-count { display:block; width:100%; padding:0 4rem; }
-.ss-narrow-cards .ss-group .ss-metric-row .ss-metric-name, .ss-narrow-cards .ss-group .ss-money-row .ss-money-label { width:100%; padding-bottom:0; }
-.ss-narrow-cards .ss-group .ss-metric-number, .ss-narrow-cards .ss-group .ss-money-value { width:33.333%; }
+.ss-aggregate .ss-details:not(.ss-paired-tables) > .ss-performance { padding-right:0; }
+.ss-aggregate .ss-details:not(.ss-paired-tables) > .ss-economy { padding:5rem 0 0; margin-top:3rem; border-left:0; border-top:1rem solid {{colors.details_separator_border_top}}; }
+.ss-performance.ss-metric-compact .ss-metric-head, .ss-performance.ss-metric-compact .ss-metric-row { flex-wrap:wrap; }
+.ss-performance.ss-metric-compact .ss-metric-head .ss-metric-name { display:none; }
+.ss-performance.ss-metric-compact .ss-metric-row .ss-metric-name { width:100%; padding-bottom:0; }
 .ss-group .ss-details > .ss-economy.ss-finance-inset { padding-left:8rem; border-left:1rem solid {{colors.economy_separator_border_left}}; }
 /* Base and received earnings are two logical rows around one settled cost.
    Explicit flex columns keep the shared value in normal native flow. */

@@ -774,9 +774,9 @@
     function summaryFinanceSample(data, statistic) {
         var count = hasNumber(data.count) ? data.count : 0;
         if (statistic === 'sum') { return {value:data.value, count:count}; }
-        var availability = baseCreditActionAvailability(data.item, data.metric);
-        if (availability && !availability.complete) { return {value:null, count:availability.count}; }
         var stats = data.item && data.item.stats || {}, currencies = stats.currency_series || {};
+        var availability = baseCreditAvailability(stats, data.metric);
+        if (availability && !availability.complete) { return {value:null, count:availability.count}; }
         var distribution = currencies[data.currency] && currencies[data.currency][data.field];
         if ((!distribution || !hasNumber(distribution.count)) && data.metric) { distribution = stats[data.metric]; }
         if (distribution && hasNumber(distribution.count)) {
@@ -865,7 +865,7 @@
             if (!battle) {
                 cell.className += ' ss-credit-cell';
                 var actions = append(cell, element('span', 'ss-credit-extreme-actions'));
-                var availability = baseCreditActionAvailability(item, metric);
+                var availability = baseCreditAvailability(item && item.stats || {}, metric);
                 if ((availability && !availability.complete) ||
                         (item && item.extrema_battles && item.extrema_battles[metric])) {
                     createMetricBattleLink(actions, item, metric, 'min', global, t('metric.min'));
@@ -936,7 +936,6 @@
     }
     function layoutCreditPairs(owner) {
         var scale = state.nativeScale || 1, measurements = [];
-        var narrowCards = owner === nodes.groups && owner.classList.contains('ss-narrow-cards');
         Array.prototype.forEach.call(owner.querySelectorAll('.ss-economy'), function (economy) {
             var assigned = Number(economy.getAttribute('data-ss-finance-content-width')) || 0;
             var head = economy.querySelector('.ss-money-head');
@@ -944,7 +943,7 @@
             var numberWidth = Number(economy.getAttribute('data-ss-finance-number-width')) || 0;
             var battle = economy.parentNode.classList.contains('ss-battle-details');
             if (width > 0) { measurements.push({node:economy, width:width, assigned:assigned > 0, numberWidth:numberWidth,
-                battle:battle, compact:narrowCards || (battle && width <= 300) ||
+                battle:battle, compact:(battle && width <= 300) ||
                     (numberWidth > 0 ? width - numberWidth * 3 < 64 : width <= 300)}); }
         });
         measurements.forEach(function (measurement) {
@@ -1069,15 +1068,29 @@
             help(parent, battle ? t('coverage.wn8.battle') : t('coverage.wn8.period', [partial]));
         }
     }
-    function hasBaseCredits(credits) {
-        return (hasNumber(credits.income_base_count) && credits.income_base_count > 0) ||
-            (hasNumber(credits.net_base_count) && credits.net_base_count > 0);
+    function baseCreditAvailability(stats, metric) {
+        var field = metric === 'credits_income_base' ? 'income_base' : metric === 'credits_net_base' ? 'net_base' : '';
+        if (!field) { return null; }
+        var credits = (stats.currencies || {}).credits || {}, data = metricSeries(stats, metric);
+        var count = hasNumber(credits[field + '_count']) ? credits[field + '_count'] :
+            (hasNumber(data.count) ? data.count : 0);
+        var total = hasNumber(stats.battles) ? stats.battles : observedTotal(stats);
+        var value = credits[field];
+        // Older snapshots blanked the amount while a battle was pending.
+        // Their original base distribution still contains the received sum.
+        if (!hasNumber(value) && (value === undefined || observedTotal(stats) > total) &&
+                data.count === count) {
+            value = data.sum;
+        }
+        var complete = count > 0 && count === total && hasNumber(value);
+        return {count:count, total:total, complete:complete, value:complete ? value : null};
     }
     function compactStatsHelp(holder, stats, global, battle) {
-        var total = observedTotal(stats), credits = (stats.currencies || {}).credits || {};
+        var total = observedTotal(stats);
         var count = t('help.stats.compact', [number(stats.battles || 0), number(total)]);
-        var incompleteBase = total > 0 && (!hasNumber(credits.income_base) || !hasNumber(credits.net_base) ||
-            credits.income_base_count !== total || credits.net_base_count !== total);
+        var baseIncome = baseCreditAvailability(stats, 'credits_income_base');
+        var baseNet = baseCreditAvailability(stats, 'credits_net_base');
+        var incompleteBase = baseIncome.total > 0 && (!baseIncome.complete || !baseNet.complete);
         var base = t(incompleteBase ? 'help.credits.incomplete_brief' : 'help.credits.base_received');
         var common = [count];
         if (!battle) { common.push(t('explain.wn8')); }
@@ -1146,14 +1159,14 @@
         if (!global) { append(economy, element('h3', 'ss-detail-title', battle ? t('finance.battle') : t('finance.period'))); }
         var currencies = stats.currencies || {}, credits = currencies.credits || {};
         // The base view changes earnings, not the actual expenses incurred.
-        // Both earnings rows stay visible; historical or partial base totals
-        // remain unknown rather than looking like the whole selected period.
+        // Both earnings rows stay visible. Base totals remain unknown when
+        // a received report lacks the corresponding base field.
         // Repair, ammunition and equipment are one shared settled expense.
-        var baseCredits = {income:credits.income_base_count > 0 && credits.income_base_count === total ? credits.income_base : null,
-            net:credits.net_base_count > 0 && credits.net_base_count === total ? credits.net_base : null,
-            income_count:hasNumber(credits.income_base_count) ? credits.income_base_count : 0,
-            net_count:hasNumber(credits.net_base_count) ? credits.net_base_count : 0};
-        var baseAvailable = hasBaseCredits(credits), currencyRows = [{currency:'bonds', name:t('finance.bonds'), data:currencies.bonds || {}}];
+        var baseIncome = baseCreditAvailability(stats, 'credits_income_base');
+        var baseNet = baseCreditAvailability(stats, 'credits_net_base');
+        var baseCredits = {income:baseIncome.value, net:baseNet.value, income_count:baseIncome.count, net_count:baseNet.count};
+        var baseAvailable = baseIncome.count > 0 || baseNet.count > 0;
+        var currencyRows = [{currency:'bonds', name:t('finance.bonds'), data:currencies.bonds || {}}];
         var gold = currencies.gold || {};
         if ((hasNumber(gold.income) && gold.income !== 0) ||
                 (hasNumber(gold.costs) && gold.costs !== 0) ||
@@ -1403,11 +1416,13 @@
         var stats = item.stats || {};
         if (options.metric === 'battles') { return hasNumber(stats.observed_battles) ? stats.observed_battles : stats.battles; }
         if (options.metric === 'win_rate') { return stats.win_rate; }
+        if (options.statistic === 'sum') {
+            var base = baseCreditAvailability(stats, options.metric);
+            if (base) { return base.value; }
+        }
         var data = metricSeries(stats, options.metric);
         if (!hasNumber(data.count) || data.count <= 0) { return null; }
-        if (options.statistic === 'sum' && (options.metric === 'credits_income_base' || options.metric === 'credits_net_base') &&
-                data.count !== observedTotal(stats)) { return null; }
-        return options.statistic === 'sum' && data.count === 0 ? null : data[options.statistic];
+        return data[options.statistic];
     }
     function ordered(items, options) {
         var copy = items.slice(0);
@@ -1448,6 +1463,59 @@
         if (control.input) { control.input.setAttribute('aria-expanded', 'false'); }
         state.openSelect = null;
         if (restoreFocus) { focusControl(control.trigger); }
+    }
+    function positionSelect() {
+        var control = state.openSelect;
+        if (!control || state.destroyed) { return; }
+        var holder = control.holder, menu = control.menu, scale = state.nativeScale || 1;
+        var inScroll = nodes.scroll.contains(holder), bounds = (inScroll ? nodes.scroll : root).getBoundingClientRect();
+        var anchor = control.trigger.getBoundingClientRect(), origin = holder.getBoundingClientRect();
+        var left = bounds.left + 4 * scale, right = bounds.right - (inScroll ? 20 : 4) * scale;
+        var top = bounds.top + 4 * scale, bottom = bounds.bottom - 4 * scale;
+        var filter = nodes['filter-panel'];
+        if (inScroll && !filter.contains(holder)) {
+            var separator = filter.getBoundingClientRect();
+            if (filter.classList.contains('is-pinned')) { top = Math.max(top, separator.bottom + 4 * scale); }
+            else if (separator.top > anchor.bottom) { bottom = Math.min(bottom, separator.top - 4 * scale); }
+        }
+        if (anchor.height > 0 && (anchor.bottom <= top || anchor.top >= bottom)) { closeSelect(false); return; }
+        if (!(right > left && bottom > top)) { return; }
+        var maxWidth = Math.min(260 * scale, right - left);
+        var maxHeight = control.timeline ? Math.min(200 * scale, bottom - top) : bottom - top;
+        menu.style.minWidth = Math.min(origin.width, maxWidth) + 'px';
+        menu.style.maxWidth = maxWidth + 'px';
+        menu.style.maxHeight = maxHeight + 'px';
+        menu.style.right = 'auto';
+        var rect = menu.getBoundingClientRect(), width = rect.width, height = rect.height;
+        if (!(width > 0 && height > 0)) { return; }
+        var x = control.alignRight ? origin.right - width : origin.left;
+        var above = anchor.top - top, below = bottom - anchor.bottom;
+        var y = height > below && (height <= above || above > below) ? anchor.top - height : anchor.bottom;
+        // An overlapping list is preferable to clipped choices when neither side
+        // fits. The original holder keeps ownership and applies the same scroll
+        // and pinned-filter translation to the trigger and menu.
+        menu.style.left = (Math.max(left, Math.min(x, right - width)) - origin.left) + 'px';
+        menu.style.top = (Math.max(top, Math.min(y, bottom - height)) - origin.top) + 'px';
+    }
+    function focusSelectOption(control, option) {
+        focusControl(option);
+        var menu = control.menu, bounds = menu.getBoundingClientRect(), box = option.getBoundingClientRect();
+        var viewportTop = bounds.top + (menu.clientTop || 0), viewportBottom = viewportTop + (menu.clientHeight || bounds.height);
+        if (box.top < viewportTop) { menu.scrollTop -= viewportTop - box.top; }
+        else if (box.bottom > viewportBottom) { menu.scrollTop += box.bottom - viewportBottom; }
+    }
+    function wheelSelect(control, event) {
+        if (state.openSelect !== control) { return; }
+        event.stopPropagation();
+        if (event.cancelable === false) { return; }
+        event.preventDefault();
+        var vertical = event.deltaY, horizontal = event.deltaX || 0, scale = state.nativeScale || 1;
+        if (!hasNumber(vertical) || event.shiftKey || Math.abs(vertical) <= Math.abs(horizontal)) { return; }
+        var menu = control.menu, movement = vertical;
+        if (event.deltaMode === 2) { movement = (state.bound ? -1 : 1) * vertical * menu.clientHeight; }
+        else if (state.bound) { movement = (vertical < 0 ? 36 : -36) * scale; }
+        else if (event.deltaMode === 1) { movement *= 18 * scale; }
+        menu.scrollTop = Math.max(0, Math.min(menu.scrollHeight - menu.clientHeight, menu.scrollTop + movement));
     }
     function orderingUnavailable(scope, payload) {
         payload = payload || state.payload;
@@ -1507,7 +1575,9 @@
         append(trigger,element('span','ss-select-arrow')).setAttribute('aria-hidden','true');
         var menu = append(holder,element('div','ss-select-options'));
         menu.id = 'ss-options-' + field; menu.setAttribute('role','listbox'); menu.style.display = 'none';
-        var control = {holder:holder,trigger:trigger,label:label,menu:menu,options:[],owner:null};
+        var control = {holder:holder,trigger:trigger,label:label,menu:menu,options:[],owner:null,
+            alignRight:field === 'direction' || field === 'language', timeline:field.indexOf('timeline-') === 0};
+        menu.addEventListener('wheel', function (event) { wheelSelect(control, event); });
         function available(option) { return option && option.style.display !== 'none' && !option.disabled && option.getAttribute('aria-disabled') !== 'true'; }
         function visibleOptions() { return control.options.filter(available); }
         function open(position) {
@@ -1515,11 +1585,17 @@
             closeDatePicker(false); closeSelect(false); menu.style.display = 'block'; trigger.setAttribute('aria-expanded','true');
             if (control.input) { control.input.setAttribute('aria-expanded','true'); }
             state.openSelect = control;
+            menu.scrollTop = 0;
+            positionSelect();
+            if (state.openSelect !== control) { return; }
+            if (typeof window.requestAnimationFrame === 'function') {
+                window.requestAnimationFrame(function () { if (state.openSelect === control) { positionSelect(); } });
+            }
             var visible = visibleOptions(), selectedIndex = 0, index;
             for (index = 0; index < visible.length; index += 1) {
                 if (visible[index].getAttribute('aria-selected') === 'true') { selectedIndex = index; }
             }
-            if (visible.length) { focusControl(visible[position === undefined ? selectedIndex : Math.min(position, visible.length - 1)]); }
+            if (visible.length) { focusSelectOption(control, visible[position === undefined ? selectedIndex : Math.min(position, visible.length - 1)]); }
         }
         function choose(value, owner) {
             var option = null;
@@ -1538,7 +1614,7 @@
                 if (key === 'ArrowUp' || key === 38) { target = (index + visible.length - 1) % visible.length; }
                 if (key === 'Home' || key === 36) { target = 0; }
                 if (key === 'End' || key === 35) { target = visible.length - 1; }
-                if (target !== null) { event.preventDefault(); event.stopPropagation(); focusControl(visible[target]); }
+                if (target !== null) { event.preventDefault(); event.stopPropagation(); focusSelectOption(control, visible[target]); }
                 if (key === 'Enter' || key === 13 || key === ' ' || key === 32) { event.preventDefault(); choose(option[0], owner); }
                 if (key === 'Tab' || key === 9) { closeSelect(true); }
             };
@@ -1705,9 +1781,13 @@
     }
     function applyFilterLayout(controls, width, wide) {
         var compact = width < 340, changed = state.wideFilters !== wide;
+        // Keep the sorting row stable even when Statistic is inapplicable.
+        // A full wrapped control set needs 150 + 340 + 294 rem plus margins.
+        var inline = !wide && width >= 808;
         if (controls.classList.contains('ss-filters-wide') !== wide) { controls.classList[wide ? 'add' : 'remove']('ss-filters-wide'); }
         if (controls.classList.contains('ss-filters-wrapped') === wide) { controls.classList[wide ? 'remove' : 'add']('ss-filters-wrapped'); }
         if (controls.classList.contains('ss-filters-compact') !== compact) { controls.classList[compact ? 'add' : 'remove']('ss-filters-compact'); }
+        if (controls.classList.contains('ss-filters-inline') !== inline) { controls.classList[inline ? 'add' : 'remove']('ss-filters-inline'); }
         var mode = wide ? 'wide' : 'wrapped';
         if (controls.getAttribute('data-filter-layout') !== mode) { controls.setAttribute('data-filter-layout', mode); }
         if (controls.getAttribute('data-filter-width') !== String(width)) { controls.setAttribute('data-filter-width', String(width)); }
@@ -2644,14 +2724,18 @@
                 var mission = missions[id], kind = mission.kind || 'other';
                 var row = append(missionTable, element('div', 'ss-more-mission'));
                 row.setAttribute('role', 'row');
-                var label = t('more.kind.' + kind);
-                if (mission.operation) { label += ' · ' + mission.operation; }
-                if (hasNumber(mission.stage)) { label += ' · ' + t('more.stage', [number(mission.stage)]); }
-                if (id === data.active_crucible) { label += ' · ' + t('more.active'); }
+                var kindKey = 'more.kind.' + kind, kindLabel = t(kindKey);
+                if (kindLabel === kindKey) { kindLabel = t('more.kind.other'); }
+                var title = typeof mission.name === 'string' ? mission.name.trim() : '';
+                if (title === id) { title = ''; }
+                var metadata = title ? [kindLabel] : [];
+                if (mission.operation) { metadata.push(mission.operation); }
+                if (hasNumber(mission.stage)) { metadata.push(t('more.stage', [number(mission.stage)])); }
+                if (id === data.active_crucible) { metadata.push(t('more.active')); }
                 var identity = append(row, element('div', 'ss-more-mission-name'));
                 identity.setAttribute('role', 'rowheader');
-                append(identity, element('strong', '', mission.name || (kind === 'crucible' ? t('more.kind.crucible') : id)));
-                append(identity, element('div', 'ss-more-caption', label));
+                append(identity, element('strong', '', title || kindLabel));
+                if (metadata.length) { append(identity, element('div', 'ss-more-caption', metadata.join(' · '))); }
                 var status = append(row, element('div', 'ss-more-mission-status',
                     t('more.mission.' + (mission.status || 'observed'))));
                 status.setAttribute('role', 'cell');
@@ -3513,18 +3597,9 @@
             }
         }
     }
-    function baseCreditActionAvailability(item, metric) {
-        var field = metric === 'credits_income_base' ? 'income_base' : metric === 'credits_net_base' ? 'net_base' : '';
-        if (!field) { return null; }
-        var stats = item && item.stats || {}, currencies = stats.currencies || {}, credits = currencies.credits || {};
-        var count = hasNumber(credits[field + '_count']) ? credits[field + '_count'] : 0;
-        var total = observedTotal(stats);
-        // Match the displayed base total, including results still awaiting reports.
-        return {count:count, total:total, complete:count > 0 && count === total && hasNumber(credits[field])};
-    }
     function createMetricBattleLink(parent, item, metric, statistic, global, label) {
         if (statistic !== 'min' && statistic !== 'max') { return null; }
-        var availability = baseCreditActionAvailability(item, metric);
+        var availability = baseCreditAvailability(item && item.stats || {}, metric);
         if (availability && !availability.complete) {
             var disabled = append(parent, element('button', 'ss-control ss-metric-battle-link ss-hover-help ss-metric-action-disabled' +
                 (label ? ' ss-metric-extreme-action' : '')));
@@ -3849,7 +3924,7 @@
         var numberWidth = columns[0] + columns[1] + columns[2];
         // Keep a readable caption lane while lending finance the recovered
         // space. Exceptionally wide figures retain the stacked fallback.
-        var minimumPerformance = Math.max(222, numberWidth + 79), performanceWidth = minimumPerformance;
+        var minimumPerformance = Math.max(222, numberWidth + 79);
         var financeNumber = 54;
         Array.prototype.forEach.call(economy.querySelectorAll('.ss-table-text'), function (text) {
             financeNumber = Math.max(financeNumber, Math.ceil(text.getBoundingClientRect().width / scale) + 3);
@@ -3865,24 +3940,27 @@
         });
         var financeMinimum = Math.max(244, financeNumber * 3 + 9);
         var paired = available >= minimumPerformance + financeMinimum;
-        if (paired) {
-            performanceWidth = Math.max(minimumPerformance, Math.min(Math.round(available * 0.45), available - financeMinimum));
-        }
+        var performanceWidth = paired ? Math.max(minimumPerformance,
+            Math.min(Math.round(available * 0.45), available - financeMinimum)) : available;
+        var financeWidth = paired ? available - performanceWidth : available;
         if (holder.classList.contains('ss-paired-tables') !== paired) {
             holder.classList[paired ? 'add' : 'remove']('ss-paired-tables');
         }
-        performance.style.flex = paired ? '0 0 ' + performanceWidth + 'rem' : '';
-        performance.style.width = paired ? performanceWidth + 'rem' : '';
-        var financeWidth = available - performanceWidth;
-        economy.style.flex = paired ? '0 0 ' + financeWidth + 'rem' : '';
-        economy.style.width = paired ? financeWidth + 'rem' : '';
-        assignFinanceBudget(economy, paired ? financeWidth : 0, financeNumber, paired);
-        var contentWidth = performanceWidth - 9;
-        var captionWidth = Math.min(contentWidth - numberWidth, Math.max(70, Math.min(110, contentWidth * 0.30)));
+        performance.style.flex = '0 0 ' + performanceWidth + 'rem';
+        performance.style.width = performanceWidth + 'rem';
+        economy.style.flex = '0 0 ' + financeWidth + 'rem';
+        economy.style.width = financeWidth + 'rem';
+        assignFinanceBudget(economy, financeWidth, financeNumber, paired);
+        // Each table can use its full lane even when the two tables stack.
+        // Move captions above figures only when their column would be too small.
+        var contentWidth = performanceWidth - (paired ? 9 : 0);
+        var captionBudget = contentWidth - numberWidth, compact = captionBudget < 70;
+        performance.classList[compact ? 'add' : 'remove']('ss-metric-compact');
+        var captionWidth = compact ? 0 : Math.min(captionBudget, Math.max(70, Math.min(110, contentWidth * 0.30)));
         var extraNumberWidth = Math.max(0, (contentWidth - captionWidth - numberWidth) / 3);
         Array.prototype.forEach.call(rows, function (row) {
             for (var index = 0; index < 3; index += 1) {
-                var width = paired ? (columns[index] + extraNumberWidth) + 'rem' : '';
+                var width = (columns[index] + extraNumberWidth) + 'rem';
                 if (row.children[index + 1].style.width !== width) { row.children[index + 1].style.width = width; }
             }
         });
@@ -4461,6 +4539,7 @@
         var shift = height < nodes.scroll.clientHeight - 30 * state.nativeScale ? Math.max(0, logicalTop - base) : 0;
         if (state.filterShift !== shift) { state.filterShift = shift; panel.style.transform = shift ? 'translateY(' + shift + 'px)' : ''; }
         if (panel.classList.contains('is-pinned') !== (shift > 0)) { panel.classList[shift > 0 ? 'add' : 'remove']('is-pinned'); }
+        if (state.openSelect && nodes.scroll.contains(state.openSelect.holder)) { positionSelect(); }
         if (nodes['scroll-top']) {
             nodes['scroll-top'].style.display = logicalTop > 60 * state.nativeScale ? 'flex' : 'none';
             nodes['scroll-top'].style.bottom = Math.max(48 * state.nativeScale,
@@ -4649,6 +4728,7 @@
         nodes.scroll.scrollTop = target;
     }
     function onScrollIntent(event) {
+        if (state.openSelect && state.openSelect.menu.contains(event.target)) { return; }
         cancelBattleNavigation();
         cancelPageJump();
         if (state.feed) { state.feed.navigationPage = null; }
@@ -5719,6 +5799,7 @@
             if (drag) { drag.layoutWidth = resizePanelDimensions().width; }
             if (!force || !state.logicalSize) { resizeNative(state.logicalSize ? resizePanelDimensions() : null); }
             positionDatePicker();
+            if (state.openSelect && !nodes.scroll.contains(state.openSelect.holder)) { positionSelect(); }
             if (state.groupMinHeight) {
                 nodes.groups.style.minHeight = ''; state.groupMinHeight = false;
                 // Native flow/clamping may settle after this measurement.

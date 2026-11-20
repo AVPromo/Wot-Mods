@@ -133,7 +133,13 @@ class ExpectedTable(object):
         return expected
 
 
-def _money(records, currency, observed_count):
+def _base_credit_complete(known_count, received_count):
+    # Pending battles have no report to inspect. Completeness concerns only
+    # the results whose income and actual costs could already be recorded.
+    return 0 < known_count == received_count
+
+
+def _money(records, currency):
     money = {}
     for key in ('income', 'costs', 'net') + (('income_base', 'net_base') if currency == 'credits' else ()):
         values = [record.get('currencies', {}).get(currency, {}).get(key) for record in records]
@@ -144,7 +150,7 @@ def _money(records, currency, observed_count):
             # Original earnings were not stored by older versions. A subtotal
             # from new reports must not look comparable to all received costs
             # or earnings. Keep the known sample in the independent series.
-            money[key + '_complete'] = bool(known) and len(known) == observed_count
+            money[key + '_complete'] = _base_credit_complete(len(known), len(records))
             if not money[key + '_complete']:
                 money[key] = None
     money['breakdown'] = {}
@@ -193,7 +199,7 @@ def aggregate_stats(records, expected_table, include_currency_series=False):
     stats['wn8_count'] = len(per_battle)
     stats['wn8'] = wn8_from_totals(actual, reference) if per_battle else None
     stats['battle_wn8'] = _series(per_battle)
-    stats['currencies'] = dict((currency, _money(records, currency, len(observed))) for currency in _CURRENCIES)
+    stats['currencies'] = dict((currency, _money(records, currency)) for currency in _CURRENCIES)
     if include_currency_series:
         # The summary selector needs distributions, not estimates from totals.
         # Keep ordinary group/battle payloads unchanged.

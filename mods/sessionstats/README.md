@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.29 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.30 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
@@ -71,14 +71,14 @@ mean of individual-battle WN8 in the table. The card information button explains
 this distinction in a short group-information tooltip. **All** sorts aggregate XP, received credit income or credit costs by the sum of
 known values. Credit income and net sorting separately offer Base (before bonuses)
 and Received (settled income). Base totals and Base **All** sorting stay unavailable
-until every recorded battle in the group has the corresponding Base value;
-historical missing Base values remain unknown. Base Min/Average/Max still use the
+until every received report in the group has the corresponding Base value.
+Historical missing Base values remain unknown. Base Min/Average/Max still use the
 known sample, marked with the native alert triangle when the received reports
 themselves lack the selected field. Base-credit Min/Max source actions stay
 disabled while their Base coverage is incomplete for the selected period and
-group. Selecting a fully covered period enables those actions. Pending reports alone use the existing
-received/recorded counters. Range and card warnings use the same rule; coverage
-help remains available for pending-only samples. One known
+group. Selecting a fully covered period enables those actions. Pending reports use the existing
+received/recorded counters and leave the received Base totals and actions available.
+Range and card warnings use the same received coverage rule. One known
 battle therefore has equal Min/Average/Max. Both net variants subtract actual
 battle costs. All is not offered for
 WN8, win rate or individual battles. Credit sums mark the existing finance total;

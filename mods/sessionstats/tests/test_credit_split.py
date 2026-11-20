@@ -345,7 +345,7 @@ class HistoricalCreditCoverageTests(unittest.TestCase):
         self.assertEqual(after['summary']['credits_income_base']['min'], 0)
         self.assertEqual(after['summary']['credits_income_base']['avg'], 300)
 
-    def test_base_total_completeness_includes_pending_battles_and_known_zero(self):
+    def test_base_totals_and_sort_use_received_coverage_with_pending_and_known_zero(self):
         rows = [credit_result('zero', 0, 0, 10),
                 credit_result('pending', None, None, None, outcome=None, complete=False)]
         table = ExpectedTable(EXPECTED)
@@ -353,14 +353,24 @@ class HistoricalCreditCoverageTests(unittest.TestCase):
         index.build([contribution(row, table) for row in rows])
         stats = aggregate_stats(rows, table)
         self.assertEqual(index.totals.snapshot(), stats)
-        self.assertIsNone(stats['currencies']['credits']['income_base'])
-        self.assertFalse(stats['currencies']['credits']['income_base_complete'])
+        self.assertEqual((stats['battles'], stats['observed_battles']), (1, 2))
         self.assertEqual(stats['credits_income_base']['sum'], 0)
         known = aggregate_stats(rows[:1], table)['currencies']['credits']
+        self.assertEqual(stats['currencies']['credits'], known)
         self.assertEqual(known['income_base'], 0)
         self.assertEqual(known['net_base'], -10)
         self.assertTrue(known['income_base_complete'])
         self.assertTrue(known['net_base_complete'])
+        for kind in ('vehicles', 'maps', 'tiers'):
+            for metric, value in (('credits_income_base', 0), ('credits_net_base', -10)):
+                order = dict(DEFAULT_ORDER, metric=metric, statistic='sum')
+                scope = index.snapshot('Synthetic', 0, orders={kind: order})
+                self.assertEqual(scope[kind][0]['sort_value'], value)
+                self.assertEqual(scope['extrema_battles'][metric]['min']['id'], 'zero')
+                self.assertEqual(scope['extrema_battles'][metric]['max']['id'], 'zero')
+        empty = aggregate_stats(rows[1:], table)['currencies']['credits']
+        self.assertIsNone(empty['income_base'])
+        self.assertFalse(empty['income_base_complete'])
         missing_costs = aggregate_stats(rows[:1] + [credit_result('cost-pending', 100, 200, None)], table)
         money = missing_costs['currencies']['credits']
         self.assertEqual(money['income_base'], 100)

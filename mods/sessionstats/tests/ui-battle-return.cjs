@@ -99,7 +99,7 @@ module.exports=async({browser,nativeHost,check})=>{
     async function configure(view){await page.evaluate(()=>{window.__returnBridgeFrozen=false;});const reply=await driver.request({action:'configure',view});await publish(reply.payload);await page.locator('#ss-scope-launch').click();await page.locator('#ss-scope-manual').click();await page.locator('#ss-group-'+view).click();await ready(view);await page.locator('#ss-page-next').click();await page.locator('#ss-groups .ss-continuous-page[data-page-index="1"]').waitFor({state:'visible',timeout:5000});await ready(view);await stopAutomaticNavigation();}
     async function stopAutomaticNavigation(){const box=await page.locator('#ss-scroll').boundingBox();await page.mouse.move(box.x+20,box.y+Math.min(100,box.height/2));await page.mouse.wheel(0,1);await frames(page,10);}
     async function opened(){await page.locator('#ss-groups .ss-battle-target .ss-battle-return').waitFor({state:'visible',timeout:5000});await frames(page);}
-    async function ready(group){await page.waitForFunction(group=>document.getElementById('ss-group-'+group).getAttribute('aria-pressed')==='true'&&__returnBridgePending===0&&document.getElementById('ss-groups').getAttribute('aria-busy')!=='true',group,{timeout:5000});await frames(page,12);}
+    async function ready(group,timeout=5000){await page.waitForFunction(group=>document.getElementById('ss-group-'+group).getAttribute('aria-pressed')==='true'&&__returnBridgePending===0&&document.getElementById('ss-groups').getAttribute('aria-busy')!=='true',group,{timeout});await frames(page,12);}
     async function sourceMarker(selector,caption,scale=1){
       await page.locator(selector+'.ss-source-returned').waitFor({state:'visible',timeout:3000});
       const result=await page.locator(selector).evaluate((node,scale)=>{const cue=node.querySelector('.ss-extreme-link-cue'),paint=cue||node,style=getComputedStyle(paint);return{count:document.querySelectorAll('.ss-source-returned').length,focus:document.activeElement===node,color:style.outlineColor,width:parseFloat(style.outlineWidth)/scale,offset:parseFloat(style.outlineOffset)/scale,shadow:style.boxShadow,buttonOutline:getComputedStyle(node).outlineStyle,small:!cue||cue.getBoundingClientRect().width/scale<=18};},scale);
@@ -218,7 +218,9 @@ module.exports=async({browser,nativeHost,check})=>{
     await configure('battles');const oldExtreme=await page.locator(summarySource).getAttribute('data-battle-id');
     await page.locator(summarySource).evaluate(node=>node.addEventListener('click',()=>{window.__returnChangedSummaryCellOffset=node.closest('.ss-metric-number').getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top;},{once:true,capture:true}));
     await page.locator(summarySource).click();await opened();const newExtreme=await driver.request({action:'revise_summary'});await publish(newExtreme.payload);await opened();
-    await page.locator('.ss-battle-return').click();await ready('battles');
+    // The revised summary invalidates the saved pages. Allow the native return
+    // deadline for rebuilding the old page window before checking its focus.
+    await page.locator('.ss-battle-return').click();await ready('battles',10000);
     await page.waitForFunction(({selector,oldExtreme})=>{
       const source=document.querySelector(selector);
       return source&&source.getAttribute('data-battle-id')!==oldExtreme&&document.activeElement===document.getElementById('ss-group-battles')&&
