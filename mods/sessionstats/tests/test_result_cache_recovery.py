@@ -8,7 +8,7 @@ from __future__ import unicode_literals
 import unittest
 
 import test_runtime_health as fixtures
-from test_runtime import FakeAPI, Obj
+from test_runtime import FakeAPI, Obj, wait_for_combat_capture
 from test_normalize import raw_result, ARENA_ID, START
 from grz_session_stats import runtime
 from grz_session_stats.cache_observer import CacheObserver, OWN_CALLBACK, _function
@@ -362,8 +362,17 @@ class RecoveryRuntimeTests(unittest.TestCase):
         self.api.cache.get(int(ARENA_ID), None)
         self.api.result_cache = lambda: None
         self.api.battle = True
-        self.mod._ensure_service()
+        self.api.events.onAvatarBecomePlayer()
+        self.mod._ensure_cache_observer()
+        before = self.mod.active_service.store.sequence
         self.receive(1, raw_result())
+        self.assertEqual(self.summary()['battles'], 0)
+        self.assertEqual(self.mod.active_service.store.sequence, before)
+        wait_for_combat_capture(self.mod)
+        receipts = self.mod._combat_intake.pending(
+            self.mod.active_key, accept=lambda receipt, kind, capture: kind == 'result')
+        self.assertEqual([kind for unused, kind, capture in receipts], ['result'])
+        self.garage()
         self.assertEqual(self.summary()['battles'], 1)
 
     def test_stopped_observer_never_saves_old_lifecycle_but_preserves_consumer(self):

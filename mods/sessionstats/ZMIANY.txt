@@ -1,5 +1,10 @@
 SESSION STATS — CHANGELOG
 
+0.9.31 • 2026-11-21
+• Save battle starts and incoming results in the background during combat and replay durable captures in the garage.
+• Park history loading, ledger maintenance and garage updates during combat.
+• Use a 15-second battle fallback when the client event is missed.
+
 0.9.30 • 2026-11-20
 • Keep dropdown options and keyboard focus reachable within low windows.
 • Keep the filter row count stable when a metric hides its statistic control.

@@ -1,10 +1,15 @@
 # Session Stats for World of Tanks
 
-Version 0.9.30 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.31 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. Full guide: [README_PL.txt](README_PL.txt); history: [ZMIANY.txt](ZMIANY.txt).
 These legacy filenames are retained for existing package and documentation links;
 their contents are English.
+
+In battle, a background writer immediately saves the captured battle start
+and incoming results. The regular history, indexes, and garage views catch up
+when the player returns to the garage. On restart, the mod replays records
+whose background write finished before the process stopped.
 The account tabs are **Since launch** and **Timeline**. Timeline opens on the full
 history. Use **Create time point** in the title bar, then pick **From** and **To**
 to filter by battle start time. Either selector also accepts **Custom date**:

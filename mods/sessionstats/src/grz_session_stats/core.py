@@ -462,23 +462,7 @@ class StatsService(object):
                             raise StorageError('Startup receipt has no launch boundary.')
                         record = dict(event['record'])
                         context = event.get('context', {})
-                        stored = self.result_context(record['arena_id'], include_received=False)
-                        candidates = context.get('candidates', [])
-                        if candidates:
-                            matching = [item for item in candidates if stored.get('vehicle_id') is not None and
-                                        item['record'].get('vehicle_id') == stored['vehicle_id']]
-                            if len(matching) == 1:
-                                record = dict(matching[0]['record'])
-                                context = dict(matching[0].get('context', {}), require_known=context.get('require_known', False))
-                            else:
-                                record['warnings'] = [message('runtime.results')]
-                        for field in context.get('fields', []):
-                            if field in stored:
-                                record[field] = stored[field]
-                        if 'started_at' in context.get('fields', []) and record.get('started_at') is not None:
-                            duration = _number(context.get('duration'), True)
-                            if duration is not None:
-                                record['ended_at'] = record['started_at'] + duration
+                        record = self._resolve_captured_result(record, context)
                         if not context.get('require_known') or record['arena_id'] in self._state['battles']:
                             self._apply(record, timestamp, event['kind'] == 'result')
                     if self.last_error:
@@ -493,17 +477,70 @@ class StatsService(object):
             self._intake.remove(event)
             yield None
 
+    def _resolve_captured_result(self, record, context):
+        result = dict(record)
+        stored = self.result_context(result['arena_id'], include_received=False)
+        candidates = context.get('candidates', [])
+        if candidates:
+            matching = [item for item in candidates if stored.get('vehicle_id') is not None and
+                        item['record'].get('vehicle_id') == stored['vehicle_id']]
+            if len(matching) == 1:
+                result = dict(matching[0]['record'])
+                context = matching[0].get('context', {})
+            else:
+                result['warnings'] = [message('runtime.results')]
+        for field in context.get('fields', []):
+            if field in stored:
+                result[field] = stored[field]
+        if 'started_at' in context.get('fields', []) and result.get('started_at') is not None:
+            duration = _number(context.get('duration'), True)
+            if duration is not None:
+                result['ended_at'] = result['started_at'] + duration
+        return result
+
+    @staticmethod
+    def _capture_context(record):
+        context = copy.deepcopy(record.get('_deferred_context') or {})
+        if record.get('_deferred_candidates'):
+            context['candidates'] = [{'record': _clean_record(candidate),
+                                      'context': copy.deepcopy(candidate.get('_deferred_context', {}))}
+                                     for candidate in record['_deferred_candidates']]
+        if record.get('_require_known'):
+            context['require_known'] = True
+        return context
+
+    def has_combat_receipt(self, receipt):
+        producer, sequence = receipt
+        return self._state.get('_startup_receipts', {}).get(producer, 0) >= sequence
+
+    def replay_combat_capture(self, record, timestamp, launch_id, is_result, receipt):
+        """Apply a persisted capture once the ordinary history is ready."""
+        self.last_error = None
+        if self.has_combat_receipt(receipt):
+            return False
+        self._receipt = receipt
+        try:
+            timestamp = _number(timestamp, True)
+            if not self.ready or self._closed or timestamp is None:
+                raise StorageError(message('storage.readonly'))
+            if is_result:
+                record = self._resolve_captured_result(record, self._capture_context(record))
+            changed = self._apply(record, timestamp, is_result, captured_launch=launch_id)
+            if not self.last_error and not self.has_combat_receipt(receipt):
+                # An identical result still needs a durable consumption mark.
+                self._commit(self._candidate(), {})
+            return changed
+        except (StorageError, ValueError, TypeError, KeyError, OverflowError) as error:
+            self.last_error = _text(error)
+            return False
+        finally:
+            self._receipt = None
+
     def _queue_record(self, record, timestamp, is_result):
         try:
             if self._intake is None or self._closed or self.store.read_only:
                 raise StorageError(message('storage.readonly'))
-            context = copy.deepcopy(record.get('_deferred_context') or {})
-            if record.get('_deferred_candidates'):
-                context['candidates'] = [{'record': _clean_record(candidate),
-                                          'context': copy.deepcopy(candidate.get('_deferred_context', {}))}
-                                         for candidate in record['_deferred_candidates']]
-            if record.get('_require_known'):
-                context['require_known'] = True
+            context = self._capture_context(record)
             cleaned = _clean_record(record)
             key = (is_result, cleaned['arena_id'])
             if self._received_records.get(key) == (cleaned, context):
@@ -959,7 +996,7 @@ class StatsService(object):
             answer['status'] = 'pending'
         return answer
 
-    def _apply(self, record, timestamp, is_result):
+    def _apply(self, record, timestamp, is_result, captured_launch=None):
         try:
             incoming = _clean_record(record)
         except (ValueError, TypeError, OverflowError) as error:
@@ -994,7 +1031,12 @@ class StatsService(object):
             # begin_battle is a live observation, unlike a delayed cache result.
             # It can precede service creation (late initialization/reconnect).
             # Existing durable memberships below still take precedence.
-            launch_id = self.launch_id
+            launch_id = self.launch_id if captured_launch is None else captured_launch
+            if captured_launch is not None and self._launch(self._state, launch_id) is None:
+                # A cold start directly into combat may exit before the old
+                # launch can be opened. Keep its battle in history without
+                # attributing it to the launch that recovered it.
+                launch_id = None
             if (manual_id is None and len(self._state['manual_sessions']) == 1
                     and started_at < self._state['manual_sessions'][0]['started_at']):
                 manual_id = self._state['current_manual_id']
