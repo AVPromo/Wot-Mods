@@ -137,8 +137,9 @@ module.exports=async({browser,nativeHost,check})=>{
       await card.locator('.ss-more-button').click();
     }
   }
-  // Narrow finance tables keep the same three numeric columns across header,
-  // credit pairs and bonds, including a live return to the ordinary card.
+  // Stacking can free enough space for a caption column at 400px. At 320px
+  // captions move above the values. The numeric columns stay aligned in both
+  // modes and after the tables return to side by side at 550px.
   for(const scale of [1,2]){
     await page.evaluate(({scale,messages})=>{
       const payload=JSON.parse(JSON.stringify(__headerAlignmentFixture)),scope=payload.scopes.launch,item=scope.battles[0];
@@ -171,12 +172,15 @@ module.exports=async({browser,nativeHost,check})=>{
           const minimum=value.classList.contains('ss-battle-value')?18:13;
           if(ink.left<box.left-scale||ink.right>box.right+scale||ink.top<box.top-scale||ink.bottom>box.bottom+scale||parseFloat(getComputedStyle(value).fontSize)/scale<minimum)failures.push('complete-readable-number:'+value.textContent);
         }
-        if(economy.classList.contains('ss-credit-compact')!==(width<550))failures.push('compact-mode');
+        const compact=economy.classList.contains('ss-credit-compact');
+        const stacked=card.querySelector('.ss-battle-details').classList.contains('ss-battle-tables-stacked');
+        if(stacked!==(width<550))failures.push('table-layout');
+        if(compact!==(width===320))failures.push('compact-mode');
         const label=pair.querySelector('.ss-credit-label-column'),inline=pair.querySelector('.ss-credit-inline-label');
-        if((label.getBoundingClientRect().width>0)!==(width===550)||(inline.getBoundingClientRect().width>0)!==(width<550))failures.push('caption-mode');
+        if((label.getBoundingClientRect().width>0)===compact||(inline.getBoundingClientRect().width>0)!==compact)failures.push('caption-mode');
         if(width!==320&&window.__narrowBattleCard!==card)failures.push('lost-card-identity');
         window.__narrowBattleCard=card;
-        return {failures,compact:economy.classList.contains('ss-credit-compact'),cardWidth:card.getBoundingClientRect().width/scale};
+        return {failures,compact,stacked,financeWidth:economy.getBoundingClientRect().width/scale,cardWidth:card.getBoundingClientRect().width/scale};
       },{width,scale});
       check('Narrow battle tables retain full numbers and matching columns through '+width+'px at '+scale+'x: '+JSON.stringify(result),result.failures.length===0);
     }

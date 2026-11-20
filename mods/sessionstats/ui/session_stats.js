@@ -1090,7 +1090,7 @@
         var count = t('help.stats.compact', [number(stats.battles || 0), number(total)]);
         var baseIncome = baseCreditAvailability(stats, 'credits_income_base');
         var baseNet = baseCreditAvailability(stats, 'credits_net_base');
-        var incompleteBase = baseIncome.total > 0 && (!baseIncome.complete || !baseNet.complete);
+        var incompleteBase = total > 0 && (!baseIncome.complete || !baseNet.complete);
         var base = t(incompleteBase ? 'help.credits.incomplete_brief' : 'help.credits.base_received');
         var common = [count];
         if (!battle) { common.push(t('explain.wn8')); }
