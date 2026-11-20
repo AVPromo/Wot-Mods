@@ -70,7 +70,7 @@ node run.cjs --engine chromium --suite smoke --source '../WotMods-pr17-next/mods
 
 ## GitHub Actions
 
-Zwykły build uruchamia krótki zestaw w Chromium. Workflow **Session Stats Chromium matrix** uruchom ręcznie albo dodaj etykietę `sessionstats-full-matrix` na PR z gałęzi tego repozytorium. Etykieta i domyślny tryb ręczny `exhaustive` obejmują wszystkie warianty sortowania we wszystkich przygotowanych zakresach dat. Tryb `smoke` i etykieta `sessionstats-report-smoke` służą do krótkiej próby raportu. Ręczne uruchomienie z zakładki Actions jest dostępne po dodaniu workflow do domyślnej gałęzi.
+Zwykły build uruchamia krótki zestaw w Chromium. Po scaleniu workflow **Session Stats Chromium matrix** do domyślnej gałęzi uruchom go nowym komentarzem na otwartym PR z gałęzi tego repozytorium. Sam komentarz `/sessionstats-matrix` obejmuje wszystkie warianty sortowania we wszystkich przygotowanych zakresach dat. `/sessionstats-matrix smoke` sprawdza raport na krótkiej próbie, a `/sessionstats-matrix full` sprawdza pełne sortowanie w głównych zakresach dat. Wynik pojawi się w Actions jako **Session Stats matrix · PR #…**.
 
 Każdy przebieg CI korzysta z fikcyjnych danych i grafik testowych. Job scalający publikuje `index.html`, `catalog.js` i odnośne zrzuty, w tym dostępne wyniki przy niepełnym przebiegu. Po rozpakowaniu artefaktu otwórz `index.html`. Pełna macierz na runnerze zapisuje ostatnią fazę każdego przypadku, a domyślny przebieg lokalny zapisuje wszystkie cztery.
 
