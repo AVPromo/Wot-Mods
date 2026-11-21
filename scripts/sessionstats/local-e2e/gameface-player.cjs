@@ -45,7 +45,7 @@ async function fetchDebugger(port, routes, accept, deadline, ensureRunning) {
     await delay(100);
   }
   ensureRunning();
-  throw new Error(`Gameface nie udostępnił ${routes.join(' ani ')} na porcie ${port}.`);
+  throw new Error(`Gameface did not expose ${routes.join(' or ')} on port ${port}.`);
 }
 
 class DebuggerSocket {
@@ -80,20 +80,20 @@ class DebuggerSocket {
   failPending() {
     for (const request of this.pending.values()) {
       clearTimeout(request.timer);
-      request.reject(new Error(`Połączenie z Gameface zamknięto podczas ${request.method}.`));
+      request.reject(new Error(`The Gameface connection closed during ${request.method}.`));
     }
     this.pending.clear();
   }
 
   command(method, params = {}) {
     if (this.socket.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error(`Brak połączenia z Gameface dla ${method}.`));
+      return Promise.reject(new Error(`Gameface is disconnected. Cannot run ${method}.`));
     }
     return new Promise((resolve, reject) => {
       const id = ++this.sequence;
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Gameface nie odpowiedział na ${method} w ${this.timeout} ms.`));
+        reject(new Error(`Gameface did not respond to ${method} within ${this.timeout} ms.`));
       }, this.timeout);
       this.pending.set(id, { method, timer, resolve, reject });
       try { this.socket.send(JSON.stringify({ id, method, params })); }
@@ -112,15 +112,15 @@ class DebuggerSocket {
 }
 
 async function openSocket(url, timeout) {
-  if (typeof WebSocket !== 'function') throw new Error('Adapter Gameface wymaga Node.js 22 lub nowszego.');
+  if (typeof WebSocket !== 'function') throw new Error('The Gameface adapter requires Node.js 22 or later.');
   const socket = new WebSocket(url);
   try {
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Upłynął czas połączenia WebSocket z Gameface.')), timeout);
+      const timer = setTimeout(() => reject(new Error('The Gameface WebSocket connection timed out.')), timeout);
       socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
       socket.addEventListener('error', () => {
         clearTimeout(timer);
-        reject(new Error('Gameface odrzucił połączenie WebSocket.'));
+        reject(new Error('Gameface rejected the WebSocket connection.'));
       }, { once: true });
     });
     return socket;
@@ -134,11 +134,11 @@ function createPage(debuggerSocket, version, port, windowMode, close) {
   let mouseHeld = false;
   const command = (method, params) => debuggerSocket.command(method, params);
   async function evaluate(fn, arg) {
-    if (typeof fn !== 'function') throw new TypeError('evaluate oczekuje funkcji bez domknięć z Node.js.');
+    if (typeof fn !== 'function') throw new TypeError('evaluate expects a function that does not close over Node.js state.');
     const expression = `(${fn.toString()})(${arg === undefined ? '' : JSON.stringify(arg)})`;
     const response = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     const details = response.exceptionDetails;
-    if (details) throw new Error(`Wyjątek w widoku Gameface: ${details.exception?.description || details.text}`);
+    if (details) throw new Error(`The Gameface view threw an exception. ${details.exception?.description || details.text}`);
     return response.result?.value;
   }
 
@@ -147,7 +147,7 @@ function createPage(debuggerSocket, version, port, windowMode, close) {
   }
 
   function sendMouse(type, x, y, other) {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new TypeError('Pozycja myszy musi być liczbą.');
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new TypeError('Mouse coordinates must be finite numbers.');
     return command('Input.dispatchMouseEvent', { type, x, y, ...other });
   }
 
@@ -167,29 +167,29 @@ function createPage(debuggerSocket, version, port, windowMode, close) {
     async goto(url) {
       const pageUrl = new URL(url);
       if (pageUrl.protocol !== 'http:' || pageUrl.hostname !== LOOPBACK) {
-        throw new Error(`Player może otworzyć tylko stronę hosta testowego na ${LOOPBACK}.`);
+        throw new Error(`Gameface Player only accepts HTTP URLs from the test host at ${LOOPBACK}.`);
       }
       const response = await command('Page.navigate', { url: pageUrl.href });
-      if (response.errorText) throw new Error(`Player nie otworzył widoku: ${response.errorText}`);
+      if (response.errorText) throw new Error(`Gameface Player could not open the view. ${response.errorText}`);
     },
     async setViewportSize({ width, height }) {
       const actual = await viewport();
       if (actual.width !== width || actual.height !== height) {
-        throw new Error(`Rzeczywisty viewport Gameface to ${actual.width} × ${actual.height} zamiast ${width} × ${height}. Uruchom osobną instancję Playera z tą szerokością i wysokością.`);
+        throw new Error(`The Gameface viewport is ${actual.width} × ${actual.height}. Launch a separate Player instance at the requested size of ${width} × ${height}.`);
       }
     },
     async screenshot({ path: destination, type = 'png' } = {}) {
-      if (type !== 'png') throw new Error('Adapter Gameface zapisuje rodzime zrzuty PNG.');
+      if (type !== 'png') throw new Error('The Gameface adapter only supports native PNG screenshots.');
       const { width, height } = await viewport();
       const clip = { x: 0, y: 0, width, height, scale: 1 };
       const response = await command('Page.captureScreenshot', { format: 'png', clip });
       const bytes = Buffer.from(response.data || '', 'base64');
       if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
-        throw new Error('Gameface nie zwrócił zrzutu PNG.');
+        throw new Error('Gameface did not return a PNG screenshot.');
       }
       const [actualWidth, actualHeight] = [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
       if (actualWidth !== width || actualHeight !== height) {
-        throw new Error(`Gameface zwrócił PNG ${actualWidth} × ${actualHeight} dla viewportu ${width} × ${height}.`);
+        throw new Error(`Gameface returned a ${actualWidth} × ${actualHeight} PNG for a ${width} × ${height} viewport.`);
       }
       if (destination) await writeFile(destination, bytes);
       return bytes;
@@ -201,12 +201,12 @@ function createPage(debuggerSocket, version, port, windowMode, close) {
       await mouseUp(x, y);
     },
     wheel(x, y, deltaY, deltaX = 0) {
-      if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) throw new TypeError('Wartości ruchu kółka muszą być liczbami.');
+      if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) throw new TypeError('Wheel deltas must be finite numbers.');
       return sendMouse('mouseWheel', x, y, { deltaX, deltaY });
     },
     async press(key) {
       const vk = KEY_CODES[key] || (typeof key === 'string' && /^[A-Za-z0-9 ]$/u.test(key) ? key.toUpperCase().charCodeAt(0) : 0);
-      if (!vk) throw new Error(`Adapter Gameface nie obsługuje klawisza ${JSON.stringify(key)}.`);
+      if (!vk) throw new Error(`The Gameface adapter does not support the key ${JSON.stringify(key)}.`);
       // Cohtml consumes a numeric keyIdentifier, including for navigation keys.
       const keys = { keyIdentifier: vk, windowsVirtualKeyCode: vk, modifiers: 0 };
       await command('Input.dispatchKeyEvent', { type: 'keyDown', ...keys });
@@ -221,16 +221,16 @@ function createPage(debuggerSocket, version, port, windowMode, close) {
 
 async function connectGameface({ port, url, startupTimeout = 15000, commandTimeout = 8000,
   ensureRunning = () => {}, stop = async () => {}, windowMode = 'attached' }) {
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Podaj lokalny port debuggera Gameface.');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Specify a valid local Gameface debugger port.');
   const deadline = Date.now() + startupTimeout;
   const identity = await fetchDebugger(port, ['/json/version'], data => data && !Array.isArray(data), deadline, ensureRunning);
   const agent = `${identity.Browser || ''} ${identity['User-Agent'] || ''}`;
-  if (!/\bcohtml\b/i.test(agent)) throw new Error(`Na porcie ${port} debugger zgłasza ${agent.trim() || 'nieznany silnik'}. Oczekiwano Cohtml.`);
+  if (!/\bcohtml\b/i.test(agent)) throw new Error(`The debugger on port ${port} reported ${agent.trim() || 'an unknown engine'}. Expected Cohtml.`);
   const isPage = item => item?.type === 'page';
   const targets = await fetchDebugger(port, ['/json/list', '/json'], data => Array.isArray(data) && data.some(isPage), deadline, ensureRunning);
   const target = (url && targets.find(item => isPage(item) && item.url === url)) || targets.find(isPage);
   if (target.id === undefined || !/^[A-Za-z0-9_-]+$/.test(String(target.id))) {
-    throw new Error(`Gameface nie zgłosił poprawnego celu CDP dla strony na porcie ${port}.`);
+    throw new Error(`Gameface did not report a valid CDP page target on port ${port}.`);
   }
   // Some Player builds prefix their advertised WebSocket path with /json/list.
   const socket = await openSocket(`ws://${LOOPBACK}:${port}/devtools/page/${target.id}`, commandTimeout);
@@ -242,7 +242,7 @@ async function connectGameface({ port, url, startupTimeout = 15000, commandTimeo
   });
   try {
     const userAgent = await page.evaluate(() => navigator.userAgent);
-    if (!/\bcohtml\b/i.test(userAgent || '')) throw new Error('Widok debuggera nie przedstawia się jako Cohtml.');
+    if (!/\bcohtml\b/i.test(userAgent || '')) throw new Error('The debugger view did not identify itself as Cohtml.');
     page.version = userAgent.match(/\bcohtml\/(\d+(?:\.\d+)*)/i)?.[1] || version;
     await Promise.allSettled([page.command('Runtime.enable'), page.command('Log.enable')]);
     return page;
@@ -254,12 +254,12 @@ async function connectGameface({ port, url, startupTimeout = 15000, commandTimeo
 
 async function launchGameface({ executable, url, width, height, renderer = 'dx11', extraArgs = [],
   startupTimeout = 15000, commandTimeout = 8000, allowVisible = false }) {
-  if (!executable) throw new Error('Podaj ścieżkę do oficjalnego Gameface Player.exe.');
+  if (!executable) throw new Error('Specify the path to the official Gameface Player.exe.');
   executable = path.resolve(executable);
-  if (!await stat(executable).then(item => item.isFile(), () => false)) throw new Error(`Brak Gameface Playera pod ścieżką ${executable}.`);
-  if (![width, height].every(value => Number.isInteger(value) && value > 0)) throw new Error('Podaj dodatnie wymiary Gameface w całych pikselach.');
+  if (!await stat(executable).then(item => item.isFile(), () => false)) throw new Error(`Gameface Player was not found at ${executable}.`);
+  if (![width, height].every(value => Number.isInteger(value) && value > 0)) throw new Error('Gameface dimensions must be positive whole pixels.');
   const pageUrl = new URL(url);
-  if (pageUrl.protocol !== 'http:' || pageUrl.hostname !== LOOPBACK) throw new Error(`Uruchamiaj Gameface wyłącznie z lokalnym hostem ${LOOPBACK}.`);
+  if (pageUrl.protocol !== 'http:' || pageUrl.hostname !== LOOPBACK) throw new Error(`Launch Gameface with an HTTP URL from the local test host at ${LOOPBACK}.`);
   const port = await allocatePort();
   const args = [
     `--remote-debugging-port=${port}`, '--no-first-run', '--enable-gui=false',
@@ -269,7 +269,7 @@ async function launchGameface({ executable, url, width, height, renderer = 'dx11
   const cwd = await mkdtemp(path.join(temporary,'sessionstats-player-'));
   const cleanup = () => {
     if (path.dirname(cwd) !== temporary || !path.basename(cwd).startsWith('sessionstats-player-')) {
-      throw new Error('Nieoczekiwany katalog roboczy Gameface Playera.');
+      throw new Error('Unexpected Gameface Player working directory.');
     }
     return rm(cwd,{recursive:true,force:true,maxRetries:3,retryDelay:100});
   };
@@ -302,9 +302,9 @@ async function launchGameface({ executable, url, width, height, renderer = 'dx11
     return stopping;
   }
   const ensureRunning = () => {
-    if (processError) throw new Error(`Uruchomienie Gameface Playera nie powiodło się: ${processError.message}`);
+    if (processError) throw new Error(`Could not start Gameface Player. ${processError.message}`);
     if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(`Gameface Player zakończył pracę (${child.exitCode ?? child.signalCode}). ${output.trim()}`);
+      throw new Error(`Gameface Player exited (${child.exitCode ?? child.signalCode}). ${output.trim()}`);
     }
   };
   let page;

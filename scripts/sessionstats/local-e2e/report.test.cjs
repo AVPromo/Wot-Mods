@@ -41,10 +41,14 @@ test('the offline catalogue selects portable screenshots and omits raw records a
     assert.ok(!output.includes('results.ndjson'));
   }
   assert.match(html, /<script src="catalog\.js"><\/script>/);
+  assert.match(html, /<html lang="en">/);
+  assert.match(html, /Session Stats · Test results/);
+  assert.match(html, /No test cases match the selected filters\./);
   const context = {window:{}};
   vm.runInNewContext(catalogue, context);
   const data = JSON.parse(JSON.stringify(context.window.sessionStatsMatrix));
   assert.deepEqual(data.rows.map(row=>row.group),['vehicles','maps','interactions']);
+  assert.equal(data.rows[1].language,'pl');
   assert.deepEqual(data.rows[0].frames,[{file:'3.jpg',top:30,visible:4,pinned:true,warning:false,
     ratio:.047,reference:true,diff:true,changed:true}]);
   assert.deepEqual(data.rows.map(row=>row.issues),[['diff'],['pass'],['fail']]);

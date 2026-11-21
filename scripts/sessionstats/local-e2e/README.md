@@ -1,12 +1,12 @@
-# Session Stats — lokalne testy E2E
+# Session Stats local end-to-end tests
 
-Chromium ładuje rzeczywisty HTML, CSS i JavaScript moda. Kod Pythona liczy statystyki, filtruje zakresy i odpowiada na polecenia panelu. Dane i usługi okna WoT są symulowane. Przebieg działa bez uruchamiania gry i bez logowania.
+Chromium loads the mod's HTML, CSS, and JavaScript. The Python backend computes statistics, filters date ranges, and responds to panel commands. The test harness simulates WoT data and window services. You can run the tests without launching the game or signing in.
 
-## Instalacja na Windows x64
+## Windows x64 setup
 
-1. Zainstaluj Node.js 22 lub nowszy. Możesz wybrać linię 24 LTS i instalator x64. [Pobierz Node.js](https://nodejs.org/en/download)
-2. Zainstaluj Python 3 x64 i dodaj go do `PATH`. Przebieg sprawdzono na Pythonie 3.12.14. [Pobierz Pythona dla Windows](https://www.python.org/downloads/windows/)
-3. W PowerShellu przejdź do katalogu zawierającego ten plik i wykonaj poniższe polecenia. Pakiet `tzdata` dostarcza strefę `Europe/Warsaw` także na Windows.
+1. Install Node.js 22 or later. The Node.js 24 LTS x64 installer is one option. [Download Node.js](https://nodejs.org/en/download)
+2. Install Python 3 x64 and add it to `PATH`. The test harness was verified with Python 3.12.14. [Download Python for Windows](https://www.python.org/downloads/windows/)
+3. Open PowerShell in the directory containing this file and run the following commands. The `tzdata` package supplies the `Europe/Warsaw` time zone on Windows.
 
 ```powershell
 python -m venv .venv
@@ -15,81 +15,81 @@ $env:SESSIONSTATS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
 npm.cmd install
 ```
 
-Skrypt PowerShell wykrywa Edge w standardowej lokalizacji. Możesz też zainstalować Chromium dostarczane przez Playwright albo podać ścieżkę do przeglądarki jako `--chrome`. [Instalacja przeglądarek Playwright](https://playwright.dev/docs/browsers)
+The PowerShell script detects Edge in its standard installation directory. You can also install Playwright's Chromium build or pass a browser executable to `run.cjs` with `--chrome`. [Install Playwright browsers](https://playwright.dev/docs/browsers)
 
 ```powershell
 npx.cmd playwright install chromium
 ```
 
-## Lokalne zasoby WoT i anonimowy profil
+## Local WoT assets and anonymous profile
 
-Instalacja wymagania `requirements-local-assets.txt` dodaje Pillow do konwersji grafik map. Tryb lokalny odczytuje wprost z pakietów WoT oba fonty Warhelios i fabryczne grafiki dobrane do fikcyjnych map i pojazdów. Pakiety są otwierane tylko do odczytu. Fonty i grafiki trafiają do tymczasowego katalogu renderera i są kasowane po zakończeniu.
+Installing `requirements-local-assets.txt` adds Pillow for map image conversion. The local runner opens WoT packages in read-only mode and uses them to load both Warhelios fonts and stock images for synthetic maps and vehicles. It stores the fonts and images in a temporary renderer directory and removes them when the run finishes.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-local-assets.txt
 ```
 
-Opcjonalny eksporter odczytuje zweryfikowaną lokalną historię i zapisuje szerokie przedziały statystyk po odrzuceniu rzadkich wartości. Backend losuje z przedziałów fikcyjne bitwy. Profil przechowuj poza repozytorium. Powstałe daty, identyfikatory, nazwy i kwoty są fikcyjne. Grafikę przypisuje numer testowego pojazdu lub mapy.
+The optional exporter reads verified local history and writes broad statistical ranges after dropping rare values. The backend samples those ranges to generate fictitious battles. Keep the profile outside the repository. The generated dates, identifiers, names, and amounts are fictitious. The runner selects artwork by the test vehicle or map number.
 
 ```powershell
-$profil = Join-Path $env:LOCALAPPDATA 'SessionStatsQA/profil-lokalny.json'
-New-Item -ItemType Directory -Path (Split-Path -Parent $profil) -Force
-.\.venv\Scripts\python.exe -B anonymize_history.py --output $profil
-.\run-local.ps1 -Suite smoke -Profile $profil
-.\run-local.ps1 -Suite full -Profile $profil
+$profilePath = Join-Path $env:LOCALAPPDATA 'SessionStatsQA/local-profile.json'
+New-Item -ItemType Directory -Path (Split-Path -Parent $profilePath) -Force
+.\.venv\Scripts\python.exe -B anonymize_history.py --output $profilePath
+.\run-local.ps1 -Suite smoke -Profile $profilePath
+.\run-local.ps1 -Suite full -Profile $profilePath
 ```
 
-Możesz wskazać inną instalację parametrem `-GameClient`. Raporty z lokalnym profilem lub grafikami powstają domyślnie w `%LOCALAPPDATA%/SessionStatsQA/runs/`. Zapis takich raportów wewnątrz checkoutu Git jest blokowany.
+Use `-GameClient` to select a different WoT installation. Reports that use a local profile or assets default to `%LOCALAPPDATA%/SessionStatsQA/runs/`. The runner blocks writing these reports inside a Git checkout.
 
-## Uruchamianie na żądanie
+## Running the suites on demand
 
-Sprawdź rozmiar i zakres konfiguracji bez uruchamiania renderera.
+Inspect the case count and coverage without launching the renderer.
 
 ```powershell
 node run.cjs --suite full --plan
 ```
 
-Chromium jest domyślnym silnikiem. `build` sprawdza osiem przypadków i podstawowe interakcje, `smoke` rozszerza próbę na kilka szerokości i oba główne zakresy.
+Chromium is the default engine. `build` checks eight cases and basic interactions. `smoke` covers multiple widths and both main date ranges.
 
 ```powershell
 node run.cjs --engine chromium --suite smoke
 node run.cjs --engine chromium --suite full --chrome 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 ```
 
-PowerShellowy `-Suite full` obejmuje wszystkie warianty sortowania we wszystkich przygotowanych zakresach. Przy bezpośrednim użyciu Node odpowiada mu `--suite full --all-ranges`. Sama opcja `--suite full` ogranicza sortowanie w mniej typowych zakresach do chronologii. Podstawowe widoki mają wysokość 730 lub 900 px i maksymalnie trzy ruchy kółkiem. Osobne scenariusze obejmują menu, kalendarz, rozwinięte szczegóły i powrót z wybranej bitwy.
+PowerShell's `-Suite full` covers every sorting option across all configured date ranges, equivalent to `--suite full --all-ranges` when running Node directly. `--suite full` alone covers chronological sorting for less common date ranges. The standard view heights are 730 and 900 px, with up to three scroll steps. Separate scenarios cover the menu, calendar, expanded details, and returning from a selected battle.
 
-Pełna macierz wymaga dużo czasu i miejsca na dysku. Opcja `-FinalOnly` zachowuje wynik każdego przypadku i sprawdza wszystkie pozycje przewijania, a na dysku zapisuje końcowy zrzut JPEG lub zrzut błędu.
+The full matrix takes substantial time and disk space. `-FinalOnly` still checks each scroll position and records each case result. It saves a final JPEG or a failure screenshot.
 
 ```powershell
-.\run-local.ps1 -Suite full -Plan -Profile $profil
+.\run-local.ps1 -Suite full -Plan -Profile $profilePath
 node run.cjs --engine chromium --suite full --widths 365,780 --heights 730,900 --ranges history,since-sunday --languages en,pl --limit 40
 node run.cjs --engine chromium --suite smoke --source '../WotMods-pr17-next/mods/sessionstats' --python 'C:/Python312/python.exe'
 ```
 
-`--source` wskazuje katalog `mods/sessionstats` z wybranego checkoutu. W repozytorium przebieg znajduje go automatycznie. W osobnym katalogu szuka też sąsiedniego `WotMods-pr17-next`. `--python` zastępuje ścieżkę z `SESSIONSTATS_PYTHON` lub polecenie `python`. W nowej sesji PowerShell ustaw `$env:SESSIONSTATS_PYTHON` ponownie, jeśli korzystasz z `.venv`. Pełną listę opcji wyświetla `node run.cjs --help`.
+Use `--source` to point to `mods/sessionstats` in the selected checkout. The runner detects it automatically from within the repository and also looks for a neighboring `WotMods-pr17-next` checkout when run from a separate directory. `--python` overrides `SESSIONSTATS_PYTHON` or the default `python` command. If you use `.venv`, set `$env:SESSIONSTATS_PYTHON` again in each new PowerShell session. Run `node run.cjs --help` for all options.
 
 ## GitHub Actions
 
-Zwykły build uruchamia krótki zestaw w Chromium. Po scaleniu workflow **Session Stats Chromium matrix** do domyślnej gałęzi uruchom go nowym komentarzem na otwartym PR z gałęzi tego repozytorium. Sam komentarz `/sessionstats-matrix` obejmuje wszystkie warianty sortowania we wszystkich przygotowanych zakresach dat. `/sessionstats-matrix smoke` sprawdza raport na krótkiej próbie, a `/sessionstats-matrix full` sprawdza pełne sortowanie w głównych zakresach dat. Wynik pojawi się w Actions jako **Session Stats matrix · PR #…**.
+The regular build runs a short Chromium suite. To start **Session Stats Chromium matrix**, post a new command comment on an open pull request from a branch in this repository. `/sessionstats-matrix` runs every sorting option in every configured date range. `/sessionstats-matrix smoke` checks reporting with a small sample. `/sessionstats-matrix full` checks every sorting option in the primary date ranges. The run appears in Actions as **Session Stats matrix · PR #…**.
 
-Każdy przebieg CI korzysta z fikcyjnych danych i grafik testowych. Job scalający publikuje `index.html`, `catalog.js` i odnośne zrzuty, w tym dostępne wyniki przy niepełnym przebiegu. Po rozpakowaniu artefaktu otwórz `index.html`. Pełna macierz na runnerze zapisuje ostatnią fazę każdego przypadku, a domyślny przebieg lokalny zapisuje wszystkie cztery.
+Every CI run uses synthetic data and test artwork. The merge job publishes `index.html`, `catalog.js`, and the corresponding screenshots, including any available results from incomplete runs. Extract the artifact and open `index.html`. The full CI matrix saves the final phase of each case. Local runs save all four phases by default.
 
-## Raporty i porównania
+## Reports and visual comparisons
 
-Polecenie wypisuje ścieżkę do nowego katalogu. Otwórz `index.html`, żeby przejrzeć przypadki i zrzuty. `run.json` zapisuje wersję i podsumowanie. `results.ndjson` zawiera wyniki pojedynczych przypadków i pomiary. `-OutputDirectory` lub `--out` pozwala wskazać nowy katalog.
+The command prints the path to the new output directory. Open `index.html` to review cases and screenshots. `run.json` contains the version and summary. `results.ndjson` contains results and measurements for each case. Use `-OutputDirectory` or `--out` to select a different directory.
 
-Po obejrzeniu pierwszego przebiegu możesz użyć go jako wzorca. Następny przebieg uruchom z tym samym rendererem, wersją, źródłem danych i grafik, wymiarami i zakresem. `--threshold 0.002` dopuszcza domyślnie do 0,2% różniących się pikseli. Porównanie pomija wnętrze pola z bieżącym czasem w nagłówku. Dla różnic ponad próg raport zapisuje zrzut, wzorzec i obraz różnic.
+After reviewing a run, you can use it as a baseline. Run the next comparison with the same renderer, version, data and artwork sources, dimensions, and date range. The default `--threshold 0.002` allows up to 0.2% of pixels to differ. Comparisons exclude the inside of the current-time field in the header. When a difference exceeds the threshold, the report saves the screenshot, baseline, and difference image.
 
 ```powershell
-node run.cjs --engine chromium --suite smoke --out 'runs/wzorzec'
-node run.cjs --engine chromium --suite smoke --baseline 'runs/wzorzec' --out 'runs/porownanie'
+node run.cjs --engine chromium --suite smoke --out 'runs/baseline'
+node run.cjs --engine chromium --suite smoke --baseline 'runs/baseline' --out 'runs/comparison'
 ```
 
-Test w Gameface Playerze sprawdza rysowanie panelu i obsługę poleceń w symulowanym oknie. Dokładny czas i zachowanie podczas przeciągania okna wewnątrz WoT zależą też od integracji gry.
+Gameface Player tests verify panel rendering and command handling in a simulated window. Exact timing and window dragging behavior inside WoT also depend on the game's integration.
 
-## Budowa paczki moda
+## Building the mod package
 
-Do kompilacji wersji instalacyjnej istniejący `tools/build.py` potrzebuje dodatkowo **CPython 2.7.18**. Uruchom polecenie z tego samego katalogu i wskaż właściwą ścieżkę do interpretera. Wynik pojawi się w `dist/` katalogu moda. [Pobierz CPython 2.7.18](https://www.python.org/downloads/release/python-2718/)
+The existing `tools/build.py` also requires **CPython 2.7.18** to compile the installable package. Run the command from this directory and supply the path to that interpreter. The output goes to the mod's `dist/` directory. [Download CPython 2.7.18](https://www.python.org/downloads/release/python-2718/)
 
 ```powershell
 python ../WotMods-pr17-next/mods/sessionstats/tools/build.py --python27 'C:/Python27/python.exe' --client-version 2.4.1.1

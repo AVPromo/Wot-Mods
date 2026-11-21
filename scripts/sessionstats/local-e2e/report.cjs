@@ -6,28 +6,28 @@ const path = require('node:path');
 const { createInterface } = require('node:readline');
 
 const names = {
-  groups: { vehicles: 'Pojazdy', maps: 'Mapy', tiers: 'Poziomy', battles: 'Bitwy', interactions: 'Interakcje' },
+  groups: { vehicles: 'Vehicles', maps: 'Maps', tiers: 'Tiers', battles: 'Battles', interactions: 'Interactions' },
   ranges: {
-    history: 'Cała historia', 'since-sunday': 'Od niedzieli', 'before-sunday': 'Przed niedzielą',
-    'recent-24h': 'Ostatnie 24 godziny', 'empty-date': 'Pusty zakres', launch: 'Od uruchomienia',
-    'manual-legacy': 'Od resetu', sunday: 'Niedziela', monday: 'Poniedziałek', installation: 'Instalacja'
+    history: 'Full history', 'since-sunday': 'Since Sunday', 'before-sunday': 'Before Sunday',
+    'recent-24h': 'Last 24 hours', 'empty-date': 'Empty date range', launch: 'Since launch',
+    'manual-legacy': 'Since reset', sunday: 'Sunday', monday: 'Monday', installation: 'Installation'
   },
   metrics: {
-    off: 'Chronologia', battles: 'Liczba bitew', win_rate: 'Udział zwycięstw', xp_base: 'Bazowe PD',
-    xp_received: 'Otrzymane PD', battle_wn8: 'WN8 bitew', credits_income_base: 'Bazowe kredyty brutto',
-    credits_income_received: 'Otrzymane kredyty brutto', credits_net_base: 'Bazowe kredyty netto',
-    credits_net_received: 'Otrzymane kredyty netto', credits_costs: 'Koszty'
+    off: 'Chronology', battles: 'Battle count', win_rate: 'Win rate', xp_base: 'Base XP',
+    xp_received: 'Received XP', battle_wn8: 'Battle WN8', credits_income_base: 'Base gross credits',
+    credits_income_received: 'Received gross credits', credits_net_base: 'Base net credits',
+    credits_net_received: 'Received net credits', credits_costs: 'Credit costs'
   },
   chronology: {
-    newest: 'Ostatnia od najnowszej', oldest: 'Pierwsza od najstarszej', first_desc: 'Pierwsza od najnowszej',
-    last_asc: 'Ostatnia od najstarszej', tier_asc: 'Poziom rosnąco', tier_desc: 'Poziom malejąco'
+    newest: 'Last battle, newest first', oldest: 'First battle, oldest first', first_desc: 'First battle, newest first',
+    last_asc: 'Last battle, oldest first', tier_asc: 'Tier ascending', tier_desc: 'Tier descending'
   },
-  statistics: { min: 'Min.', avg: 'Śr.', max: 'Maks.', sum: 'Suma' },
-  status: { pass: 'OK', fail: 'Błąd', diff: 'Różnica wizualna', missing: 'Brak wzorca' },
+  statistics: { min: 'Min', avg: 'Avg', max: 'Max', sum: 'Sum' },
+  status: { pass: 'Passed', fail: 'Failed', diff: 'Visual difference', missing: 'Missing baseline' },
   interactions: {
-    'sort-menu-end': 'Menu sortowania', calendar: 'Kalendarz', 'details-vehicles': 'Szczegóły pojazdu',
-    'details-maps': 'Szczegóły mapy', 'battle-selected': 'Wybrana bitwa', 'battle-resized': 'Zmiana rozmiaru',
-    'details-battles': 'Szczegóły bitwy', 'battle-returned': 'Powrót do źródła', failure: 'Zrzut błędu'
+    'sort-menu-end': 'Sort menu', calendar: 'Calendar', 'details-vehicles': 'Vehicle details',
+    'details-maps': 'Map details', 'battle-selected': 'Selected battle', 'battle-resized': 'Window resized',
+    'details-battles': 'Battle details', 'battle-returned': 'Return to source', failure: 'Failure screenshot'
   }
 };
 
@@ -130,7 +130,7 @@ function showMatrix(names) {
     const parts = value?.split('-');
     if (!parts) return '—';
     const from = Number(parts[1]), to = Number(parts[2]);
-    return (from ? 'Punkt '+from : 'Początek') + ' → ' + (to ? 'punkt '+to : 'teraz');
+    return (from ? 'Point '+from : 'Start') + ' → ' + (to ? 'Point '+to : 'Now');
   };
   const sortName = value => {
     if (!value) return '—';
@@ -142,7 +142,7 @@ function showMatrix(names) {
     const name=frame.file.split('.')[0];
     if (name === 'failure') return names.interactions.failure;
     if (row.group === 'interactions') return names.interactions[name];
-    return name === '0' ? 'Start' : 'Kółko ' + name;
+    return name === '0' ? 'Initial view' : 'Scroll ' + name;
   };
   const filters = [];
   let page = 0, found = rows;
@@ -153,8 +153,8 @@ function showMatrix(names) {
     const values = [...new Set(rows.flatMap(row=>Array.isArray(row[key]) ? row[key] : [row[key]]))]
       .filter(value=>value!==undefined);
     if (key === 'width' || key === 'height') values.sort((a,b)=>a-b);
-    if (key === 'sort' || key === 'language') values.sort((a,b)=>labels(a).localeCompare(labels(b),'pl'));
-    select.append(new Option('Wszystkie',''));
+    if (key === 'sort' || key === 'language') values.sort((a,b)=>labels(a).localeCompare(labels(b),'en'));
+    select.append(new Option('All',''));
     for (const value of values) select.append(new Option(labels(value),String(value)));
     filters.push([key,select]);
     select.addEventListener('change',refresh);
@@ -188,15 +188,15 @@ function showMatrix(names) {
     byId('image-link').href = framePath.split('/').map(encodeURIComponent).join('/');
     image.src = byId('image-link').getAttribute('href');
     image.alt = frameName(row,selected) + ' · ' + names.groups[row.group];
-    link(links,'Otwórz obraz',framePath);
-    if (selected.reference) link(links,'Wzorzec','baseline/'+framePath);
-    if (selected.diff) link(links,'Różnica','differences/'+framePath);
+    link(links,'Open image',framePath);
+    if (selected.reference) link(links,'Baseline','baseline/'+framePath);
+    if (selected.diff) link(links,'Difference','differences/'+framePath);
     const metrics = [];
-    if (selected.top != null) metrics.push('Przewinięcie '+selected.top+' px');
-    if (selected.visible != null) metrics.push('Widoczne karty '+selected.visible);
-    if (selected.pinned) metrics.push('Przypięte filtry');
-    if (selected.warning) metrics.push('Ostrzeżenie w panelu');
-    if (selected.ratio != null) metrics.push('Różnica '+(selected.ratio*100).toFixed(3)+'%');
+    if (selected.top != null) metrics.push('Scroll offset '+selected.top+' px');
+    if (selected.visible != null) metrics.push('Visible cards '+selected.visible);
+    if (selected.pinned) metrics.push('Pinned filters');
+    if (selected.warning) metrics.push('Panel warning');
+    if (selected.ratio != null) metrics.push('Difference '+(selected.ratio*100).toFixed(3)+'%');
     if (selected.missing) metrics.push(names.status.missing);
     byId('frame-metrics').textContent = metrics.join(' · ');
     if (!box.open) box.showModal();
@@ -233,29 +233,29 @@ function showMatrix(names) {
       if (!row.frames.length) add(frames,'span','—');
     }
     const first = visible.length ? pageStart+1 : 0;
-    byId('matches').textContent = String(found.length) + ' przypadków' +
+    byId('matches').textContent = String(found.length) + (found.length === 1 ? ' case' : ' cases') +
       (visible.length ? ' · '+first+'–'+(pageStart+visible.length) : '');
     byId('previous').disabled = page===0;
     byId('next').disabled = pageStart+visible.length>=found.length;
     byId('empty').hidden = !!visible.length;
   }
 
-  filter('Zakładka','group',value=>names.groups[value]);
-  filter('Zakres','range',rangeName);
-  filter('Szerokość','width',value=>value+' px');
-  filter('Wysokość','height',value=>value+' px');
-  filter('Język','language',value=>value.toUpperCase());
-  filter('Sortowanie','sort',sortName);
-  filter('Wynik','issues',value=>names.status[value]);
+  filter('Tab','group',value=>names.groups[value]);
+  filter('Date range','range',rangeName);
+  filter('Width','width',value=>value+' px');
+  filter('Height','height',value=>value+' px');
+  filter('Language','language',value=>value.toUpperCase());
+  filter('Sort order','sort',sortName);
+  filter('Status','issues',value=>names.status[value]);
   byId('previous').onclick=()=>{page--;render();};
   byId('next').onclick=()=>{page++;render();};
   byId('reset').onclick=()=>{filters.forEach(([,select])=>{select.value='';});refresh();};
   byId('viewer').addEventListener('close',()=>{byId('image').removeAttribute('src');});
   byId('title').textContent = 'Session Stats' + (summary.version ? ' '+summary.version : '');
   byId('summary').textContent = [
-    summary.engine, summary.renderer, summary.suite, summary.completed+'/'+summary.planned+' przypadków',
-    summary.failures+' błędów', summary.visualFailures+' różnic wizualnych',
-    summary.frames+' zrzutów', summary.omitted ? 'Pominięte wpisy '+summary.omitted : ''
+    summary.engine, summary.renderer, summary.suite, 'Cases '+summary.completed+'/'+summary.planned,
+    'Failures '+summary.failures, 'Visual differences '+summary.visualFailures,
+    'Screenshots '+summary.frames, summary.omitted ? 'Omitted entries '+summary.omitted : ''
   ].filter(Boolean).join(' · ');
   render();
 }
@@ -289,11 +289,11 @@ async function writeReport(directory,state) {
   await fs.writeFile(path.join(directory,'catalog.js'),
     'window.sessionStatsMatrix = '+JSON.stringify({rows,summary})+';\n');
   const html = `<!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Session Stats · wyniki testów</title>
+<title>Session Stats · Test results</title>
 <style>
 :root{color-scheme:dark;background:#151910;color:#eeeada;font:15px/1.45 system-ui,sans-serif}
 body{margin:0 auto;padding:1rem;max-width:88rem}h1,h2{margin:.2rem 0}a{color:#a8d8ff}
@@ -310,19 +310,19 @@ dialog form{float:right}dialog img{display:block;max-width:100%;max-height:65vh;
 <h1 id="title">Session Stats</h1>
 <p id="summary"></p>
 <div id="filters"></div>
-<nav class="pager" aria-label="Strony przypadków">
-<button id="previous" type="button">Poprzednia</button><span id="matches" aria-live="polite"></span><button id="next" type="button">Następna</button>
-<button id="reset" type="button">Wyczyść filtry</button>
+<nav class="pager" aria-label="Test case pages">
+<button id="previous" type="button">Previous</button><span id="matches" aria-live="polite"></span><button id="next" type="button">Next</button>
+<button id="reset" type="button">Clear filters</button>
 </nav>
 <main>
 <table>
-<thead><tr><th scope="col">Okno</th><th scope="col">Język</th><th scope="col">Sortowanie</th><th scope="col">Wynik</th><th scope="col">Zrzuty</th></tr></thead>
+<thead><tr><th scope="col">Window</th><th scope="col">Language</th><th scope="col">Sort order</th><th scope="col">Status</th><th scope="col">Screenshots</th></tr></thead>
 <tbody id="rows"></tbody>
 </table>
-<p id="empty" hidden>Brak przypadków dla wybranych filtrów.</p>
+<p id="empty" hidden>No test cases match the selected filters.</p>
 </main>
 <dialog id="viewer" aria-labelledby="detail-title">
-<form method="dialog"><button>Zamknij</button></form>
+<form method="dialog"><button>Close</button></form>
 <h2 id="detail-title"></h2>
 <p id="detail-context"></p>
 <div id="frame-actions" class="actions"></div>
