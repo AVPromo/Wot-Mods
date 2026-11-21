@@ -189,7 +189,7 @@ jobs:
       pull-requests: write
     steps:
       # This job uses the trusted workflow and GitHub metadata only.
-      - name: Post or update the matrix result
+      - name: Append a matrix result comment
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
@@ -242,20 +242,12 @@ jobs:
                      and row["expired"] is False for row in artifacts):
                   links.insert(0, f"[Download HTML report]({run_url}/artifacts/{artifact})")
 
-          marker = f"<!-- sessionstats-matrix-run:{run} -->"
           verdict = {"success": "passed", "failure": "failed",
                      "cancelled": "cancelled", "skipped": "skipped"}.get(env["REPORT_RESULT"], "failed")
           command_url = f"{repository_url}/pull/{pr}#issuecomment-{command}"
-          body = "\n\n".join((marker, f"**Session Stats Chromium `{coverage}` — {verdict}.**",
-                             f"Tested `{sha[:12]}` from [this command]({command_url}).",
+          body = "\n\n".join((f"**Session Stats Chromium `{coverage}` — {verdict}.**",
+                             f"Tested `{sha[:12]}` in attempt {attempt} from [this command]({command_url}).",
                              " · ".join(links)))
           comments_api = f"repos/{repo}/issues/{pr}/comments"
-          pages = json.loads(api(f"{comments_api}?per_page=100", "--paginate", "--slurp"))
-          existing = next((str(comment["id"]) for page in pages for comment in page
-                           if comment["user"]["login"] == "github-actions[bot]"
-                           and (comment.get("body") or "").startswith(marker + "\n")), "")
-          if positive_id(existing):
-              api(f"repos/{repo}/issues/comments/{existing}", "--method", "PATCH", "-f", f"body={body}", "--silent")
-          else:
-              api(comments_api, "--method", "POST", "-f", f"body={body}", "--silent")
+          api(comments_api, "--method", "POST", "-f", f"body={body}", "--silent")
           PY
