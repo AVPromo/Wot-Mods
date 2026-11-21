@@ -1,6 +1,6 @@
 /* Explicit page controls retain their divider through delayed native layout. */
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
-const shipped=()=>fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8');
+const shipped=()=>fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8').replace(/\r\n/g,'\n');
 function actualFunction(source,name){
   const start=source.indexOf('    function '+name+'('),end=source.indexOf('\n    }\n',start);
   assert(start>=0&&end>start,'Exercise actual shipped '+name);return source.slice(start,end+7);
@@ -33,7 +33,7 @@ function geometry(source=shipped()){
     cancelBattleNavigation(){state.battleJump=null;},clearBattleTarget(){},
     resetViewScroll(){state.scrollTarget=0;scroll.scrollTop=0;}};
   vm.createContext(context);
-  const names=['beginPageJump','cancelPageJump','retryPageJump','finishPageJump','battleLayoutOffset','battleScrollPending','onScrollIntent','retireFeed'];
+  const names=['beginPageJump','cancelPageJump','retryPageJump','finishPageJump','battleLayoutOffset','battleScrollPending','battleOwnsViewport','onScrollIntent','retireFeed'];
   if(source.includes('    function pageScrollPending('))names.push('pageScrollPending');
   vm.runInContext(names.map(name=>actualFunction(source,name)).join('\n'),context);
   function tick(delta=100){clock+=delta;const next=[...timers].find(([,timer])=>timer.delay>0&&timer.delay<=100);
@@ -63,7 +63,7 @@ function assertFreshPageDeadline(source){
   assert.notStrictEqual(staged,old,'A changed result revision rebuilds its feed');
   assert.strictEqual(staged.navigationPage,2,'The revision rebuild stages the existing page destination while prefix pages reload');
   assert.strictEqual(staged.navigationDeadline,999,'The staged revision retains its original navigation deadline');
-  context.onScrollIntent({type:'wheel',target:renewed.scroll});
+  context.onScrollIntent({type:'wheel',deltaY:1,target:renewed.scroll});
   assert.strictEqual(staged.navigationPage,null,'New user movement retires the staged revision destination');
   // Complete the ordinary prefix cache, then accept a later, separately owned
   // Next request. Its lifetime starts now instead of inheriting the old 999.
@@ -127,7 +127,7 @@ function assertPageJumpSource(source=shipped()){
   for(const kind of ['wheel','mousedown','keydown']){
     const moved=geometry(source);moved.begin();const retained=retainedTimer(moved);
     moved.feed.navigationPage=2;moved.feed.navigationDeadline=999;
-    moved.context.onScrollIntent({type:kind,key:'ArrowDown',target:moved.scroll});
+    moved.context.onScrollIntent({type:kind,key:'ArrowDown',deltaY:1,button:0,target:moved.scroll});
     moved.state.scrollTarget=null;moved.scroll.scrollTop=350;moved.show();retained();
     assert.strictEqual(moved.state.pageJump,null,'Newer '+kind+' retires an outstanding page destination');
     assert.strictEqual(moved.feed.navigationPage,null,'Newer '+kind+' clears a staged revision destination');

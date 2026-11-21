@@ -638,7 +638,8 @@ class StatsService(object):
             requests.pop(group, None)
         else:
             requests[group] = {'period_id': index.identifier, 'request_id': request_id}
-        self._battle_focus.pop(scope, None)
+        if group == 'battles':
+            self._battle_focus.pop(scope, None)
         return True
 
     def set_order(self, scope, group, options, period_id):
@@ -662,7 +663,8 @@ class StatsService(object):
         self._orders.setdefault(scope, {})[group] = dict(options)
         self._pages.setdefault(scope, {})[group] = 0
         self._page_requests.get(scope, {}).pop(group, None)
-        self._battle_focus.pop(scope, None)
+        if group == 'battles':
+            self._battle_focus.pop(scope, None)
         return True
 
     def set_map_battles(self, scope, map_id, page, period_id, chronology=None):
@@ -707,15 +709,28 @@ class StatsService(object):
             return False
         self._pages.setdefault(scope, {})['battles'] = page
         self._page_requests.get(scope, {}).pop('battles', None)
-        self._battle_focus[scope] = {'period_id': period_id, 'id': identifier, 'request_id': request_id}
+        self._battle_focus[scope] = {'period_id': period_id, 'id': identifier, 'request_id': request_id,
+                                     'revision': index.data_revision}
         return True
 
     def _scope_snapshot(self, name, index, label, started_at):
+        focus = self._battle_focus.get(name)
+        orders = self._orders.get(name, {})
+        if focus and focus['period_id'] == index.identifier and focus['revision'] != index.data_revision:
+            # A new result can move the selected battle across a page boundary.
+            # Resolve its page again only when the underlying results change.
+            page = index.battle_page(focus['id'], orders.get('battles'))
+            if page is None:
+                self._battle_focus.pop(name, None)
+                focus = None
+            else:
+                self._pages[name]['battles'] = page
+                focus['revision'] = index.data_revision
         opened = self._map_pages.get(name, {})
         map_pages = opened.get('pages') if opened.get('period_id') == index.identifier else None
         vehicles = self._vehicle_pages.get(name, {})
         vehicle_pages = vehicles.get('pages') if vehicles.get('period_id') == index.identifier else None
-        scope = index.snapshot(label, started_at, self._pages.get(name), self._orders.get(name), map_pages, vehicle_pages)
+        scope = index.snapshot(label, started_at, self._pages.get(name), orders, map_pages, vehicle_pages)
         history = self._history_request.get(name)
         if history and history['period_id'] == index.identifier:
             battle_list = index._group_battles(history['kind'], history['id'], history['page'],
@@ -725,7 +740,6 @@ class StatsService(object):
         for group, request in self._page_requests.get(name, {}).items():
             if request['period_id'] == index.identifier:
                 scope['pagination'][group]['request_id'] = request['request_id']
-        focus = self._battle_focus.get(name)
         if (focus and focus['period_id'] == index.identifier and
                 any(row['id'] == focus['id'] for row in scope['battles'])):
             scope['battle_focus'] = dict((key, focus[key]) for key in ('id', 'request_id'))

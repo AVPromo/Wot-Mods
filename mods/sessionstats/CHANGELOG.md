@@ -1,5 +1,10 @@
 # Session Stats changelog
 
+## 0.9.33 - 2026-11-21
+
+- Keep the selected battle in view after opening it from a history list or a statistic.
+- Resume loading nearby pages when the user scrolls and stop showing a spinner if the game does not answer a navigation request.
+
 ## 0.9.32 - 2026-11-21
 
 - Use English filenames for the user guide, changelog, and browser preview in the Session Stats ZIP and its bundled source.

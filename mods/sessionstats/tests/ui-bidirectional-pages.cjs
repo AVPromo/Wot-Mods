@@ -1,6 +1,6 @@
 /* Mid-history entry supports earlier pages, stable prepends and a true Top. */
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
-const shipped=()=>fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8');
+const shipped=()=>fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8').replace(/\r\n/g,'\n');
 function sourceFunction(source,name){const start=source.indexOf('    function '+name+'('),line=source.indexOf('\n',start);
   const end=source.slice(start,line).endsWith('}')?line:source.indexOf('\n    }\n',start)+7;
   assert(start>=0 && end>start,'Exercise actual shipped '+name);return source.slice(start,end);}
@@ -47,7 +47,7 @@ function assertBidirectionalSource(source=shipped()){
     appendGroupBatch(count,page){page.cards=page.items.slice(0,count).map(()=>new Node('ss-group',20));state.groupCards=state.groupCards.concat(page.cards);},
     render(){context.renderGroups(scope);}};
   vm.createContext(context);
-  for(const name of ['feedCollectionIdentity','feedIdentity','feedContextIdentity','cancelUITimer','cancelPageJump','beginPageJump','retireFeed','captureFeedAnchor','finishFeedAnchor',
+  for(const name of ['feedCollectionIdentity','feedIdentity','feedContextIdentity','battleOwnsViewport','cancelUITimer','cancelPageJump','beginPageJump','retireFeed','captureFeedAnchor','finishFeedAnchor',
     'revealFeedTop','pageBoundary','showFeedPending','requestFeedPage','prepareFeed','updateFeedControls','renderGroups','loadNearEdges','onScrollIntent','changePage'])
     vm.runInContext(sourceFunction(source,name),context);
   const topStart=source.indexOf("    if (nodes['scroll-top']) { nodes['scroll-top'].onclick = function () {",source.indexOf('    function changePage('));
@@ -58,6 +58,12 @@ function assertBidirectionalSource(source=shipped()){
     if(request)scope.pagination.battles.request_id=request.id;context.renderGroups(scope);flush();};
   const start=()=>{context.retireFeed();groups.children.slice().forEach(child=>groups.removeChild(child));state.renderedFeed=null;state.groupCards=[];state.cardPages=[];
     state.scrollTarget=null;scroll.scrollTop=400;scope.data_revision++;reply(3);scroll.scrollTop=200;state.scrollTarget=null;};
+  start();context.loadNearEdges();const waiting=state.feed.pending,beforeFrame=commands.length;
+  assert(timers.has(waiting.timer),'The page spinner has a watchdog before the native frame callback runs');
+  const watchdog=timers.get(waiting.timer);timers.delete(waiting.timer);watchdog();
+  assert.strictEqual(state.feed.pending,null);assert.strictEqual(state.feed.error,2,'A missing frame ends loading and exposes Retry');
+  flush();assert.strictEqual(commands.length,beforeFrame,'A late frame does not send the expired native page request');
+
   start();const original=state.cardPages[0],position=original.section.getBoundingClientRect().top;
   context.loadNearEdges();flush();let request=state.feed.pending;
   assert.strictEqual(request.page,2,'The upper edge of page four requests page three');
@@ -88,7 +94,7 @@ function assertBidirectionalSource(source=shipped()){
   reply(2,retired);assert.strictEqual(state.cardPages[0].index,0);assert.strictEqual(scroll.scrollTop,0,'Late replies do not revive the retired destination');
   // The cancelled direct jump may cache page zero without joining a gap.
   start();nodes['scroll-top'].onclick();flush();const cancelled=state.feed.pending;
-  context.onScrollIntent({type:'wheel'});state.scrollTarget=null;scroll.scrollTop=370;
+  context.onScrollIntent({type:'wheel',deltaY:1,target:scroll});state.scrollTarget=null;scroll.scrollTop=370;
   const cancelledPosition=state.cardPages[0].section.getBoundingClientRect().top;reply(0,cancelled);
   assert.strictEqual(state.feed.start,3);assert.strictEqual(state.feed.last,3);
   assert.strictEqual(state.cardPages[0].section.getBoundingClientRect().top,cancelledPosition,'Newer scroll intent cancels a pending Top destination');

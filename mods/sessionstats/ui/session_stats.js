@@ -1755,7 +1755,7 @@
         var payload = state.payload, failed = !!state.actionError || !!(scope && scope.load_error) ||
             (state.scope !== 'instance' && !!(payload && payload.load_error));
         var busy = !!payload && !state.destroyed && !failed &&
-            (orderingUnavailable(scope) || !!state.orderIntent || !!(state.feed && state.feed.pending));
+            (orderingUnavailable(scope) || !!state.orderIntent || !!state.pendingBattle || !!(state.feed && state.feed.pending));
         // Keep one synchronous owner: errors, acknowledgements and teardown
         // clear the scrim without retaining another timer or layout callback.
         slot.style.visibility = busy ? 'visible' : 'hidden';
@@ -3266,7 +3266,12 @@
     document.addEventListener('keydown', targetTab, true);
     document.addEventListener('focusin', targetFocusIn);
     function cancelBattleNavigation() {
+        var pending = state.pendingBattle;
         state.pendingBattle = null; state.battleJump = null;
+        if (pending) {
+            cancelUITimer(pending.timer);
+            if (!state.destroyed) { renderFilterActivity(currentScope()); }
+        }
         var timer = state.battleJumpTimer; state.battleJumpTimer = null; cancelUITimer(timer);
         if (state.battleReturn && state.orderIntent && state.orderIntent.options === state.battleReturn.origin.order) { state.orderIntent = null; }
         state.battleReturn = null;
@@ -3279,11 +3284,20 @@
     }
     function selectMapBattle(id, context, source) {
         if (!sameContext(context)) { return; }
+        cancelBattleNavigation(); cancelPageJump();
+        state.actionError = null; state.scrollbarWork = null;
         clearReturnedSource();
         var request = 'battle-' + Date.now().toString(36) + '-' + (++state.navigationSequence);
-        state.pendingBattle = {id:String(id), request_id:request, context:context, origin:captureBattleOrigin(source)};
+        var pending = {id:String(id), request_id:request, context:context, origin:captureBattleOrigin(source), timer:null};
+        state.pendingBattle = pending;
+        pending.timer = window.setTimeout(function () {
+            if (state.destroyed || state.pendingBattle !== pending) { return; }
+            cancelBattleNavigation(); setActionError(t('page.error'));
+        }, 10000);
+        renderFilterActivity(currentScope());
         if (!invoke('battle_select', {account_key:context.account_key, scope:context.scope,
-                period_id:context.period_id, id:id, request_id:request})) { state.pendingBattle = null; }
+                period_id:context.period_id, id:id, request_id:request}) &&
+                state.pendingBattle === pending) { cancelBattleNavigation(); }
     }
     function consumeBattleFocus(scope) {
         var pending = state.pendingBattle, focus = scope.battle_focus;
@@ -3300,7 +3314,8 @@
         // Own the selection as soon as its native reply is accepted. Cards
         // paint it during construction, before any layout/focus retry can
         // stall or expire; only scrolling depends on measurable geometry.
-        state.highlightedBattle = {id:pending.id, context:pending.context, origin:pending.origin, until:Date.now() + 5000};
+        state.highlightedBattle = {id:pending.id, request_id:pending.request_id, context:pending.context, origin:pending.origin,
+            followViewport:true, until:Date.now() + 5000};
         var sequence = ++state.targetSequence;
         state.targetTimer = window.setTimeout(function () {
             if (state.destroyed || sequence !== state.targetSequence || !state.highlightedBattle) { return; }
@@ -3318,8 +3333,12 @@
     function retainBattleTargetAfterResize() {
         var target = state.highlightedBattle;
         if (state.destroyed || !target || state.group !== 'battles' || !sameContext(target.context)) { return; }
+        target.followViewport = true;
         var jump = state.battleJump;
         startBattleJump(target, !jump || jump.revealOnly);
+    }
+    function battleOwnsViewport() {
+        return state.group === 'battles' && state.highlightedBattle && state.highlightedBattle.followViewport;
     }
     function battleLayoutOffset(node, ancestor) {
         var offset = 0, count = 0;
@@ -3368,7 +3387,14 @@
                 nodes.groups.getAttribute('aria-busy') === 'true') { retryBattleJump(jump); return; }
         // Native rectangles and scrollTop can acknowledge a setter in either
         // order. Never mix samples from opposite sides of that handoff.
-        if (battleScrollPending(jump)) { retryBattleJump(jump); return; }
+        if (battleScrollPending(jump)) {
+            // A Gameface write can be dropped while the scroll range is growing.
+            if (Math.abs(nodes.scroll.scrollTop - jump.requestedOffset) > (state.nativeScale || 1)) {
+                state.scrollTarget = jump.requestedOffset;
+                nodes.scroll.scrollTop = jump.requestedOffset;
+            }
+            retryBattleJump(jump); return;
+        }
         jump.requestedOffset = null;
         var target = renderedBattleTarget(jump.id);
         var scroll = nodes.scroll, box = target && target.getBoundingClientRect(), container = scroll.getBoundingClientRect();
@@ -4269,7 +4295,7 @@
         if (feed.prependAnchor) { queueResize(); }
     }
     function requestFeedPage(feed, index, navigate) {
-        if (state.destroyed || state.feed !== feed || feed.pending || index < 0 || index >= feed.pages) { return; }
+        if (state.destroyed || state.pendingBattle || state.feed !== feed || feed.pending || index < 0 || index >= feed.pages) { return; }
         if (navigate) { cancelPageJump(); }
         if (Object.prototype.hasOwnProperty.call(feed.cache, index) && index >= feed.start - 1 && index <= feed.last + 1) {
             if (index < feed.start && !navigate) { captureFeedAnchor(feed); }
@@ -4280,8 +4306,6 @@
         }
         var request = 'page-' + Date.now().toString(36) + '-' + (++state.feedSequence);
         var pending = {page:index, id:request, navigate:!!navigate, timer:null};
-        feed.pending = pending; feed.error = null;
-        showFeedPending(feed); updateFeedControls();
         function fail() {
             if (state.destroyed || state.feed !== feed || feed.pending !== pending) { return; }
             feed.pending = null; feed.error = index; feed.errorNavigate = pending.navigate;
@@ -4289,12 +4313,18 @@
         }
         function send() {
             if (state.destroyed || state.feed !== feed || feed.pending !== pending || !sameContext(feed.context)) { return; }
-            pending.timer = window.setTimeout(fail, 10000);
+            if (state.pendingBattle) {
+                cancelUITimer(pending.timer); feed.pending = null;
+                showFeedPending(feed); updateFeedControls(); return;
+            }
             if (!invoke('page', {scope:feed.context.scope, group:feed.group, page:index, period_id:feed.context.period_id,
                     account_key:feed.context.account_key, request_id:request})) {
                 cancelUITimer(pending.timer); fail();
             }
         }
+        feed.pending = pending; feed.error = null;
+        pending.timer = window.setTimeout(fail, 10000);
+        showFeedPending(feed); updateFeedControls();
         // Never invoke a synchronous native model callback from inside render.
         if (typeof window.requestAnimationFrame === 'function') { window.requestAnimationFrame(send); }
         else { window.setTimeout(send, 0); }
@@ -4305,15 +4335,22 @@
                 meta.pages < 1 || meta.page < 0 || meta.page >= meta.pages || meta.total < 0) { retireFeed(); return null; }
         var key = feedIdentity(scope), collectionKey = feedCollectionIdentity(scope), revision = String(scope.data_revision || JSON.stringify(scope.summary));
         var feed = state.feed, old = state.renderedFeed;
-        if (!feed || feed.key !== key || feed.revision !== revision) {
+        var focus = scope.battle_focus, target = state.highlightedBattle, following = battleOwnsViewport();
+        var focusedPage = following && focus && focus.request_id === target.request_id &&
+            String(focus.id) === target.id ? meta.page : null;
+        // A superseded navigation response can arrive after the focus response.
+        // Keep the mounted selection even if that reply has a different revision.
+        if (following && feed && feed.key === key && (meta.request_id || focus) && focusedPage === null) { return feed; }
+        if (!feed || feed.key !== key || feed.revision !== revision || (focusedPage !== null && focusedPage !== feed.start)) {
             var ownedJump = state.pageJump && state.pageJump.feed === feed ? state.pageJump : null;
             var navigation = feed && feed.collectionKey === collectionKey && feed.pending && feed.pending.navigate ? feed.pending.page :
                 feed && feed.collectionKey === collectionKey ? ownedJump ? ownedJump.page : feed.navigationPage : null;
             var navigationDeadline = ownedJump ? ownedJump.deadline : feed && feed.navigationDeadline;
             retireFeed();
-            var start = state.feedForceStart !== null ? state.feedForceStart : feed && feed.collectionKey === collectionKey ? feed.start : meta.page;
+            var start = state.feedForceStart !== null ? state.feedForceStart :
+                focusedPage !== null ? focusedPage : feed && feed.collectionKey === collectionKey ? feed.start : meta.page;
             start = Math.max(0, Math.min(start, meta.pages - 1));
-            var count = !state.battleJump && old ? Math.max(1, old.last - old.start + 1) : 1;
+            var count = !state.battleJump && focusedPage === null && old ? Math.max(1, old.last - old.start + 1) : 1;
             var returning = state.battleReturn;
             if (returning && returning.phase === 'restore' && sameContext(returning.origin.context) &&
                     returning.origin.group === state.group && returning.origin.feed) {
@@ -4646,7 +4683,8 @@
         if (state.destroyed) { return; }
         updatePinnedFilters();
         var guard = state.resizeFeedGuard;
-        if (state.resize || (guard && guard.view === state.viewKey && guard.feed === state.feed)) { return; }
+        if (state.pendingBattle || battleOwnsViewport() || state.resize ||
+                (guard && guard.view === state.viewKey && guard.feed === state.feed)) { return; }
         if (state.renderedFeed && state.feed === state.renderedFeed) {
             var feed = state.feed;
             if (feed.pending || feed.error !== null || feed.topRequested || state.pageJump || state.battleJump) { return; }
@@ -4729,31 +4767,30 @@
     }
     function onScrollIntent(event) {
         if (state.openSelect && state.openSelect.menu.contains(event.target)) { return; }
+        var wheel = event.type === 'wheel';
+        if (wheel) {
+            if (event.defaultPrevented || event.shiftKey || (state.bound && event.cancelable === false) ||
+                    !hasNumber(event.deltaY) || Math.abs(event.deltaY) <= Math.abs(event.deltaX || 0)) { return; }
+        } else if (event.type === 'keydown') {
+            var key = event.key || event.keyCode, target = event.target;
+            if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey ||
+                    ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 38, 40, 33, 34, 36, 35, 32].indexOf(key) < 0) { return; }
+            while (target && target !== nodes.scroll) {
+                if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'SELECT') { return; }
+                target = target.parentNode;
+            }
+        } else if (event.type !== 'scrollbar' &&
+                (event.type !== 'mousedown' || event.button !== 0 || event.target !== nodes.scroll)) { return; }
         cancelBattleNavigation();
         cancelPageJump();
         if (state.feed) { state.feed.navigationPage = null; }
         if (state.feed) { state.feed.topRequested = false; state.feed.prependAnchor = null; }
         if (state.feed && state.feed.pending) { state.feed.pending.navigate = false; }
+        if (state.highlightedBattle) { state.highlightedBattle.followViewport = false; }
+        state.resizeFeedGuard = null;
         // Native wheel input consumes the pending logical offset itself before
         // cancelling restoration; its DOM getter can still expose an old frame.
-        if (event.type === 'wheel') {
-            if (!event.defaultPrevented && !event.shiftKey && hasNumber(event.deltaY) &&
-                    Math.abs(event.deltaY) > Math.abs(event.deltaX || 0)) { state.resizeFeedGuard = null; }
-            if (state.bound) { return; }
-        }
-        if (event.type === 'keydown') {
-            var key = event.key || event.keyCode;
-            if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 38, 40, 33, 34, 36, 35, 32].indexOf(key) < 0) { return; }
-        }
-        var target = event.target;
-        while (target && target !== nodes.scroll) {
-            if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'SELECT') { return; }
-            target = target.parentNode;
-        }
-        if (event.type === 'scrollbar' || (event.type === 'keydown' && !event.ctrlKey && !event.metaKey && !event.altKey) ||
-                (event.type === 'mousedown' && event.button === 0 && event.target === nodes.scroll)) {
-            state.resizeFeedGuard = null;
-        }
+        if (wheel && state.bound) { return; }
         // A wheel, scrollbar drag or scrolling key after rendering belongs to
         // the user; a queued layout must not undo that newer movement.
         state.scrollTarget = null;
@@ -4887,7 +4924,13 @@
                 append(notices, element('p', 'ss-data-notice', visibleWarnings[warningIndex]));
             }
         }
+        var watched = battleOwnsViewport() && state.highlightedBattle;
+        var previousTarget = watched && renderedBattleTarget(watched.id);
         renderGroups(scope);
+        if (watched && !state.battleJump) {
+            var renderedTarget = renderedBattleTarget(watched.id);
+            if (renderedTarget && renderedTarget !== previousTarget) { startBattleJump(watched, true); }
+        }
         var status = [];
         if (scope.pending > 0) { status.push(t('status.pending', [number(scope.pending)])); }
         if (visibleWarnings.length) { status.push(t('status.notes', [visibleWarnings.length])); }
