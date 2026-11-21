@@ -89,8 +89,11 @@ Gameface Player tests verify panel rendering and command handling in a simulated
 
 ## Building the mod package
 
-The existing `tools/build.py` also requires **CPython 2.7.18** to compile the installable package. Run the command from this directory and supply the path to that interpreter. The output goes to the mod's `dist/` directory. [Download CPython 2.7.18](https://www.python.org/downloads/release/python-2718/)
+The builder requires **CPython 2.7.18** to compile the mod. From this directory, generate the browser preview and build the source bundle with the path to that interpreter. The builder writes its output and checksums to the mod's `dist/` directory. The last command produces the same `Session-Stats-v*.zip` installer layout as GitHub Actions. [Download CPython 2.7.18](https://www.python.org/downloads/release/python-2718/)
 
 ```powershell
-python ../WotMods-pr17-next/mods/sessionstats/tools/build.py --python27 'C:/Python27/python.exe' --client-version 2.4.1.1
+$sessionStatsModule = '../../../mods/sessionstats'
+python "$sessionStatsModule/tools/make_preview.py"
+python "$sessionStatsModule/tools/build.py" --python27 'C:/Python27/python.exe' --client-version 2.4.1.1
+python ../../../scripts/release_installers.py package runs/installer --source "$sessionStatsModule/dist" --mod sessionstats
 ```

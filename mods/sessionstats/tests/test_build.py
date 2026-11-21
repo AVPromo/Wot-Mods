@@ -36,8 +36,8 @@ class BuildContracts(unittest.TestCase):
             if target_package in original:
                 self.assertIn(target_package, rendered)
             self.assertNotIn(b'mods/2.4.1.0/', rendered)
-        readme = self.build.render_guide('README_PL.txt', (self.build.ROOT/'README_PL.txt').read_bytes(), version, '2.5.0.0')
-        self.assertIn(('Version ' + version).encode('ascii'), readme)
+        guide = self.build.render_guide('USER_GUIDE.txt', (self.build.ROOT/'USER_GUIDE.txt').read_bytes(), version, '2.5.0.0')
+        self.assertIn(('Version ' + version).encode('ascii'), guide)
 
     def test_native_package_requires_its_offline_map_catalog_and_loader(self):
         import json
@@ -71,12 +71,12 @@ class BuildContracts(unittest.TestCase):
         self.assertRaises(AssertionError, self.build.check_package, package)
 
     def test_historical_changelog_is_not_rewritten(self):
-        content = (self.build.ROOT/'ZMIANY.txt').read_bytes()
-        self.assertEqual(self.build.render_guide('ZMIANY.txt', content, '0.2.8', '2.5.0.0'), content)
+        content = (self.build.ROOT/'CHANGELOG.md').read_bytes()
+        self.assertEqual(self.build.render_guide('CHANGELOG.md', content, '0.2.8', '2.5.0.0'), content)
 
     def test_every_release_field_advances_again_from_a_stamped_source_bundle(self):
         fields = {
-            'README_PL.txt': ('Version {version} ',),
+            'USER_GUIDE.txt': ('Version {version} ',),
             'README.md': ('Version {version} source:',),
             'CONTRACT.txt': ('IMPLEMENTATION CONTRACT v{version} ', " version: '{version}',"),
             'docs/APPEARANCE_CONFIG.md': ('# Appearance and scrolling configuration — {version}\n',),
@@ -101,7 +101,7 @@ class BuildContracts(unittest.TestCase):
     def test_active_guides_keep_explicit_historical_version_evidence(self):
         historical = {
             'README.md': b'The user tested 0.2.4',
-            'README_PL.txt': b'Since 0.2.7,',
+            'USER_GUIDE.txt': b'Since 0.2.7,',
             'CONTRACT.txt': b'Historical compatibility: upgrading from 0.2.6 to 0.2.7',
         }
         for name, marker in historical.items():
@@ -123,7 +123,7 @@ class BuildContracts(unittest.TestCase):
                 content = self.build.render_guide(name, content, self.build.VERSION, client)
                 for other in {'2.4.1.0', '2.5.0.0', '2.6.0.0'} - {client}:
                     self.assertNotIn(other.encode('ascii'), content, name)
-                if name == 'README_PL.txt':
+                if name == 'USER_GUIDE.txt':
                     for marker in ('target: Wargaming EU ', 'For client ',
                                    'active mods directory is not ', '--client-version ', 'mods/'):
                         self.assertIn((marker+client).encode('ascii'), content)
@@ -135,7 +135,7 @@ class BuildContracts(unittest.TestCase):
     def test_client_restamping_preserves_historical_evidence_and_unrelated_versions(self):
         content = b'Historical WoT 2.4.1 source; Python 2.7.18; OpenWG 1.2.2.\n'
         self.assertEqual(self.build.render_guide('README.md', content, '0.2.8', '2.6.0.0'), content)
-        for name in ('ZMIANY.txt', 'docs/UI_0.2.2_SOURCE_EVIDENCE.md'):
+        for name in ('CHANGELOG.md', 'docs/UI_0.2.2_SOURCE_EVIDENCE.md'):
             content = (self.build.ROOT/name).read_bytes()
             self.assertEqual(self.build.render_guide(name, content, '0.2.8', '2.6.0.0'), content)
 

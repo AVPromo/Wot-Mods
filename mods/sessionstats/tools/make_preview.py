@@ -122,7 +122,7 @@ html { overflow:auto; }
 .demo-toolbar span{width:100%;margin-bottom:5px;} }
 '''
     html=html.replace('</head>', '<style>'+preview_css+'</style>\n</head>')
-    path = output/'PODGLAD.html'
+    path = output/'PREVIEW.html'
     path.write_text(html,encoding='utf-8')
     # Keep the independent icon preview on the actual shipped stylesheet.
     footer_path = output/'footer-icon.html'

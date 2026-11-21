@@ -49,7 +49,7 @@ module.exports=async({browser,nativeHost,check})=>{
     }
   }finally{await page.close();}
   const preview=await browser.newPage();try{
-    await preview.goto('file://'+path.join(root,'preview/PODGLAD.html'));await preview.locator('#ss-group-maps').click();
+    await preview.goto('file://'+path.join(root,'preview/PREVIEW.html'));await preview.locator('#ss-group-maps').click();
     for(const language of ['pl','en']){
       await preview.locator('#ss-language .ss-select-trigger').click();await preview.locator('#ss-language [data-value="'+language+'"]').click();await frames(preview);
       const expected=await preview.evaluate(language=>GRZ_DEMO_LOCALIZED[language].normal.scopes.launch.maps.map(row=>row.name).sort(),language),

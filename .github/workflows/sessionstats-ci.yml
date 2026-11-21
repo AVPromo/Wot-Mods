@@ -105,7 +105,16 @@ jobs:
           from scripts.release_installers import verify
           installers = list(Path('pr-artifact-sessionstats').glob('Session-Stats-v*.zip'))
           assert len(installers) == 1
-          assert verify(installers[0])[0] == 'sessionstats'
+          kind, _, _, files, _ = verify(installers[0])
+          assert kind == 'sessionstats'
+          docs = 'docs/sessionstats/'
+          required = (
+              'INSTALL.txt', 'USER_GUIDE.txt', 'CHANGELOG.md', 'PREVIEW.html',
+              'source/USER_GUIDE.txt', 'source/CHANGELOG.md', 'source/preview/PREVIEW.html',
+          )
+          assert all(files.get(docs + name) for name in required), 'Missing Session Stats documentation'
+          legacy = {'README_PL.txt', 'ZMIANY.txt', 'PODGLAD.html'}
+          assert not any(Path(name).name in legacy for name in files), 'Legacy documentation filename in ZIP'
           PY
       - name: Upload installable Session Stats ZIP without repackaging
         if: steps.source.outputs.enabled == 'true'
