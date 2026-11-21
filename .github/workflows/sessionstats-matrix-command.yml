@@ -124,7 +124,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sessionstats-matrix-html
+          name: sessionstats-matrix-html-attempt-${{ github.run_attempt }}
           path: |
             sessionstats-matrix-html/index.html
             sessionstats-matrix-html/catalog.js
@@ -133,7 +133,6 @@ jobs:
             sessionstats-matrix-html/**/*.jpeg
           if-no-files-found: error
           compression-level: 0
-          overwrite: true
           retention-days: 14
       - name: Link the HTML matrix from the workflow summary
         if: ${{ !cancelled() && steps.matrix.outcome == 'success' }}
@@ -211,12 +210,13 @@ jobs:
           def positive_id(value):
               return re.fullmatch(r"[1-9][0-9]*", value or "") is not None
 
-          def metadata(path, key):
+          def metadata(path):
               try:
-                  return json.loads(api(path))[key]
-              except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
-                  print(f"Could not resolve matrix {key} metadata.")
-                  return []
+                  result = json.loads(api(path))
+                  return result if isinstance(result, dict) else {}
+              except (subprocess.CalledProcessError, ValueError):
+                  print(f"Could not resolve matrix metadata from {path}.")
+                  return {}
 
           env = os.environ
           repo = env["GITHUB_REPOSITORY"]
@@ -231,15 +231,17 @@ jobs:
           run_url = f"{repository_url}/actions/runs/{run}"
           run_api = f"repos/{repo}/actions/runs/{run}"
           links = [f"[Actions run]({run_url})"]
-          jobs = metadata(f"{run_api}/attempts/{attempt}/jobs?per_page=100", "jobs")
+          jobs = metadata(f"{run_api}/attempts/{attempt}/jobs?per_page=100").get("jobs", [])
           job = next((str(row["id"]) for row in jobs if row["name"] == "Downloadable HTML matrix"), "")
           if positive_id(job):
               links.insert(0, f"[Report job]({run_url}/job/{job})")
           artifact = env.get("ARTIFACT_ID")
           if positive_id(artifact):
-              artifacts = metadata(f"{run_api}/artifacts?name=sessionstats-matrix-html", "artifacts")
-              if any(str(row["id"]) == artifact and row["name"] == "sessionstats-matrix-html"
-                     and row["expired"] is False for row in artifacts):
+              report = metadata(f"repos/{repo}/actions/artifacts/{artifact}")
+              if (str(report.get("id")) == artifact
+                      and str((report.get("workflow_run") or {}).get("id")) == run
+                      and re.fullmatch(r"sessionstats-matrix-html-attempt-[1-9][0-9]*", str(report.get("name")))
+                      and report.get("expired") is False):
                   links.insert(0, f"[Download HTML report]({run_url}/artifacts/{artifact})")
 
           verdict = {"success": "passed", "failure": "failed",
