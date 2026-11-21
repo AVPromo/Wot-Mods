@@ -96,8 +96,8 @@ def _journal_header(handle):
 class _WriteLock(object):
     """An OS-released lock: process crashes never leave a permanent lock."""
 
-    def __init__(self, directory):
-        self.path = os.path.join(directory, '.write.lock')
+    def __init__(self, directory, filename='.write.lock'):
+        self.path = os.path.join(directory, filename)
         self.handle = None
         self.platform = None
         self.fallback = False

@@ -140,6 +140,8 @@ def main():
     subprocess.check_call([sys.executable, str(ROOT/'tools/sync_languages.py'), '--check'])
     if json.loads(config_path.read_text(encoding='utf-8')) != default_config():
         raise RuntimeError('Shipped appearance configuration must match built-in defaults')
+    from make_preview import preview_files
+    preview, _ = preview_files(version_tag)
     with tempfile.TemporaryDirectory(prefix='grz-wotmod-') as temporary:
         temporary = Path(temporary)
         compile_script = temporary/'compile27.py'
@@ -224,13 +226,12 @@ def main():
             put(z, 'source/'+name, render_guide(name, content, version_tag, args.client_version))
         # Dependency remains available to a source rebuild without network.
         put(z, 'source/third_party/openwg/'+dependency.name, dependency.read_bytes())
-        for name in ('controller.js', 'footer-icon.html', 'demo_snapshot.json', PREVIEW_HTML):
-            path = ROOT/'preview'/name
-            if path.is_file():
-                content = path.read_bytes()
-                put(z, 'source/preview/'+name, content)
-                if name == PREVIEW_HTML:
-                    put(z, name, content)
+        put(z, 'source/preview/controller.js', (ROOT/'preview/controller.js').read_bytes())
+        for name, contents in sorted(preview.items()):
+            content = contents.encode('utf-8')
+            put(z, 'source/preview/'+name, content)
+            if name == PREVIEW_HTML:
+                put(z, name, content)
     # The outer manifest covers every downloadable asset, including the bundle.
     outputs = [package, bundle, dist/dependency.name, dist/CONFIG_FILENAME, dist/'BUILD.json']
     (dist/'SHA256SUMS.txt').write_text(''.join(digest(p)+'  '+p.name+'\n' for p in outputs), encoding='ascii')

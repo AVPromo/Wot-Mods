@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
+import errno
 import os
 import shutil
 import tempfile
@@ -89,6 +90,55 @@ class CombatIntakeTests(unittest.TestCase):
         self.assertEqual(self.intake.pending('EU:100')[0][1], 'result')
         self.assertTrue(self.intake.failed)
         self.assertTrue(os.path.isfile(path))
+
+    def test_retryable_read_does_not_advance_ledger_past_missing_receipt(self):
+        from grz_session_stats import combat_intake
+        from grz_session_stats.core import StatsService
+        from grz_session_stats.runtime import Runtime
+        from test_core import Clock, EXPECTED, result
+
+        account = 'EU:100'
+        clock = Clock(1000)
+        service = StatsService(self.directory, account, 'synthetic-current', EXPECTED, now=clock)
+        runtime = Runtime(data_dir=self.directory, now=clock)
+
+        def capture(writer, identifier, timestamp):
+            writer.submit(account, 'result', {
+                'at': timestamp + 1, 'launch_id': 'a' * 32, 'installation': None, 'observed': True,
+                'record': result(identifier, timestamp),
+            })
+
+        capture(self.intake, 'synthetic-first', 1010)
+        capture(self.intake, 'synthetic-second', 1020)
+        self.intake.close(wait=True)
+        first, second = self.intake.pending(account, limit=2)
+        other = CombatIntake(self.directory)
+        capture(other, 'synthetic-independent', 1030)
+        other.close(wait=True)
+
+        def temporarily_locked(path, *args, **kwargs):
+            if os.path.basename(path) == first[0].filename:
+                raise IOError(errno.EACCES, 'Synthetic temporary file lock')
+            return open(path, *args, **kwargs)
+
+        combat_intake.open = temporarily_locked
+        try:
+            runtime._drain_account_captures(self.intake, account, service)
+        finally:
+            del combat_intake.open
+
+        self.assertFalse(service.has_combat_receipt(self.intake.identity(first[0])))
+        self.assertFalse(service.has_combat_receipt(self.intake.identity(second[0])))
+        self.assertEqual(set(service._state['battles']), {'synthetic-independent'})
+        runtime._drain_installation_captures(self.intake, account, service)
+        self.assertEqual(self.intake.pending(account, limit=2), [first, second])
+
+        runtime._drain_account_captures(self.intake, account, service)
+        runtime._drain_installation_captures(self.intake, account, service)
+        runtime._drain_installation_captures(self.intake, account, service)
+        self.assertEqual(set(service._state['battles']),
+                         {'synthetic-first', 'synthetic-second', 'synthetic-independent'})
+        self.assertEqual(self.intake.pending(account), [])
 
     def test_receipt_watermarks_are_ordered_and_scoped_to_producer_and_account(self):
         self.intake.submit('EU:100', 'begin', {'arena_id': '42'})

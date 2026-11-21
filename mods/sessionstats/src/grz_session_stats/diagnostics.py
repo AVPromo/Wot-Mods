@@ -111,12 +111,13 @@ class _Lock(object):
 
 
 class _ModLogHandler(RotatingFileHandler):
-    def __init__(self, path, lock_module=None, windows=False):
+    def __init__(self, path, lock_module=None, windows=False, defer=None):
         super(_ModLogHandler, self).__init__(path, maxBytes=MAX_LOG_BYTES,
                                             backupCount=BACKUP_COUNT,
                                             encoding='utf-8', delay=True)
         self.lock_module = lock_module
         self.windows = windows
+        self.defer = defer
         self.queue = deque()
         self.error = None
         self.dropped = 0
@@ -159,6 +160,8 @@ class _ModLogHandler(RotatingFileHandler):
             return
         self.acquire()
         try:
+            if self.defer is not None and self.defer():
+                return
             if self.lock_module is None:
                 self._write_pending()
             else:
@@ -234,11 +237,12 @@ class LogState(object):
             _previous_level = None
 
 
-def start_logging(data_dir):
+def start_logging(data_dir, defer=None):
     """Return an idempotent local log state; failures never stop statistics.
 
     flush() is cheap when idle and should also be called by the existing
     runtime tick, so a single health warning queued during contention is saved.
+    The optional defer predicate keeps formatted records buffered until it clears.
     Only this mod's logger/handler is configured; root handlers and propagation
     are untouched. A missing OS locking extension uses a process-private log.
     """
@@ -268,7 +272,7 @@ def start_logging(data_dir):
         except ImportError:
             lock_module = None
             state.path = os.path.join(directory, 'session-stats-%d.log' % os.getpid())
-        state._handler = _ModLogHandler(state.path, lock_module, windows)
+        state._handler = _ModLogHandler(state.path, lock_module, windows, defer)
         state._handler.flush()  # Probe the destination without exposing data.
         if state._handler.error:
             state._error = state._handler.error

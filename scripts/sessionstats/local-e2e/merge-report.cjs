@@ -24,35 +24,55 @@ async function transfer(directory,out,relative) {
     const {constants}=require('node:fs');
     await fs.copyFile(source,target,constants.COPYFILE_EXCL);
   }
+  return target;
 }
 
 async function merge({out,input,expected}) {
   const files=[];
   const seen=new Set();
-  let metadata;
+  let metadata, invalidManifest=false;
   for(const sourcePath of input) {
-    const directory=await fs.realpath(sourcePath);
-    const state=JSON.parse(await fs.readFile(path.join(directory,'run.json'),'utf8'));
-    assert(state.engine==='chromium'&&state.fixture==='synthetic'&&state.assets==='test-art',
+    let directory, state;
+    try {
+      directory=await fs.realpath(sourcePath);
+      state=JSON.parse(await fs.readFile(path.join(directory,'run.json'),'utf8'));
+    } catch {
+      invalidManifest=true;
+      console.error('A shard manifest could not be read');
+      continue;
+    }
+    // A damaged manifest never authorizes reading or copying that shard's
+    // data. A manifest declaring private inputs rejects the whole upload.
+    const required={engine:'chromium',fixture:'synthetic',assets:'test-art'};
+    assert(!state||!Object.keys(required).some(key=>typeof state[key]==='string'&&state[key]&&state[key]!==required[key]),
       'Only synthetic Chromium shards are accepted in an uploadable report');
-    const shard=/^(\d+)\/(\d+)$/.exec(state.shard||'');
-    assert(shard&&Number(shard[1])>0&&Number(shard[1])<=expected&&Number(shard[2])===expected,
-      'Unexpected shard number');
-    const number=Number(shard[1]);
-    assert(!seen.has(number),'Duplicate shard number');
-    seen.add(number);
-    for(const key of ['planned',...resultCounters]) {
-      assert(Number.isSafeInteger(state[key])&&state[key]>=0,'Invalid shard counters');
+    const shard=state&&/^(\d+)\/(\d+)$/.exec(state.shard||'');
+    const number=shard ? Number(shard[1]) : 0;
+    if(!shard||number<1||number>expected||Number(shard[2])!==expected||seen.has(number)||
+        !Object.keys(required).every(key=>state[key]===required[key])||
+        typeof state.version!=='string'||state.version.length>64||
+        !/^\d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/i.test(state.version)||
+        !['build','smoke','full'].includes(state.suite)||!['all','final','failures'].includes(state.capture)||
+        !['planned',...resultCounters].every(key=>Number.isSafeInteger(state[key])&&state[key]>=0)) {
+      invalidManifest=true;
+      console.error('A shard manifest has invalid or duplicate metadata');
+      continue;
     }
     const identity=JSON.stringify([state.suite,state.version,state.engine,state.capture]);
     if(metadata===undefined) metadata=identity;
-    assert.equal(metadata,identity,'Cannot combine different suites or versions');
+    if(metadata!==identity) {
+      invalidManifest=true;
+      console.error('A shard manifest has a different suite or version');
+      continue;
+    }
+    seen.add(number);
     files.push({directory,state,number});
   }
   const first=files[0]?.state;
   const summary={version:first?.version||'unknown',engine:'chromium',renderer:first?.renderer||null,
     suite:first?.suite||'full',fixture:'synthetic',assets:'test-art',capture:first?.capture||null,
-    expectedShards:expected,shards:files.length,finished:files.length===expected&&files.every(({state})=>state.finished===true)};
+    expectedShards:expected,shards:files.length,omittedRows:0,
+    finished:!invalidManifest&&files.length===expected&&files.every(({state})=>state.finished===true)};
   summary.planned=files.reduce((sum,file)=>sum+file.state.planned,0);
   for(const key of resultCounters) summary[key]=0;
   await fs.mkdir(path.dirname(out),{recursive:true});
@@ -65,24 +85,38 @@ async function merge({out,input,expected}) {
       const lines=createInterface({input:createReadStream(path.join(directory,'results.ndjson'),{encoding:'utf8'}),crlfDelay:Infinity});
       try {
         for await(const line of lines) {
-          const item=JSON.parse(line);
-          assert(caseKey.test(item.key)&&!keys.has(item.key),'Invalid or duplicate result key');
-          keys.add(item.key);
-          const row=publicCase(item);
-          assert(row,'Invalid case in shard');
-          for(const frame of row.frames) {
-            const image=row.key+'/'+frame.file;
-            await transfer(directory,out,image);
-            if(frame.reference) await transfer(directory,out,'baseline/'+image);
-            if(frame.diff) await transfer(directory,out,'differences/'+image);
+          if(!line.trim()) continue;
+          let item, row;
+          const copied=[];
+          try {
+            item=JSON.parse(line);
+            row=publicCase(item);
+            assert(row&&caseKey.test(row.key)&&!keys.has(row.key),'Invalid or duplicate case in shard');
+            for(const frame of row.frames) {
+              const image=row.key+'/'+frame.file;
+              copied.push(await transfer(directory,out,image));
+              if(frame.reference) copied.push(await transfer(directory,out,'baseline/'+image));
+              if(frame.diff) copied.push(await transfer(directory,out,'differences/'+image));
+            }
+          } catch {
+            summary.finished=false;
+            summary.omittedRows++;
+            // A rejected row owns only the files it successfully copied.
+            // Release them so a later valid row can recover the same case.
+            await Promise.all(copied.map(target=>fs.rm(target,{force:true})));
+            continue;
           }
           await ledger.appendFile(JSON.stringify(item)+'\n');
+          keys.add(row.key);
           const interaction=row.group==='interactions';
           observed[interaction?'interactions':'completed']++;
           if(row.issues.includes('fail')) observed[interaction?'interactionErrors':'failed']++;
           observed.visualFailures+=row.frames.filter(frame=>frame.changed).length;
           observed.missingBaselines+=row.frames.filter(frame=>frame.missing).length;
         }
+      } catch {
+        summary.finished=false;
+        console.error(`Shard ${number} has an unreadable result ledger`);
       } finally {
         for(const key of resultCounters) summary[key]+=observed[key];
       }

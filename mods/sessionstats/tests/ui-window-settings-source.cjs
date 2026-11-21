@@ -1,6 +1,6 @@
 /* Reentrant cleanup must not carry a previous account's native window size. */
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
-const shipped=()=>fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8');
+const shipped=()=>fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8').replace(/\r\n/g,'\n');
 function sourceFunction(source,name) {
   const start=source.indexOf('    function '+name+'('),line=source.indexOf('\n',start);
   const end=source.slice(start,line).endsWith('}') ? line : source.indexOf('\n    }\n',start)+7;
@@ -27,7 +27,7 @@ function assertAccountWindowSource(source=shipped()) {
   vm.createContext(context);
   const names=['unwrap','windowDefaults','copyWindowSettings','mergeWindowSettings','showWindowSettings','resetWindowSettings',
     'applyWindowSettings','clearBattleTarget','windowSizeBounds','resizePanelDimensions','queueResize',
-    'scopeName','currentScope','consumeBattleReturn','update'];
+    'scopeName','currentScope','consumeBattleReturn','clearOrderIntent','update'];
   vm.runInContext(names.map(name=>sourceFunction(source,name)).join('\n'),context);
   const consume=context.consumeBattleReturn;let returnChecks=0;
   context.consumeBattleReturn=function(scope){

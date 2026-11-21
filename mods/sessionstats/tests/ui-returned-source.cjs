@@ -2,7 +2,7 @@
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
 function extract(source,name){const start=source.indexOf('    function '+name+'('),line=source.indexOf('\n',start),end=source.slice(start,line).endsWith('}')?line:source.indexOf('\n    }\n',start)+7;assert(start>=0&&end>start,name);return source.slice(start,end);}
 module.exports=function(){
-  const source=fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8');
+  const source=fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8').replace(/\r\n/g,'\n');
   let now=1000,sequence=0,lookup=0,scope={data_revision:'one',summary:{}},order={metric:'off',statistic:'avg',direction:'desc',chronology:'newest'};
   let current={account_key:'synthetic-return',scope:'timeline',period_id:'synthetic-range'},replacement=null;
   const timers=new Map(),state={group:'vehicles',returnedSource:null,returnedSourceTimer:null,destroyed:false},groups={contains:node=>node.mounted},summary={contains:()=>false};

@@ -69,6 +69,9 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_hangar_release_installers.py' -v
           python3 -m unittest discover -s tests -p 'test_pr_ci_scoping.py' -v
           python3 -m unittest discover -s tests -p 'test_ci_optimizations.py' -v
+      - name: Test Chromium report assembly
+        if: steps.source.outputs.enabled == 'true'
+        run: node --test scripts/sessionstats/local-e2e/merge-report.test.cjs scripts/sessionstats/local-e2e/report.test.cjs
       - name: Restore or compile verified CPython 2.7.18
         if: steps.source.outputs.enabled == 'true'
         uses: ./.github/actions/python27
@@ -101,20 +104,24 @@ jobs:
           python3 scripts/release_installers.py package pr-artifact-sessionstats \
             --source mods/sessionstats/dist --mod sessionstats
           python3 - <<'PY'
+          import json
           from pathlib import Path
           from scripts.release_installers import verify
           installers = list(Path('pr-artifact-sessionstats').glob('Session-Stats-v*.zip'))
           assert len(installers) == 1
-          kind, _, _, files, _ = verify(installers[0])
+          kind, version, _, files, _ = verify(installers[0])
           assert kind == 'sessionstats'
           docs = 'docs/sessionstats/'
           required = (
               'INSTALL.txt', 'USER_GUIDE.txt', 'CHANGELOG.md', 'PREVIEW.html',
               'source/USER_GUIDE.txt', 'source/CHANGELOG.md', 'source/preview/PREVIEW.html',
+              'source/preview/demo_snapshot.json',
           )
           assert all(files.get(docs + name) for name in required), 'Missing Session Stats documentation'
           legacy = {'README_PL.txt', 'ZMIANY.txt', 'PODGLAD.html'}
           assert not any(Path(name).name in legacy for name in files), 'Legacy documentation filename in ZIP'
+          snapshots = json.loads(files[docs + 'source/preview/demo_snapshot.json'])
+          assert {snapshot['version'] for snapshot in snapshots.values()} == {version}, 'Preview version differs from the installer'
           PY
       - name: Upload installable Session Stats ZIP without repackaging
         if: steps.source.outputs.enabled == 'true'

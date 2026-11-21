@@ -41,7 +41,8 @@ with tempfile.TemporaryDirectory(prefix='grz-return-navigation-') as directory:
                 assert service.set_order('timeline', 'maps', dict(DEFAULT_ORDER, metric='xp_base', statistic='max', direction='asc', chronology='oldest'), period)
                 assert service.set_page('timeline', 'maps', 0, period)
             elif action == 'revise':
-                row = copy.deepcopy(service._state['battles']['return-row-060'])
+                arena_id = 'return-row-{0:03d}'.format(command.get('index', 60))
+                row = copy.deepcopy(service._state['battles'][arena_id])
                 row.update(damage=row.get('damage', 1000) + 1, reconcile=True)
                 assert service.record_result(row)
             elif action == 'revise_summary':
@@ -88,7 +89,7 @@ module.exports=async({browser,nativeHost,check})=>{
       model.onAction=function(command){previous.call(this,command);if(!['battle_select','page','sort','vehicle_battles'].includes(command.action)||window.__returnBridgeFrozen)return;
         __returnBridgePending++;
         __returnNativeCommand(command).then(payload=>{
-          if(window.__returnHoldPrefix&&command.action==='page'&&command.group==='maps'&&command.page==='0'){window.__returnHeldPrefix={command,payload};return;}
+          if(window.__returnHoldRefresh&&command.action==='page'&&command.group==='maps'&&command.page==='0'){window.__returnHeldRefresh={command,payload};return;}
           const previousPayload=JSON.parse(model.payload);payload.viewport=previousPayload.viewport;payload.window_size=window.__returnWindowSize||[900,1050];
           if(window.__returnWindowSize){payload.appearance=payload.appearance||{};payload.appearance.window_settings={background_transparency:0,maximized:false,restored_width:__returnWindowSize[0],restored_height:__returnWindowSize[1]};}
           model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
@@ -119,25 +120,25 @@ module.exports=async({browser,nativeHost,check})=>{
     await configure('maps');
     await page.evaluate(()=>{document.getElementById('ss-scroll').scrollTop=40;});await frames(page,12);
     const stagedBefore=await geometry(sourceCard);
-    await page.evaluate(()=>{window.__returnHoldPrefix=true;window.__returnHeldPrefix=null;window.__returnStagedCard=document.querySelector('#ss-groups [data-group-id="return-map-060"]');});
+    await page.evaluate(()=>{window.__returnHoldRefresh=true;window.__returnHeldRefresh=null;window.__returnStagedCard=document.querySelector('#ss-groups [data-group-id="return-map-020"]');});
     // Select the incoming native page without replacing the existing browser
     // window; any earlier prefetch is free to have changed the server scalar.
     const incomingPage=await driver.request({action:'page',account_key:'SYNTHETIC:return-navigation',scope:'timeline',group:'maps',period_id:'timeline',page:'1',request_id:'staging-incoming-page'});
     assert(incomingPage.accepted,'Synthetic incoming native page is accepted');
-    const stagedRevision=await driver.request({action:'revise'}),stagedScope=stagedRevision.payload.scopes.timeline;
-    const stagedRating=stagedScope.maps.find(row=>row.id==='return-map-060').stats.wn8;
+    const stagedRevision=await driver.request({action:'revise',index:20}),stagedScope=stagedRevision.payload.scopes.timeline;
     await publish(stagedRevision.payload);
-    await page.waitForFunction(()=>!!__returnHeldPrefix&&document.getElementById('ss-groups').getAttribute('aria-busy')==='true',null,{timeout:5000});
-    const stagedFixture={pages:stagedBefore.pages,incoming:stagedScope.pagination.maps.page,revisionChanged:stagedScope.data_revision!==stagedBefore.payload.data_revision,same:await page.evaluate(()=>!!__returnStagedCard&&document.querySelector('#ss-groups [data-group-id="return-map-060"]')===__returnStagedCard)};
-    check('A fresh revision stages prefix loading while keeping the old two-page source window visible '+JSON.stringify(stagedFixture),stagedFixture.pages.join(',')==='0,1'&&stagedFixture.incoming===1&&stagedFixture.revisionChanged&&stagedFixture.same);
+    await page.waitForFunction(()=>!!__returnHeldRefresh&&document.getElementById('ss-groups').getAttribute('aria-busy')==='true',null,{timeout:5000});
+    const stagedRating=await page.evaluate(()=>__returnHeldRefresh.payload.scopes.timeline.maps.find(row=>row.id==='return-map-020').stats.wn8);
+    const stagedFixture={pages:stagedBefore.pages,incoming:stagedScope.pagination.maps.page,revisionChanged:stagedScope.data_revision!==stagedBefore.payload.data_revision,same:await page.evaluate(()=>!!__returnStagedCard&&document.querySelector('#ss-groups [data-group-id="return-map-020"]')===__returnStagedCard)};
+    check('A fresh revision requests the visible page while keeping the old two-page source window visible '+JSON.stringify(stagedFixture),stagedFixture.pages.join(',')==='0,1'&&stagedFixture.incoming===1&&stagedFixture.revisionChanged&&stagedFixture.same);
     await page.locator(summarySource).click();await opened();
-    await page.evaluate(()=>{window.__returnHoldPrefix=false;});
+    await page.evaluate(()=>{window.__returnHoldRefresh=false;});
     await page.locator('.ss-battle-return').click();await ready('maps');
     await page.waitForFunction(top=>Math.abs(document.getElementById('ss-scroll').scrollTop-top)<=3,stagedBefore.scroll,{timeout:5000});
     const stagedAfter=await geometry(sourceCard);
-    check('Back from a staged source restores its complete rendered page window rather than only the incoming page',stagedAfter.pages.join(',')===stagedBefore.pages.join(',')&&stagedAfter.visiblePage===stagedBefore.visiblePage&&Math.abs(stagedAfter.scroll-stagedBefore.scroll)<=3);
+    check('Back from a staged source restores the visible page without replaying the previous window',stagedAfter.pages.join(',')===String(stagedBefore.visiblePage)&&stagedAfter.visiblePage===stagedBefore.visiblePage&&Math.abs(stagedAfter.scroll-stagedBefore.scroll)<=3);
     check('Back from a staged revision refetches current values instead of reviving the old rendered cache',
-      stagedAfter.payload.data_revision===stagedScope.data_revision&&Number((await page.locator('#ss-groups [data-group-id="return-map-060"] .ss-group-wn8-kpi .ss-kpi-value').textContent()).replace(/\s/g,''))===Math.round(stagedRating));
+      stagedAfter.payload.data_revision===stagedScope.data_revision&&Number((await page.locator('#ss-groups [data-group-id="return-map-020"] .ss-group-wn8-kpi .ss-kpi-value').textContent()).replace(/\s/g,''))===Math.round(stagedRating));
     check('Back from a staged summary source restores that exact action focus',await page.locator(summarySource).evaluate(node=>document.activeElement===node));
     await sourceMarker(summarySource,'staged summary');
     await configure('maps');
@@ -168,7 +169,8 @@ module.exports=async({browser,nativeHost,check})=>{
       await ready('maps');
       try{await page.waitForFunction(({identifier,offset})=>{const card=[...document.querySelectorAll('#ss-groups .ss-group')].find(node=>node.getAttribute('data-group-id')===identifier),scroll=document.getElementById('ss-scroll');return card&&Math.abs(card.getBoundingClientRect().top-scroll.getBoundingClientRect().top-offset)<=3;},{identifier:sourceCard,offset:before.offset},{timeout:5000});}catch(error){throw Error('Source anchor did not return: '+JSON.stringify({scenario:scenario.name,before,after:await geometry(sourceCard),bridge:await page.evaluate(()=>({errors:__returnBridgeErrors,commands:__grzCommands.filter(command=>['page','sort','battle_select'].includes(command.action)).slice(-8),state:GRZSessionStats.getState()}))}));}
       const after=await geometry(sourceCard);
-      check('Back restores the exact Timeline map order, native page and loaded page window '+scenario.name,after.payload.period_id===before.payload.period_id&&after.payload.from_point===before.payload.from_point&&after.payload.to_point===before.payload.to_point&&JSON.stringify(after.payload.ordering.maps)===JSON.stringify(before.payload.ordering.maps)&&after.payload.pagination.maps.page===before.payload.pagination.maps.page&&after.pages.join(',')===before.pages.join(','));
+      const expectedPages=scenario.revise?String(before.visiblePage):before.pages.join(',');
+      check('Back restores the exact Timeline map order and source page '+scenario.name,after.payload.period_id===before.payload.period_id&&after.payload.from_point===before.payload.from_point&&after.payload.to_point===before.payload.to_point&&JSON.stringify(after.payload.ordering.maps)===JSON.stringify(before.payload.ordering.maps)&&after.payload.pagination.maps.page===before.payload.pagination.maps.page&&after.pages.join(',')===expectedPages);
       check('Back restores the source card anchor instead of resetting the viewport '+scenario.name,before.scroll>100&&Math.abs(after.offset-before.offset)<=3);
       check('Back restores focus to the exact source action '+scenario.name,await page.locator(mapSource).evaluate(node=>document.activeElement===node));
       await sourceMarker(mapSource,scenario.name);

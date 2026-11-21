@@ -407,12 +407,15 @@ class Runtime(object):
             return
         try:
             from .diagnostics import start_logging
-            self._log_handle = start_logging(self.data_dir)
+            self._log_handle = start_logging(self.data_dir, defer=self._defer_log_flush)
             self.log_path = self._log_handle.path
             self._log_error = self._log_handle.error
         except Exception:
             self._log_error = message('runtime.log_unavailable')
             LOG.exception('Could not initialize the dedicated mod log.')
+
+    def _defer_log_flush(self):
+        return self.api is not None and self.api.in_battle()
 
     def _service_diagnostics(self):
         try:
@@ -1349,7 +1352,6 @@ class Runtime(object):
                 return
             account_key = self._result_account()
             context = self.api.battle_context()
-            queued, self._queued_crucible = self._queued_crucible, None
             if account_key is None or context is None:
                 return
             self._close_for_battle()
@@ -1362,7 +1364,9 @@ class Runtime(object):
             if 'started_at' not in record:
                 record['started_at'] = previous.get('started_at') or self.now()
             details = previous.get('details')
-            if details is None:
+            first_observation = details is None
+            if first_observation:
+                queued = self._queued_crucible
                 details = (queued[1] if queued and queued[0] == account_key else self._read_active_crucible()) or {}
             from .core import _clean_record
             context = dict(previous)
@@ -1372,6 +1376,10 @@ class Runtime(object):
             if details.get('active_crucible'):
                 context['active_crucible'] = details['active_crucible']
             self.contexts[key] = context
+            # Avatar notifications can arrive before the first readable arena.
+            # Keep the lobby's stage until it has been attached to a battle.
+            if first_observation:
+                self._queued_crucible = None
             self._observed_arenas.add(key)
             if self._combat_beginnings.get(key) != record:
                 if self._stage_combat_capture('begin', account_key, record):

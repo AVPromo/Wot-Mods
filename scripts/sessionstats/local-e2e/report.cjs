@@ -253,7 +253,9 @@ function showMatrix(names) {
   byId('viewer').addEventListener('close',()=>{byId('image').removeAttribute('src');});
   byId('title').textContent = 'Session Stats' + (summary.version ? ' '+summary.version : '');
   byId('summary').textContent = [
-    summary.engine, summary.renderer, summary.suite, 'Cases '+summary.completed+'/'+summary.planned,
+    summary.incomplete ? 'Run incomplete' : '', summary.engine, summary.renderer, summary.suite,
+    summary.expectedShards === null ? '' : 'Shards '+summary.shards+'/'+summary.expectedShards,
+    'Cases '+summary.completed+'/'+summary.planned,
     'Failures '+summary.failures, 'Visual differences '+summary.visualFailures,
     'Screenshots '+summary.frames, summary.omitted ? 'Omitted entries '+summary.omitted : ''
   ].filter(Boolean).join(' · ');
@@ -276,6 +278,7 @@ async function writeReport(directory,state) {
     frames += row.frames.length;
   }
   rows.sort(compareCases);
+  omitted += count(state.omittedRows) ?? 0;
   const summary = {
     version:safeVersion(state.version),
     engine:['chromium','gameface'].includes(state.engine) ? state.engine : '',
@@ -283,7 +286,9 @@ async function writeReport(directory,state) {
     suite:['smoke','full','build','quick'].includes(state.suite) ? state.suite : '',
     planned:count(state.planned) ?? rows.length, completed:count(state.completed) ?? rows.length,
     failures:(count(state.failed) ?? 0)+(count(state.interactionErrors) ?? 0),
-    visualFailures:count(state.visualFailures) ?? 0, frames, omitted
+    visualFailures:count(state.visualFailures) ?? 0, frames, omitted,
+    incomplete:state.finished===false||omitted>0,
+    shards:count(state.shards), expectedShards:count(state.expectedShards)
   };
 
   await fs.writeFile(path.join(directory,'catalog.js'),

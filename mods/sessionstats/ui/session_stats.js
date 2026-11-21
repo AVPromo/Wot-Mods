@@ -1522,6 +1522,11 @@
         return !scope || !!scope.loading || !!scope.load_error ||
             (state.scope !== 'instance' && (!!payload.loading || !!payload.load_error));
     }
+    function clearOrderIntent() {
+        var intent = state.orderIntent;
+        state.orderIntent = null;
+        if (intent) { cancelUITimer(intent.timer); }
+    }
     function changeOrder(field, value) {
         if (state.destroyed || !state.payload || !state.payload.scopes) { return; }
         var scope = currentScope(), current = getOrder(scope);
@@ -1538,16 +1543,25 @@
         for (key in defaultOrder) { options[key] = current[key]; }
         options[field] = value;
         if (options.statistic === 'sum' && options.metric !== 'off' && !summableMetric(options.metric)) { options.statistic = 'avg'; }
-        if (options.metric !== 'off') { rememberedMetric(scope, options.metric); }
         state.loadedCount = 40;
         if (state.nativeSession && scope.pagination) {
-            retireFeed(); state.feedForceStart = 0;
-            state.orderIntent = {context:viewContext(), group:state.group, options:options};
+            clearOrderIntent();
+            state.actionError = null;
+            var intent = {context:viewContext(), group:state.group, options:options, timer:null};
+            state.orderIntent = intent;
+            intent.timer = window.setTimeout(function () {
+                if (state.orderIntent !== intent) { return; }
+                clearOrderIntent();
+                if (!sameContext(intent.context) || state.group !== intent.group) { return; }
+                renderSelects(currentScope());
+                setActionError(t('error.action'));
+            }, 10000);
             renderSelects(scope);
             options.scope = scopeName(); options.group = state.group;
             options.period_id = scope.period_id; options.account_key = state.payload.account_key;
-            if (!invoke('sort',options)) { state.orderIntent = null; renderSelects(scope); }
+            if (!invoke('sort',options) && state.orderIntent === intent) { clearOrderIntent(); renderSelects(scope); }
         } else {
+            if (options.metric !== 'off') { rememberedMetric(scope, options.metric); }
             state.orders[orderKey(scope)] = options;
             render();
         }
@@ -1582,6 +1596,7 @@
         function visibleOptions() { return control.options.filter(available); }
         function open(position) {
             if (state.destroyed || trigger.disabled || trigger.getAttribute('aria-disabled') === 'true') { return; }
+            if (control.beforeOpen) { control.beforeOpen(); }
             closeDatePicker(false); closeSelect(false); menu.style.display = 'block'; trigger.setAttribute('aria-expanded','true');
             if (control.input) { control.input.setAttribute('aria-expanded','true'); }
             state.openSelect = control;
@@ -1655,7 +1670,8 @@
         });
     }
     function renderSelects(scope) {
-        var options = getOrder(scope), field, index, remembered = rememberedMetric(scope, options.metric);
+        var options = getOrder(scope), field, index;
+        var remembered = state.orderIntent && options.metric !== 'off' ? options.metric : rememberedMetric(scope, options.metric);
         var statistic = document.querySelector('.ss-sort-statistic'), off = document.getElementById('ss-sort-off');
         var sorting = document.getElementById('ss-sorting');
         var statisticMetric = options.metric === 'off' ? remembered : options.metric;
@@ -1996,7 +2012,7 @@
         if (value !== '__custom__') { delete state.customDates[field]; }
         cancelBattleNavigation();
         state.loadedCount = 40;
-        retireFeed(); state.orderIntent = null; state.feedForceStart = 0;
+        retireFeed(); clearOrderIntent(); state.feedForceStart = 0;
         return invoke('timeline_range', args);
     }
     function timelineDateBound(timeline, field) {
@@ -2006,6 +2022,13 @@
         var points = timeline.time_points || [];
         for (var index = 0; index < points.length; index += 1) { if (points[index][0] === point) { return points[index][1]; } }
         return null;
+    }
+    function updateTimelinePointChoices(timeline, from, points, options) {
+        var limit = timelineDateBound(timeline, from ? 'to' : 'from'), now = Date.now() / 1000;
+        points.forEach(function (point, index) {
+            var usable = point[1] <= now && (!hasNumber(limit) || (from ? point[1] < limit : point[1] > limit));
+            options[index + 1].style.display = usable ? '' : 'none';
+        });
     }
     function customDateBounds(timeline, field) {
         var minimum = customDateParts(2010, 1, 1, 0, 0), maximum = Math.floor(Date.now() / 60000) * 60;
@@ -2381,19 +2404,12 @@
         if (state.timelineSignature === signature) { return; }
         state.timelineSignature = signature;
         closeSelect(false); closeDatePicker(false);
-        var times = {};
-        points.forEach(function (point) { times[point[0]] = point[1]; });
         ['from', 'to'].forEach(function (field) {
             var from = field === 'from', selected = state.customDates[field] ? '__custom__' : timeline[field + '_point'] || '';
-            var other = from ? 'to' : 'from', opposite = timeline[other + '_point'];
-            var limit = state.customDates[other] ? customDateValue(state.customDates[other].value) :
-                opposite === '__custom__' ? timeline[other + '_date'] : times[opposite];
             var label = t('timeline.' + field);
             var choices = [['', t(from ? 'timeline.beginning' : 'timeline.now')]];
             points.forEach(function (point, index) {
-                if (point[1] <= Date.now() / 1000 && (!hasNumber(limit) || (from ? point[1] < limit : point[1] > limit))) {
-                    choices.push([point[0], names[point[0]] || '#' + (index + 1) + ' · ' + date(point[1], false)]);
-                }
+                choices.push([point[0], names[point[0]] || '#' + (index + 1) + ' · ' + date(point[1], false)]);
             });
             choices.push(['__custom__', t('timeline.custom')]);
             var holder = document.getElementById('ss-timeline-' + field);
@@ -2410,6 +2426,12 @@
             });
             control.trigger.setAttribute('aria-label', label);
             control.menu.setAttribute('aria-label', label);
+            // The opposite draft can change without remounting either editor.
+            // Read its live bound whenever this list is opened.
+            control.beforeOpen = function () {
+                updateTimelinePointChoices(timeline, from, points, control.options);
+            };
+            control.beforeOpen();
             choices.forEach(function (choice, index) {
                 control.options[index].title = choice[1];
                 control.options[index].querySelector('.ss-control-label').textContent = choice[1];
@@ -3067,7 +3089,6 @@
                 cancelBattleNavigation(); return;
             }
             if (Date.now() >= returning.deadline) {
-                if (state.orderIntent && state.orderIntent.options === returning.origin.order) { state.orderIntent = null; }
                 cancelBattleNavigation(); render(); setActionError(t('page.error')); return;
             }
             if (returning.phase === 'restore') { finishBattleReturn(returning); }
@@ -3102,7 +3123,7 @@
                 state.feed = copyBattleOriginFeed(origin.feed); state.renderedFeed = null;
                 state.feed.key = feedIdentity(scope); state.feed.collectionKey = feedCollectionIdentity(scope); state.feed.contextKey = feedContextIdentity();
                 state.feedForceStart = null;
-            } else { state.feedForceStart = origin.feed ? origin.feed.start : returning.page; }
+            } else { state.feedForceStart = returning.page; }
             returning.mounted = true;
         }
         queueBattleReturn(returning);
@@ -3111,7 +3132,7 @@
         var origin = target && target.origin;
         if (!origin || state.highlightedBattle !== target || !sameContext(origin.context)) { return; }
         cancelBattleNavigation(); clearBattleTarget(); retireFeed();
-        state.group = origin.group; state.loadedCount = origin.loadedCount; state.orderIntent = null;
+        state.group = origin.group; state.loadedCount = origin.loadedCount; clearOrderIntent();
         var returning = {origin:origin, phase:'restore', deadline:Date.now() + 10000, stable:0, settled:Date.now(), lastOffset:null, requestedOffset:null, focused:null};
         state.battleReturn = returning;
         var scope = currentScope(), actual = scope.ordering && scope.ordering[origin.group] || getOrder(scope);
@@ -3121,7 +3142,7 @@
                 state.orderIntent = {context:origin.context, group:origin.group, options:origin.order};
                 var args = {account_key:origin.context.account_key, scope:origin.context.scope, period_id:origin.context.period_id, group:origin.group};
                 ['metric', 'statistic', 'direction', 'chronology'].forEach(function (key) { args[key] = origin.order[key]; });
-                if (!invoke('sort', args)) { cancelBattleNavigation(); state.orderIntent = null; setActionError(t('page.error')); }
+                if (!invoke('sort', args)) { cancelBattleNavigation(); setActionError(t('page.error')); }
             } else { requestBattleReturnPage(returning); }
         } else { state.orders[orderKey(scope)] = origin.order; }
         render(); queueBattleReturn(returning);
@@ -3273,7 +3294,7 @@
             if (!state.destroyed) { renderFilterActivity(currentScope()); }
         }
         var timer = state.battleJumpTimer; state.battleJumpTimer = null; cancelUITimer(timer);
-        if (state.battleReturn && state.orderIntent && state.orderIntent.options === state.battleReturn.origin.order) { state.orderIntent = null; }
+        if (state.battleReturn && state.orderIntent && state.orderIntent.options === state.battleReturn.origin.order) { clearOrderIntent(); }
         state.battleReturn = null;
         var returnTimer = state.battleReturnTimer; state.battleReturnTimer = null; cancelUITimer(returnTimer);
     }
@@ -3333,12 +3354,26 @@
     function retainBattleTargetAfterResize() {
         var target = state.highlightedBattle;
         if (state.destroyed || !target || state.group !== 'battles' || !sameContext(target.context)) { return; }
-        target.followViewport = true;
+        // Resize reveals the selection once. It cannot revive ownership
+        // released by an intentional wheel or scrollbar movement.
         var jump = state.battleJump;
         startBattleJump(target, !jump || jump.revealOnly);
     }
     function battleOwnsViewport() {
         return state.group === 'battles' && state.highlightedBattle && state.highlightedBattle.followViewport;
+    }
+    function keepSelectedBattleVisible() {
+        if (!battleOwnsViewport() || state.battleJump || state.resize || state.feedStaging) { return; }
+        var card = renderedBattleTarget(state.highlightedBattle.id);
+        var marker = card && card.querySelector('.ss-battle-selection-banner');
+        if (!marker) { return; }
+        var viewport = nodes.scroll.getBoundingClientRect(), box = marker.getBoundingClientRect(), scale = state.nativeScale || 1;
+        var visibleTop = viewport.top + pinnedFilterHeight(), top = nodes.scroll.scrollTop;
+        if (!(box.height > 1) || visibleTop + box.height >= viewport.bottom) { return; }
+        if ((box.top < visibleTop - scale && top > scale) ||
+                (box.bottom > viewport.bottom + scale && top < scrollbarMetrics().maximum - scale)) {
+            startBattleJump(state.highlightedBattle, true);
+        }
     }
     function battleLayoutOffset(node, ancestor) {
         var offset = 0, count = 0;
@@ -4296,7 +4331,7 @@
     }
     function requestFeedPage(feed, index, navigate) {
         if (state.destroyed || state.pendingBattle || state.feed !== feed || feed.pending || index < 0 || index >= feed.pages) { return; }
-        if (navigate) { cancelPageJump(); }
+        if (navigate) { cancelPageJump(); feed.refreshAnchor = null; }
         if (Object.prototype.hasOwnProperty.call(feed.cache, index) && index >= feed.start - 1 && index <= feed.last + 1) {
             if (index < feed.start && !navigate) { captureFeedAnchor(feed); }
             feed.start = Math.min(feed.start, index); feed.last = Math.max(feed.last, index);
@@ -4309,6 +4344,7 @@
         function fail() {
             if (state.destroyed || state.feed !== feed || feed.pending !== pending) { return; }
             feed.pending = null; feed.error = index; feed.errorNavigate = pending.navigate;
+            if (state.renderedFeed !== feed) { nodes.groups.setAttribute('aria-busy', 'false'); }
             showFeedPending(feed); updateFeedControls(); setStatus(t('page.error'));
         }
         function send() {
@@ -4323,13 +4359,56 @@
             }
         }
         feed.pending = pending; feed.error = null;
+        if (state.renderedFeed !== feed) { nodes.groups.setAttribute('aria-busy', 'true'); }
         pending.timer = window.setTimeout(fail, 10000);
         showFeedPending(feed); updateFeedControls();
         // Never invoke a synchronous native model callback from inside render.
         if (typeof window.requestAnimationFrame === 'function') { window.requestAnimationFrame(send); }
         else { window.setTimeout(send, 0); }
     }
+    function captureRefreshAnchor(index) {
+        var page = (state.cardPages || []).filter(function (item) { return item.index === index; })[0];
+        if (!page) { return null; }
+        var viewport = nodes.scroll.getBoundingClientRect(), top = viewport.top + pinnedFilterHeight();
+        var section = page.section.getBoundingClientRect(), node = null, offset = null;
+        page.cards.some(function (card) {
+            var box = card.getBoundingClientRect();
+            if (!(box.height > 1 && box.bottom > top && box.top < viewport.bottom)) { return false; }
+            node = card; offset = box.top - viewport.top; return true;
+        });
+        return {index:index, id:node && node.getAttribute('data-group-id'),
+            offset:offset,
+            sectionOffset:section.top - viewport.top, remaining:3, attempts:0, deadline:null};
+    }
+    function finishRefreshAnchor() {
+        var feed = state.feed, anchor = feed && feed.refreshAnchor;
+        if (!anchor || state.renderedFeed !== feed) { return; }
+        if (anchor.deadline === null) { anchor.deadline = Date.now() + 2000; }
+        if (Date.now() >= anchor.deadline || state.battleJump || state.pageJump || state.battleReturn) { feed.refreshAnchor = null; return; }
+        anchor.attempts += 1;
+        var page = (state.cardPages || []).filter(function (item) { return item.index === anchor.index; })[0];
+        var card = anchor.id && page && page.cards.filter(function (item) { return item.getAttribute('data-group-id') === anchor.id; })[0];
+        var node = card || (page && page.section), scroll = nodes.scroll;
+        var box = node && node.getBoundingClientRect(), viewport = scroll.getBoundingClientRect();
+        if (box && box.height > 1 && viewport.height > 1 && !state.cardFlowQueued) {
+            var offset = card ? anchor.offset : anchor.sectionOffset;
+            var origin = battleLayoutOffset(node, scroll);
+            var position = origin === null ? scroll.scrollTop + box.top - viewport.top : origin;
+            var destination = Math.max(0, Math.min(scrollbarMetrics().maximum, position - offset));
+            if (Math.abs(scroll.scrollTop - destination) > (state.nativeScale || 1)) {
+                scroll.scrollTop = destination;
+            }
+            if (Math.abs(scroll.scrollTop - destination) <= (state.nativeScale || 1)) { anchor.remaining -= 1; }
+        }
+        if (anchor.remaining <= 0 || anchor.attempts >= 40) { feed.refreshAnchor = null; }
+        else if (typeof window.requestAnimationFrame === 'function') { queueResize(); }
+        else { window.setTimeout(function () { if (state.feed === feed && feed.refreshAnchor === anchor) { queueResize(); } }, 16); }
+    }
     function prepareFeed(scope) {
+        var intent = state.orderIntent;
+        if (intent && intent.timer !== undefined && intent.group === state.group && state.feed && sameContext(intent.context)) {
+            return state.feed;
+        }
         var meta = scope.pagination && scope.pagination[state.group];
         if (!state.nativeSession || !meta || !hasNumber(meta.page) || !hasNumber(meta.pages) || !hasNumber(meta.total) ||
                 meta.pages < 1 || meta.page < 0 || meta.page >= meta.pages || meta.total < 0) { retireFeed(); return null; }
@@ -4341,33 +4420,38 @@
         // A superseded navigation response can arrive after the focus response.
         // Keep the mounted selection even if that reply has a different revision.
         if (following && feed && feed.key === key && (meta.request_id || focus) && focusedPage === null) { return feed; }
+        if (feed && feed.key === key && feed.refreshing && feed !== old && feed.pending &&
+                feed.start < meta.pages && focusedPage === null) {
+            // The in-flight request is still for the visible page. Later
+            // revisions must not keep retiring and reissuing that request.
+            feed.revision = revision;
+        }
         if (!feed || feed.key !== key || feed.revision !== revision || (focusedPage !== null && focusedPage !== feed.start)) {
             var ownedJump = state.pageJump && state.pageJump.feed === feed ? state.pageJump : null;
             var navigation = feed && feed.collectionKey === collectionKey && feed.pending && feed.pending.navigate ? feed.pending.page :
                 feed && feed.collectionKey === collectionKey ? ownedJump ? ownedJump.page : feed.navigationPage : null;
             var navigationDeadline = ownedJump ? ownedJump.deadline : feed && feed.navigationDeadline;
-            retireFeed();
-            var start = state.feedForceStart !== null ? state.feedForceStart :
-                focusedPage !== null ? focusedPage : feed && feed.collectionKey === collectionKey ? feed.start : meta.page;
-            start = Math.max(0, Math.min(start, meta.pages - 1));
-            var count = !state.battleJump && focusedPage === null && old ? Math.max(1, old.last - old.start + 1) : 1;
-            var returning = state.battleReturn;
-            if (returning && returning.phase === 'restore' && sameContext(returning.origin.context) &&
-                    returning.origin.group === state.group && returning.origin.feed) {
-                start = Math.max(0, Math.min(returning.origin.feed.start, meta.pages - 1));
-                count = Math.max(1, returning.origin.feed.last - returning.origin.feed.start + 1);
-            }
             var topRequested = feed && feed.collectionKey === collectionKey && feed.topRequested;
+            var returning = state.battleReturn;
+            var refreshing = state.feedForceStart === null && focusedPage === null && !hasNumber(navigation) && !topRequested &&
+                !state.battleJump && !returning && old && old.collectionKey === collectionKey;
+            retireFeed();
+            var start = state.feedForceStart !== null ? state.feedForceStart : focusedPage !== null ? focusedPage :
+                hasNumber(navigation) ? navigation : topRequested ? 0 : refreshing ? old.current : meta.page;
+            start = Math.max(0, Math.min(start, meta.pages - 1));
+            // Rebuild around one visible page. Previously visited pages can
+            // be loaded from the new revision as the user reaches either edge.
             feed = {key:key, collectionKey:collectionKey, contextKey:feedContextIdentity(), revision:revision, context:viewContext(), group:state.group, cache:{}, signatures:{}, pending:null,
-                error:null, start:start, last:Math.min(meta.pages - 1, start + count - 1), current:start,
+                error:null, start:start, last:start, current:start,
                 pages:meta.pages, total:meta.total, size:meta.page_size || 40, version:0, navigationPage:null, navigationDeadline:null,
-                topRequested:!!topRequested, prependAnchor:null};
+                topRequested:!!topRequested, prependAnchor:null, refreshing:!!refreshing,
+                preserveRefreshAnchor:!!refreshing, refreshAnchor:null};
             if (hasNumber(navigation)) {
                 feed.navigationPage = Math.max(0, Math.min(navigation, meta.pages - 1));
                 feed.navigationDeadline = navigationDeadline;
-                feed.start = Math.min(feed.start, feed.navigationPage); feed.last = Math.max(feed.last, feed.navigationPage);
             }
             state.feed = feed; state.feedForceStart = null;
+            if (refreshing) { suspendResizePrefetch(); }
         }
         feed.pages = meta.pages; feed.total = meta.total;
         feed.last = Math.min(feed.last, meta.pages - 1);
@@ -4446,12 +4530,18 @@
             }
             if (!complete && state.renderedFeed && state.groupCards && state.groupCards.length) {
                 stageFeedContext(feed.contextKey !== state.renderedFeed.contextKey);
-                nodes.groups.setAttribute('aria-busy', 'true'); updateFeedControls(); return;
+                nodes.groups.setAttribute('aria-busy', String(feed.error === null)); updateFeedControls(); return;
             }
         }
         var renderKey = [state.language, state.appearanceCSS, feed && feed.version].join('|');
         var reuse = feed && state.renderedFeed === feed && state.cardRenderKey === renderKey;
         if (!reuse) {
+            if (feed && feed.preserveRefreshAnchor) {
+                feed.refreshAnchor = captureRefreshAnchor(feed.start);
+                feed.preserveRefreshAnchor = false;
+                feed.refreshing = false;
+                suspendResizePrefetch();
+            }
             var previousHeight = nodes.groups.getBoundingClientRect().height;
             if (previousHeight > 0) { nodes.groups.style.minHeight = previousHeight + 'px'; state.groupMinHeight = true; }
             invalidateCardFlow(); clear(nodes.groups);
@@ -4603,7 +4693,7 @@
     }
     function beginPageJump(feed, page, deadline) {
         cancelPageJump();
-        feed.prependAnchor = null; feed.navigationPage = null; feed.navigationDeadline = null;
+        feed.prependAnchor = null; feed.refreshAnchor = null; feed.navigationPage = null; feed.navigationDeadline = null;
         feed.current = page;
         state.pageJump = {feed:feed, page:page, attempts:0,
             deadline:hasNumber(deadline) ? deadline : Date.now() + 10000,
@@ -4683,7 +4773,7 @@
         if (state.destroyed) { return; }
         updatePinnedFilters();
         var guard = state.resizeFeedGuard;
-        if (state.pendingBattle || battleOwnsViewport() || state.resize ||
+        if (state.pendingBattle || state.orderIntent || battleOwnsViewport() || state.resize ||
                 (guard && guard.view === state.viewKey && guard.feed === state.feed)) { return; }
         if (state.renderedFeed && state.feed === state.renderedFeed) {
             var feed = state.feed;
@@ -4781,13 +4871,29 @@
             }
         } else if (event.type !== 'scrollbar' &&
                 (event.type !== 'mousedown' || event.button !== 0 || event.target !== nodes.scroll)) { return; }
+        var feed = state.feed, visible = state.renderedFeed;
+        var stagedJump = feed && visible && feed !== visible && feed.collectionKey === visible.collectionKey &&
+            (hasNumber(feed.navigationPage) || feed.topRequested || (state.pageJump && state.pageJump.feed === feed));
         cancelBattleNavigation();
         cancelPageJump();
-        if (state.feed) { state.feed.navigationPage = null; }
-        if (state.feed) { state.feed.topRequested = false; state.feed.prependAnchor = null; }
-        if (state.feed && state.feed.pending) { state.feed.pending.navigate = false; }
+        if (feed) {
+            feed.navigationPage = null; feed.topRequested = false;
+            feed.prependAnchor = null; feed.refreshAnchor = null;
+            if (feed.pending) { feed.pending.navigate = false; }
+        }
         if (state.highlightedBattle) { state.highlightedBattle.followViewport = false; }
         state.resizeFeedGuard = null;
+        if (stagedJump) {
+            // A revision was staging the cancelled destination. Refresh the
+            // visible page after the scroll input has updated its position.
+            if (feed.pending) { cancelUITimer(feed.pending.timer); feed.pending = null; }
+            feed.start = feed.last = feed.current = Math.max(0, Math.min(visible.current, feed.pages - 1));
+            feed.error = null; feed.refreshing = true; feed.preserveRefreshAnchor = true;
+            suspendResizePrefetch();
+            var resume = function () { if (!state.destroyed && state.feed === feed && state.renderedFeed !== feed) { render(); } };
+            if (typeof window.requestAnimationFrame === 'function') { window.requestAnimationFrame(resume); }
+            else { window.setTimeout(resume, 0); }
+        }
         // Native wheel input consumes the pending logical offset itself before
         // cancelling restoration; its DOM getter can still expose an old frame.
         if (wheel && state.bound) { return; }
@@ -4974,11 +5080,16 @@
                 var intended = value.scopes[intent.context.scope];
                 if (value.account_key === intent.context.account_key && intended && intended.period_id === intent.context.period_id) {
                     var actual = intended.ordering && intended.ordering[intent.group];
-                    if (actual && !orderingUnavailable(intended, value) && ['metric', 'statistic', 'direction', 'chronology'].some(function (key) {
-                        return actual[key] !== intent.options[key];
-                    })) { return true; }
+                    if (actual && !orderingUnavailable(intended, value)) {
+                        if (['metric', 'statistic', 'direction', 'chronology'].some(function (key) {
+                            return actual[key] !== intent.options[key];
+                        })) { return true; }
+                        if (intent.timer !== undefined) {
+                            retireFeed(); state.feedForceStart = 0;
+                        }
+                    }
                 }
-                state.orderIntent = null;
+                clearOrderIntent();
             }
             if (historyOnlyUpdate(value)) { return true; }
             if (state.payload && state.payload.account_key !== value.account_key) {
@@ -4987,7 +5098,7 @@
                 state.openBattles = {};
                 state.openMaps = {};
                 state.customDates = {}; state.customRangeKey = null;
-                clearBattleTarget(); retireFeed(); state.renderedFeed = null; state.orderIntent = null;
+                clearBattleTarget(); retireFeed(); state.renderedFeed = null;
                 state.cardPages = []; state.groupCards = []; state.feedForceStart = null;
                 state.filterBase = null;
                 resetViewScroll();
@@ -5007,7 +5118,7 @@
             return true;
         } catch (error) {
             closeSelect(false);
-            state.orderIntent = null;
+            clearOrderIntent();
             setActionError(t('error.snapshot'));
             return false;
         }
@@ -5137,19 +5248,19 @@
         closeSelect(false);
         if (!state.payload || !state.payload.scopes[scope]) { return; }
         cancelBattleNavigation();
-        state.orderIntent = null; if (state.scope !== scope) { clearBattleTarget(); state.feedForceStart = 0; }
+        clearOrderIntent(); if (state.scope !== scope) { clearBattleTarget(); state.feedForceStart = 0; }
         state.scope = scope; state.loadedCount = 40;
         showReset(false); render();
     }
     function switchGroup(group) {
         closeSelect(false);
         cancelBattleNavigation();
-        state.orderIntent = null; if (state.group !== group) { clearBattleTarget(); state.feedForceStart = 0; }
+        clearOrderIntent(); if (state.group !== group) { clearBattleTarget(); state.feedForceStart = 0; }
         if (state.group !== group) { state.loadedCount = 40; }
         state.group = group; render();
     }
     function changePage(direction) {
-        if (state.destroyed || !state.payload || !state.payload.scopes) { return; }
+        if (state.destroyed || state.orderIntent || !state.payload || !state.payload.scopes) { return; }
         var feed = state.renderedFeed;
         if (!feed || state.feed !== feed || feed.pending) { return; }
         var page = feed.current + direction;
@@ -5167,7 +5278,7 @@
     if (nodes['scroll-top']) { nodes['scroll-top'].onclick = function () {
         cancelBattleNavigation(); clearBattleTarget(); cancelPageJump();
         if (state.feed) {
-            var feed = state.feed; feed.prependAnchor = null;
+            var feed = state.feed; feed.prependAnchor = null; feed.refreshAnchor = null;
             // Keep the requested data, but let Top supersede its old destination.
             feed.navigationPage = null; feed.errorNavigate = false;
             if (feed.pending) { feed.pending.navigate = false; }
@@ -5190,6 +5301,9 @@
     document.getElementById('ss-group-battles').onclick = function () { switchGroup('battles'); };
     nodes.close.onclick = function () { if (state.dialog) { showReset(false); } else { invoke('close'); } };
     nodes.refresh.onclick = function () {
+        if (state.orderIntent) {
+            cancelBattleNavigation(); clearOrderIntent(); renderSelects(currentScope());
+        }
         if (state.feed && state.feed.error !== null) { requestFeedPage(state.feed, state.feed.error, false); }
         else { invoke('refresh'); }
     };
@@ -5850,6 +5964,8 @@
             }
             finishFeedAnchor(true);
             restoreViewScroll();
+            finishRefreshAnchor();
+            keepSelectedBattleVisible();
             finishBattleJump();
             finishPageJump();
             updatePinnedFilters(true);
@@ -5986,6 +6102,7 @@
         if (state.destroyed) { return; }
         state.destroyed = true;
         clearReturnedSource();
+        clearOrderIntent();
         renderFilterActivity(null);
         state.pinnedFilterWork = null;
         cancelFilterLayout();

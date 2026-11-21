@@ -12,7 +12,10 @@ function geometry(source=shipped()) {
   const feed={navigationPage:2};
   const target={getAttribute:name=>name==='data-group-id'?'selected-page-three':null,
     get offsetTop(){return position;},
-    getBoundingClientRect:()=>missing?{top:0,width:0,height:0}:({top:100+position-physical,bottom:250+position-physical,width:500,height:150})};
+    getBoundingClientRect:()=>missing?{top:0,width:0,height:0}:({top:100+position-physical,bottom:250+position-physical,width:500,height:150}),
+    querySelector:selector=>selector==='.ss-battle-selection-banner'?{
+      getBoundingClientRect:()=>({top:90+position-physical,bottom:110+position-physical,height:20})
+    }:null};
   const scroll={get scrollTop(){return offset;},set scrollTop(value){const next=Math.max(0,Math.min(4000,value));
       if(droppedWrites>0){droppedWrites--;return;}
       if(lag){pendingOffset=next;if(lag==='getter')physical=next;if(lag==='rect')offset=next;}
@@ -34,7 +37,7 @@ function geometry(source=shipped()) {
     queueResize(){context.finishBattleJump();},updatePinnedFilters(){pinnedUpdates++;},syncScrollbar(){}};
   vm.createContext(context);
   const names=['cancelBattleNavigation','cancelPageJump','retireFeed','consumeBattleFocus','startBattleJump','retainBattleTargetAfterResize',
-    'renderedBattleTarget','finishBattleJump','finishPageJump','onScrollIntent'];
+    'renderedBattleTarget','finishBattleJump','finishPageJump','onScrollIntent','battleOwnsViewport','keepSelectedBattleVisible'];
   for(const name of ['retryBattleJump','battleLayoutOffset','battleScrollPending'])if(source.includes('    function '+name+'('))names.push(name);
   vm.runInContext(names.map(name=>actualFunction(source,name)).join('\n'),context);
   context.consumeBattleFocus({battle_focus:{id:'selected-page-three',request_id:'owned-focus'},pagination:{battles:{page:2}}});
@@ -81,6 +84,20 @@ function assertBattleJumpSource(source=shipped()) {
   assert.strictEqual(late.focused(),1,'Resize reveal leaves keyboard focus on the active control');
   late.context.onScrollIntent({type:'wheel',deltaY:1,target:late.scroll});late.scroll.scrollTop=500;late.tick();
   assert.strictEqual(late.scroll.scrollTop,500,'New user scrolling supersedes resize alignment');
+  late.context.retainBattleTargetAfterResize();
+  assert.strictEqual(late.context.battleOwnsViewport(),false,'A resize can reveal the card once without reclaiming ownership after a user scroll');
+  assert.strictEqual(late.state.battleJump.revealOnly,true);
+
+  const notices=geometry(source);notices.show();notices.context.finishBattleJump();
+  for(let index=0;index<8&&notices.state.battleJump;index++)notices.tick();
+  assert.strictEqual(notices.state.battleJump,null);
+  notices.move(1475);
+  notices.context.keepSelectedBattleVisible();
+  assert(notices.state.battleJump,'Removing a notice triggers correction even when the selected card node was reused');
+  notices.context.finishBattleJump();
+  assert(notices.target.querySelector('.ss-battle-selection-banner').getBoundingClientRect().top>=160,
+    'The marker returns below the pinned filters without a native scrollbar event');
+  assert.strictEqual(notices.focused(),1,'The correction does not steal keyboard focus again');
 
   const duringJump=geometry(source);duringJump.show();duringJump.state.resize={};duringJump.context.finishBattleJump();
   assert.strictEqual(duringJump.scroll.scrollTop,0,'An initial jump also waits while the window is being resized');

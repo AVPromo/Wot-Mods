@@ -24,6 +24,23 @@ class BuildContracts(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(str(self.directory))
 
+    def test_generated_preview_is_reproducible_and_uses_requested_version(self):
+        import importlib.util
+        import json
+
+        spec = importlib.util.spec_from_file_location('sessionstats_preview', self.build.ROOT/'tools/make_preview.py')
+        preview = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(preview)
+        files, _ = preview.preview_files('9.8.7')
+        self.assertEqual(files, preview.preview_files('9.8.7')[0])
+        self.assertIn('"version":"9.8.7"', files['PREVIEW.html'])
+        fixtures = json.loads(files['demo_snapshot.json'])
+        self.assertEqual([fixtures[name]['version'] for name in ('normal', 'reset')], ['9.8.7', '9.8.7'])
+        normal, reset = (fixtures[name]['scopes'] for name in ('normal', 'reset'))
+        self.assertEqual(normal['launch']['period_id'], reset['launch']['period_id'])
+        self.assertNotEqual(normal['manual']['period_id'], reset['manual']['period_id'])
+        self.assertTrue(all(row['vehicle_id'] for row in normal['launch']['battles']))
+
     def test_active_guides_use_requested_package_and_client_versions(self):
         major, minor, patch = map(int, self.build.VERSION.split('.'))
         version = '%d.%d.%d' % (major, minor, patch + 1)

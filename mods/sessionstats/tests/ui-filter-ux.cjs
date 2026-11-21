@@ -1,6 +1,7 @@
 /* Panel-fit sorting controls and an owned loading indicator retain their geometry. */
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
 function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8')){
+  source=source.replace(/\r\n/g,'\n');
   const actual=name=>{const start=source.indexOf('    function '+name+'('),line=source.indexOf('\n',start);
     const end=source.slice(start,line).endsWith('}')?line:source.indexOf('\n    }\n',start)+7;
     assert(start>=0&&end>start,'Exercise actual shipped '+name);return source.slice(start,end);};
@@ -25,12 +26,15 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
     maps:{metric:'off',statistic:'avg',direction:'desc',chronology:'newest'}}};
   const state={payload:{account_key:'synthetic-filter-account',loading:false,load_error:'',scopes:{launch:scope,instance:scope}},
     scope:'launch',group:'vehicles',nativeSession:true,orders:{},orderIntent:null,wideFilters:true,feed:null};
-  const commands=[],selects={},context={state,selects,root:new Node(),Object,String,JSON,
+  const commands=[],selects={},timers=new Map();let sequence=0;
+  const context={state,selects,root:new Node(),Object,String,JSON,
+    window:{setTimeout(callback,delay){timers.set(++sequence,{callback,delay});return sequence;},clearTimeout:id=>timers.delete(id)},
     document:{createElement:()=>new Node(),getElementById:id=>controls[id]||(controls[id]=new Node()),querySelector:selector=>selector==='.ss-sort-statistic'?statistic:null},
     t:key=>key,currentScope:()=>scope,scopeName:()=>state.scope,
     viewContext:()=>({account_key:state.payload.account_key,scope:state.scope,period_id:scope.period_id}),
     sameContext:owner=>owner.account_key===state.payload.account_key&&owner.scope===state.scope&&owner.period_id===scope.period_id,
     cancelBattleNavigation(){},retireFeed(){state.feed=null;},render(){},
+    setActionError(message){state.actionError=message;context.renderFilterActivity(scope);},
     invoke:(action,args)=>{commands.push({action,...JSON.parse(JSON.stringify(args))});return true;}};
   vm.createContext(context);
   const declarations=source.slice(source.indexOf('    var defaultOrder ='),source.indexOf('    function orderKey('));
@@ -38,7 +42,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   for(const field of ['chronology','statistic','metric','direction']){
     selects[field]={trigger:new Node(),label:new Node(),menu:new Node(),options:context.selectOptions[field].map(()=>new Node())};
   }
-  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','observedTotal','baseCreditAvailability','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning'])
+  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','observedTotal','baseCreditAvailability','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning','clearOrderIntent','cancelUITimer'])
     vm.runInContext(actual(name),context);
   context.hasNumber=value=>typeof value==='number'&&Number.isFinite(value);
   const warningOwner=new Node(),warningIcon=context.appendClientWarning(warningOwner,'ss-sort-partial-icon');
@@ -46,7 +50,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   assert.strictEqual(warningIcon.className,'ss-warning-icon ss-sort-partial-icon');
   assert.strictEqual(warningIcon.getAttribute('aria-hidden'),'true','The shared icon is decorative beside its localized explanation');
   assert.strictEqual(warningIcon.textContent,'','A native warning image never depends on a Unicode font glyph');
-  const render=()=>context.renderSelects(scope),ack=()=>{const command=commands[commands.length-1];scope.ordering[state.group]={metric:command.metric,statistic:command.statistic,direction:command.direction,chronology:command.chronology};state.orderIntent=null;render();};
+  const render=()=>context.renderSelects(scope),ack=()=>{const command=commands[commands.length-1];scope.ordering[state.group]={metric:command.metric,statistic:command.statistic,direction:command.direction,chronology:command.chronology};context.clearOrderIntent();render();};
   state.group='tiers';render();
   assert.strictEqual(context.getOrder(scope).chronology,'tier_desc','An unconfigured Tiers tab defaults to highest tier first');
   assert.strictEqual(selects.chronology.label.textContent,'sort.tier_desc');
@@ -81,6 +85,21 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   assert.strictEqual(selects.chronology.trigger.disabled,false,'Off restores the independent date preference');
   assert(!selects.chronology.trigger.classList.contains('ss-select-disabled'),'Off clears the disabled paint from ordinary ordering');
   controls['ss-sort-off'].onclick();assert.strictEqual(commands.at(-1).metric,'xp_received','Metric On restores the last non-Off metric');ack();
+  const confirmedFeed={pending:null};
+  state.feed=confirmedFeed;context.changeOrder('metric','xp_base');
+  const abandoned=timers.get(state.orderIntent.timer);
+  assert.strictEqual(abandoned.delay,10000,'Sort waits for a bounded acknowledgement');
+  assert.strictEqual(controls['ss-filter-loading'].style.visibility,'visible');
+  abandoned.callback();
+  assert.strictEqual(state.orderIntent,null);
+  assert.strictEqual(state.feed,confirmedFeed,'An unanswered sort preserves the mounted feed');
+  assert.strictEqual(context.getOrder(scope).metric,'xp_received','The confirmed ordering is restored');
+  assert.strictEqual(controls['ss-filter-loading'].style.visibility,'hidden');
+  assert.strictEqual(state.actionError,'error.action');
+  context.changeOrder('metric','xp_base');
+  const replacement=state.orderIntent;
+  abandoned.callback();assert.strictEqual(state.orderIntent,replacement,'A retired timeout cannot cancel the next sort');
+  context.clearOrderIntent();state.feed=null;render();
   const before=commands.length;scope.loading=true;render();controls['ss-sort-off'].onclick();context.changeOrder('metric','xp_base');
   assert.strictEqual(commands.length,before,'Busy retained toggle and selector callbacks cannot sort an unavailable projection');
   context.renderFilterActivity(scope);assert.strictEqual(controls['ss-filter-loading'].style.visibility,'visible','A rebuilding projection displays its filter spinner');

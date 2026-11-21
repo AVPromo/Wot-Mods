@@ -1,5 +1,14 @@
 # Session Stats changelog
 
+## 0.9.34 - 2026-11-21
+
+- Preserve asynchronously captured battles when an earlier receipt is temporarily unreadable.
+- Keep battle selection and its visible position up to date across changes to results or the window. Bound page refreshes and recover from unanswered sort requests.
+- Update date-range choices when editing a draft and preserve concurrent changes to different preferences.
+- Keep the captured Crucible stage until the arena is ready, recognize supported bond result fields, and defer diagnostic disk writes during battle.
+- Publish partial Chromium reports when a shard is missing or damaged and show their incomplete status in HTML.
+- Generate a reproducible standalone preview with the built version, battle history and battle selection.
+
 ## 0.9.33 - 2026-11-21
 
 - Keep the selected battle in view after opening it from a history list or a statistic.

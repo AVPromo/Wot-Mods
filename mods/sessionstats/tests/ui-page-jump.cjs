@@ -52,22 +52,26 @@ function assertFreshPageDeadline(source){
   state.nativeSession=true;state.feedForceStart=null;
   old.revision='1';old.cache={};old.signatures={};old.navigationPage=2;old.navigationDeadline=999;
   const scope={data_revision:2,summary:{battles:200},maps:[{id:'revision-page-two'}],
-    pagination:{maps:{page:2,pages:5,total:200,page_size:40}}};
+    pagination:{maps:{page:1,pages:5,total:200,page_size:40}}};
   Object.assign(context,{feedIdentity:()=>old.key,feedCollectionIdentity:()=>old.collectionKey,
-    feedContextIdentity:()=>JSON.stringify(old.context),viewContext:()=>old.context,
+    feedContextIdentity:()=>JSON.stringify(old.context),viewContext:()=>old.context,suspendResizePrefetch(){},
     requestFeedPage(feed,page,navigate){feed.pending={page,id:'fill-'+page,navigate,timer:null};},
     captureFeedAnchor(){throw Error('Explicit page reply must not become an automatic prepend anchor');},
     revealFeedTop(){throw Error('A page reply must not request Back to top');}});
   vm.runInContext(actualFunction(source,'prepareFeed'),context);
   const staged=context.prepareFeed(scope);
   assert.notStrictEqual(staged,old,'A changed result revision rebuilds its feed');
-  assert.strictEqual(staged.navigationPage,2,'The revision rebuild stages the existing page destination while prefix pages reload');
+  assert.strictEqual(staged.navigationPage,2,'The revision rebuild stages the existing page destination');
+  assert.strictEqual(staged.start,2);assert.strictEqual(staged.last,2);
+  assert.strictEqual(staged.pending.page,2,'Only the missing navigation destination is requested');
   assert.strictEqual(staged.navigationDeadline,999,'The staged revision retains its original navigation deadline');
   context.onScrollIntent({type:'wheel',deltaY:1,target:renewed.scroll});
   assert.strictEqual(staged.navigationPage,null,'New user movement retires the staged revision destination');
-  // Complete the ordinary prefix cache, then accept a later, separately owned
-  // Next request. Its lifetime starts now instead of inheriting the old 999.
-  staged.cache[0]=[];staged.cache[1]=[];staged.signatures[0]='[]';staged.signatures[1]='[]';
+  // Refresh the still-visible page, then accept a later, separately owned
+  // page request with its own deadline.
+  scope.maps=[{id:'refreshed-visible-page'}];scope.pagination.maps.page=0;
+  assert.strictEqual(context.prepareFeed(scope),staged);
+  state.renderedFeed=staged;
   staged.pending={page:3,id:'fresh-page-request',navigate:true,timer:null};
   scope.maps=[{id:'fresh-page-three'}];scope.pagination.maps={page:3,pages:5,total:200,page_size:40,request_id:'fresh-page-request'};
   const accepted=context.prepareFeed(scope);

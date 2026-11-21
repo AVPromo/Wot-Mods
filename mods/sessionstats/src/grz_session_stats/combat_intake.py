@@ -143,7 +143,8 @@ class CombatIntake(object):
         self._publish(path, checksum + b'\n' + encoded)
 
     def _publish(self, path, encoded):
-        temporary = path + '.' + uuid.uuid4().hex + '.tmp'
+        directory = os.path.dirname(path)
+        temporary = os.path.join(directory, uuid.uuid4().hex + '.tmp')
         try:
             with _create_file(temporary) as handle:
                 handle.write(encoded)
@@ -160,7 +161,7 @@ class CombatIntake(object):
                 os.remove(temporary)
             except OSError:
                 pass
-        self._storage._sync_directory(os.path.dirname(path))
+        self._storage._sync_directory(directory)
 
     @staticmethod
     def identity(receipt):
@@ -185,9 +186,13 @@ class CombatIntake(object):
                 self._mark_failed()
             return []
         result = []
+        blocked_producers = set()
         for filename in filenames:
             if len(result) >= limit:
                 break
+            producer = _FILENAME.match(filename).group(2)
+            if producer in blocked_producers:
+                continue
             receipt = _Receipt(account, filename)
             if skip is not None and skip(receipt):
                 continue
@@ -208,6 +213,9 @@ class CombatIntake(object):
             except (IOError, OSError) as error:
                 if error.errno != errno.ENOENT:
                     self._mark_failed()
+                    # A later receipt must not advance this producer's
+                    # watermark past a file that can still be read on retry.
+                    blocked_producers.add(producer)
             except (ValueError, TypeError, UnicodeError, RuntimeError):
                 self._mark_failed()
             else:

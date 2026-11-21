@@ -227,6 +227,39 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(details['active_crucible'], stage)
         self.assertEqual(details['missions'][stage]['status'], 'failed')
 
+    def test_crucible_stage_survives_avatar_notification_before_arena_context(self):
+        stage = 'challenge:8:2'
+        self.api.active_crucible = lambda: {
+            'active_crucible': stage, 'missions': {stage: {'kind': 'crucible', 'stage': 2}}}
+        self.api.events.onArenaCreated()
+        self.api.active_crucible = lambda: {}
+        self.api.battle = True
+        self.api.context = None
+        self.api.events.onAvatarBecomePlayer()
+        self.begin()
+        self.garage()
+        record = self.mod.active_service._state['battles'][ARENA_ID]
+        self.assertEqual(record['details']['active_crucible'], stage)
+        self.assertEqual(record['details']['missions'][stage]['stage'], 2)
+        self.assertIsNone(self.mod._queued_crucible)
+
+    def test_repeat_avatar_notification_does_not_consume_the_next_crucible_stage(self):
+        self.begin()
+        self.garage()
+        stage = 'challenge:8:3'
+        self.api.active_crucible = lambda: {
+            'active_crucible': stage, 'missions': {stage: {'kind': 'crucible', 'stage': 3}}}
+        self.api.events.onArenaCreated()
+        self.api.active_crucible = lambda: {}
+        self.api.battle = True
+        self.api.events.onAvatarBecomePlayer()
+        next_arena = str(int(ARENA_ID) + 1)
+        self.begin(next_arena)
+        self.garage()
+        record = self.mod.active_service._state['battles'][next_arena]
+        self.assertEqual(record['details']['active_crucible'], stage)
+        self.assertIsNone(self.mod._queued_crucible)
+
     def test_missing_account_snapshot_uses_current_package_version(self):
         self.mod.active_service = None
         snapshot = self.mod.snapshot()
@@ -250,6 +283,37 @@ class RuntimeTests(unittest.TestCase):
     def tick(self, seconds=5):
         self.clock.value += seconds
         self.api.fire(self.mod._tick_id)
+
+    def test_combat_bonus_reader_failure_buffers_log_until_garage(self):
+        self.begin()
+        wait_for_combat_capture(self.mod)
+        handler = self.mod._log_handle._handler
+        original = handler._write_pending
+        writes = []
+
+        def tracked_write():
+            writes.append(self.api.in_battle())
+            return original()
+
+        def unavailable_bonus(arena_id):
+            raise RuntimeError('Synthetic bonus reader failure')
+
+        handler._write_pending = tracked_write
+        self.api.posted_bundle = unavailable_bonus
+        logging.disable(logging.NOTSET)
+        try:
+            self.api.events.onBattleResultsReceived(True, raw_result())
+            self.assertEqual(writes, [])
+            self.garage()
+            self.assertTrue(writes)
+            self.assertFalse(any(writes))
+            with open(self.mod.log_path, 'rb') as handle:
+                log = handle.read()
+            self.assertIn(b'code=bonus_reader', log)
+            self.assertIn(b'Compatibility [results:bonus]', log)
+        finally:
+            handler._write_pending = original
+            logging.disable(logging.CRITICAL)
 
     def test_initialization_is_account_scoped_and_footer_failure_is_optional(self):
         self.assertTrue(self.mod.running)

@@ -27,28 +27,33 @@ function assertBidirectionalSource(source=shipped()){
   const controls={},nodes={groups,scroll,'scroll-top':new Node(),'list-meta':new Node()},scheduled=[],timers=new Map(),commands=[];
   let nextTimer=0,resizes=0,dismissed=0;
   const state={scope:'launch',group:'battles',nativeSession:true,nativeScale:1,feedSequence:0,feedForceStart:null,
-    pageJump:null,pageJumpTimer:null,battleJump:null,scrollTarget:null,xp:'base',language:'en',appearanceCSS:'',payload:{account_key:'synthetic-midfeed'},cardPages:[],groupCards:[],list:[]};
+    pageJump:null,pageJumpTimer:null,battleJump:null,scrollTarget:null,xp:'base',language:'en',appearanceCSS:'',payload:{account_key:'synthetic-midfeed',scopes:{}},cardPages:[],groupCards:[],list:[]};
   let scope={period_id:'synthetic-midfeed-period',data_revision:1,summary:{battles:205},ordering:{battles:{metric:'off',statistic:'avg',direction:'desc',chronology:'newest'}}};
   const rows=index=>Array.from({length:index===5?5:40},(_,offset)=>({id:'synthetic-midfeed-'+(index*40+offset)}));
   const context={state,nodes,Date,Math,Object,JSON,Number,String,hasNumber:value=>typeof value==='number'&&isFinite(value),
     document:{getElementById:id=>controls[id]||(controls[id]=new Node())},
     window:{requestAnimationFrame:fn=>scheduled.push(fn),setTimeout(fn){const id=++nextTimer;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id)},
-    currentScope:()=>scope,scopeName:()=>state.scope,getOrder:()=>scope.ordering.battles,
+    currentScope:()=>scope,scopeName:()=>state.scope,getOrder:()=>state.orderIntent?state.orderIntent.options:scope.ordering.battles,
     viewContext:()=>({account_key:state.payload.account_key,scope:state.scope,period_id:scope.period_id}),
     sameContext:owned=>!state.destroyed&&owned.account_key===state.payload.account_key&&owned.scope===state.scope&&owned.period_id===scope.period_id,
     append:(parent,node)=>parent.appendChild(node),element:(tag,className)=>new Node(className,/ss-page-divider/.test(className)?20:/ss-page-spinner/.test(className)?30:0),
     invoke:(action,args)=>{commands.push({action,...args});return true;},setStatus(){},renderSelects(){},renderFilterActivity(){},t:key=>key,number:String,date:String,
     invalidateCardFlow(){},clear:node=>node.children.slice().forEach(child=>node.removeChild(child)),stageFeedContext(){},
     ordered:items=>items,layoutBattleCards(){},queueResize(){resizes++;},pinnedFilterHeight:()=>50,
+    scrollbarMetrics:()=>({maximum:Math.max(0,scroll.scrollHeight-scroll.clientHeight)}),battleLayoutOffset:()=>null,
+    startBattleJump(target,revealOnly){state.battleJump={target,revealOnly};},
     cancelBattleNavigation(){state.battleJump=null;},clearBattleTarget(){dismissed++;},
     resetViewScroll(){state.scrollTarget=0;scroll.scrollTop=0;},updatePinnedFilters(){},
     createCardPage(index,items,feed){const section=context.pageBoundary(feed,index,false);section.height=1000;groups.appendChild(section);
       return {index,section,columns:new Node(),items,cards:[],lanes:[new Node(),new Node()]};},
-    appendGroupBatch(count,page){page.cards=page.items.slice(0,count).map(()=>new Node('ss-group',20));state.groupCards=state.groupCards.concat(page.cards);},
+    appendGroupBatch(count,page){page.cards=page.items.slice(0,count).map(item=>{
+      const card=new Node('ss-group',20);card.setAttribute('data-group-id',item.id);return page.section.appendChild(card);
+    });state.groupCards=state.groupCards.concat(page.cards);},
     render(){context.renderGroups(scope);}};
   vm.createContext(context);
-  for(const name of ['feedCollectionIdentity','feedIdentity','feedContextIdentity','battleOwnsViewport','cancelUITimer','cancelPageJump','beginPageJump','retireFeed','captureFeedAnchor','finishFeedAnchor',
-    'revealFeedTop','pageBoundary','showFeedPending','requestFeedPage','prepareFeed','updateFeedControls','renderGroups','loadNearEdges','onScrollIntent','changePage'])
+  for(const name of ['feedCollectionIdentity','feedIdentity','feedContextIdentity','battleOwnsViewport','retainBattleTargetAfterResize','cancelUITimer','cancelPageJump','beginPageJump','retireFeed','captureFeedAnchor','finishFeedAnchor',
+    'revealFeedTop','pageBoundary','showFeedPending','requestFeedPage','captureRefreshAnchor','finishRefreshAnchor','prepareFeed','updateFeedControls','renderGroups',
+    'suspendResizePrefetch','loadNearEdges','onScrollIntent','changePage'])
     vm.runInContext(sourceFunction(source,name),context);
   const topStart=source.indexOf("    if (nodes['scroll-top']) { nodes['scroll-top'].onclick = function () {",source.indexOf('    function changePage('));
   const topEnd=source.indexOf("    document.getElementById('ss-scope-launch')",topStart);assert(topStart>=0&&topEnd>topStart);
@@ -58,6 +63,13 @@ function assertBidirectionalSource(source=shipped()){
     if(request)scope.pagination.battles.request_id=request.id;context.renderGroups(scope);flush();};
   const start=()=>{context.retireFeed();groups.children.slice().forEach(child=>groups.removeChild(child));state.renderedFeed=null;state.groupCards=[];state.cardPages=[];
     state.scrollTarget=null;scroll.scrollTop=400;scope.data_revision++;reply(3);scroll.scrollTop=200;state.scrollTarget=null;};
+  start();const confirmedFeed=state.feed,confirmedCards=state.groupCards.slice(),beforeSortRender=commands.length;
+  state.orderIntent={group:state.group,context:context.viewContext(),options:{...scope.ordering.battles,direction:'asc'},timer:1};
+  context.renderGroups(scope);flush();
+  assert.strictEqual(state.feed,confirmedFeed,'A redraw before the native sort acknowledgement keeps the confirmed feed');
+  assert.deepStrictEqual(state.groupCards,confirmedCards);
+  assert.strictEqual(commands.length,beforeSortRender,'A redraw while sorting does not start a page request under the optimistic order');
+  state.orderIntent=null;
   start();context.loadNearEdges();const waiting=state.feed.pending,beforeFrame=commands.length;
   assert(timers.has(waiting.timer),'The page spinner has a watchdog before the native frame callback runs');
   const watchdog=timers.get(waiting.timer);timers.delete(waiting.timer);watchdog();
@@ -102,8 +114,70 @@ function assertBidirectionalSource(source=shipped()){
   // Reusing page zero needs no second backend request.
   const before=commands.length;nodes['scroll-top'].onclick();flush();assert.strictEqual(commands.length,before);assert.strictEqual(state.cardPages[0].index,0);
   assert.strictEqual(scroll.scrollTop,0);assert(dismissed>=3);assert(resizes>0);
+  start();context.changePage(1);flush();scope.data_revision++;reply(5);
+  assert.strictEqual(groups.getAttribute('aria-busy'),'true');
+  const stalledDestination=state.feed.pending;
+  timers.get(stalledDestination.timer)();
+  assert.strictEqual(groups.getAttribute('aria-busy'),'false','The watchdog ends a stalled destination spinner');
+  assert.deepStrictEqual(Array.from(state.cardPages,page=>page.index),[3]);
+  groups.querySelector('.ss-page-status').children[0].onclick();flush();
+  assert.strictEqual(groups.getAttribute('aria-busy'),'true','Retry starts a fresh owned request');
+  for(const destination of [4,0]){
+    start();
+    if(destination===4)context.changePage(1);else nodes['scroll-top'].onclick();
+    flush();
+    assert.strictEqual(state.feed.pending.page,destination);
+    scope.data_revision++;reply(5);
+    const stagedDestination=state.feed.pending;
+    assert.strictEqual(stagedDestination.page,destination);
+    assert.deepStrictEqual(Array.from(state.cardPages,page=>page.index),[3]);
+    context.onScrollIntent({type:'wheel',deltaY:1,target:scroll});scroll.scrollTop=320;
+    const anchor=state.cardPages[0].cards[11],offset=anchor.getBoundingClientRect().top;
+    reply(destination,stagedDestination);
+    assert(groups.contains(anchor),'A cancelled staged destination cannot replace the page the user scrolled');
+    assert.strictEqual(state.feed.pending.page,3,'Cancellation refreshes the mounted page under the new revision');
+    reply(3,state.feed.pending);
+    for(let measurement=0;measurement<3;measurement++)context.finishRefreshAnchor();
+    assert.deepStrictEqual(Array.from(state.cardPages,page=>page.index),[3]);
+    assert.strictEqual(state.cardPages[0].cards[11].getBoundingClientRect().top,offset,'The refresh uses the later wheel position');
+    assert.strictEqual(state.pageJump,null);
+  }
+  nodes['scroll-top'].onclick();flush();
+  if(state.feed.pending)reply(0,state.feed.pending);
+  for(let index=1;index<6;index++){state.feed.last=index;reply(index);}
+  state.feed.current=3;scroll.scrollTop=3350;
+  const visibleCard=state.cardPages[3].cards.find(card=>{
+    const box=card.getBoundingClientRect();return box.bottom>50&&box.top<500;
+  });
+  const visibleID=visibleCard.getAttribute('data-group-id'),visibleTop=visibleCard.getBoundingClientRect().top;
+  const beforeRevision=commands.length;
+  scope.data_revision++;reply(5);
+  const refresh=state.feed.pending;
+  assert.strictEqual(refresh.page,3,'Refresh requests the visible page instead of replaying visited pages');
+  assert.strictEqual(state.feed.start,3);assert.strictEqual(state.feed.last,3);
+  assert(groups.contains(visibleCard),'The old view stays mounted until the visible page is ready');
+  scope.data_revision++;reply(5);
+  assert.strictEqual(state.feed.pending,refresh,'A newer result cannot restart the same visible-page request');
+  reply(3,refresh);
+  const updatedCard=state.cardPages[0].cards.find(card=>card.getAttribute('data-group-id')===visibleID);
+  for(let measurement=0;measurement<3;measurement++)context.finishRefreshAnchor();
+  assert.strictEqual(state.cardPages.length,1);
+  assert.strictEqual(updatedCard.getBoundingClientRect().top,visibleTop,'Replacing a long feed preserves the visible card offset');
+  assert.strictEqual(commands.length,beforeRevision+1,'Only one page is requested across multiple rapid revisions');
+  context.loadNearEdges();flush();
+  assert.strictEqual(commands.length,beforeRevision+1,'Anchor correction cannot cause an unsolicited edge fetch');
+
+  state.highlightedBattle={id:visibleID,context:context.viewContext(),request_id:'selection-before-wheel',followViewport:true};
+  context.onScrollIntent({type:'wheel',deltaY:1,target:scroll});
+  context.retainBattleTargetAfterResize();
+  scope.data_revision++;scope.battles=rows(3).map(row=>({...row,live:42}));
+  scope.pagination.battles={page:3,pages:6,page_size:40,total:206,request_id:refresh.id};
+  context.renderGroups(scope);flush();
+  assert.strictEqual(state.feed.total,206);
+  assert.strictEqual(state.feed.cache[3][0].live,42,'After wheel and resize, fresh stats with the last acknowledged page token still update the list');
+  assert.strictEqual(commands.length,beforeRevision+1,'A fresh acknowledgement never requests a stale page');
   let pinnedWrites=0;context.updatePinnedFilters=()=>{pinnedWrites++;};state.destroyed=true;
-  context.loadNearEdges();flush();assert.strictEqual(commands.length,before);assert.strictEqual(pinnedWrites,0,'A retained scroll listener cannot fetch or repaint after teardown');
+  context.loadNearEdges();flush();assert.strictEqual(commands.length,beforeRevision+1);assert.strictEqual(pinnedWrites,0,'A retained scroll listener cannot fetch or repaint after teardown');
   assert(source.includes("nodes.scroll.removeEventListener('scroll', queueScrollEdges);"),'Cleanup removes its exact deferred edge-loading listener');
 }
 
