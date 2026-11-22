@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const {test} = require('node:test');
+const {runInNewContext} = require('node:vm');
 const {applySortOrder,runCase} = require('./run.cjs');
 
 const task={width:365,height:730,language:'en',range:'since-sunday',group:'vehicles',scope:'timeline'};
@@ -47,20 +48,31 @@ function mounted({page,offset,ids},wide=false,top=0) {
   return wide?[...cards.filter(card=>card.lane===0),...cards.filter(card=>card.lane===1)]:cards;
 }
 
-function probe(phases,total=3,results=null) {
+function probe(phases,total=3,results=null,startingScroll=0) {
   let index=-1;
   const first={page:0,offset:0,total,ids:['9007199254740993','002','10'].slice(0,total)};
   results=results||{current:first,pages:new Map([[0,first]])};
   const wheels=[], captures=[];
+  const scroll={scrollTop:startingScroll};
+  let queuedScroll=startingScroll;
+  const topButton={onclick:()=>{scroll.scrollTop=queuedScroll=0;}};
   const ctx={
     applyOrder:async()=>{},
-    idle:async()=>{},
+    idle:async()=>{
+      if(queuedScroll!==null) scroll.scrollTop=queuedScroll;
+      queuedScroll=null;
+    },
     resultPages:()=>results,
     snapshot:async name=>{captures.push(name);return name;},
     driver:{
-      evaluate:async()=> {
-        if(index++===-1) return;
-        return {rendered:mounted(results.current),wide:false,...phases[index-1],width:task.width,height:task.height,group:task.group,
+      evaluate:async callback=>{
+        if(index++===-1) {
+          return runInNewContext(`(${callback})()`,{window:{},document:{getElementById:id=>
+            ({'ss-scroll':scroll,'ss-scroll-top':topButton})[id]}});
+        }
+        const layout=phases[index-1];
+        return {rendered:mounted(results.current),wide:false,...layout,top:index===1?scroll.scrollTop:layout.top,
+          width:task.width,height:task.height,group:task.group,
           version:'v'+version,wheelAt:{x:100,y:200},errors:[],wheels:[...wheels]};
       },
       wheel:async(x,y,delta)=>{wheels.push({delta,trusted:true});}
@@ -68,6 +80,12 @@ function probe(phases,total=3,results=null) {
   };
   return {run:()=>runCase(ctx,task,order,version,'all'),wheels,captures};
 }
+
+test('a queued layout cannot restore the previous scenario scroll offset',async()=>{
+  const {run}=probe([phase(0,600),phase(192,408),phase(384,216),phase(576,24)],3,null,576);
+  const report=await run();
+  assert.deepEqual(report.phases.map(item=>item.top),[0,192,384,576]);
+});
 
 test('a trusted wheel must move the actual viewport while it has space',async()=>{
   for(const [name,phases] of [

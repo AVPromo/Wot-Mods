@@ -278,6 +278,7 @@ class Backend:
         self.serial = 0
         self.account = None
         self.language = 'en'
+        self.legacy_manual = False
         self.timeline_cache = {}
         config = default_config()
         self.presentation = build_presentation(config)
@@ -346,6 +347,7 @@ class Backend:
             if not service.set_order(scope, tab, self.defaults[tab], index.identifier):
                 raise RuntimeError('Could not reset the sort order for ' + tab)
         self.language = language
+        self.legacy_manual = selected['scope'] == 'manual'
         self.serial += 1
         self.account = f'local-e2e-{self.serial}'
         return self.snapshot()
@@ -354,7 +356,9 @@ class Backend:
         data = self.service.snapshot()
         data['account_key'] = self.account
         data['appearance'] = self.presentation
-        data['scopes']['timeline'] = self.service.timeline_snapshot()
+        # A Timeline payload takes over the old manual button in the panel.
+        if not self.legacy_manual:
+            data['scopes']['timeline'] = self.service.timeline_snapshot()
         if self.installation:
             installation = self.installation.snapshot()
             scope = installation['scopes']['manual']

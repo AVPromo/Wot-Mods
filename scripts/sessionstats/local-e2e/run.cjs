@@ -122,6 +122,15 @@ function resultPage(model, task) {
   return {owner,page,offset,total,ids:rows.map(row=>String(row.id))};
 }
 
+async function resetScenarioScroll(driver) {
+  await driver.evaluate(()=>{
+    // Use the panel action so a queued layout cannot restore the previous
+    // scenario's scroll offset after a direct scrollTop assignment.
+    document.getElementById('ss-scroll-top').onclick();
+    window.__localWheels=[];
+  });
+}
+
 function session(driver, backend, inventory, out, hostSize, compare, screenshotOptions) {
   let size, model, currentPage, submitted = 0;
   const pythonPages = new Map();
@@ -223,14 +232,16 @@ function session(driver, backend, inventory, out, hostSize, compare, screenshotO
     model=null;
     pythonPages.clear();
     await collectActions();
-    await publish(await backend.ask('setup',{range:task.range,group:task.group,language:task.language}));
+    const payload=await backend.ask('setup',{range:task.range,group:task.group,language:task.language});
+    assert(scope!=='manual'||!payload.scopes.timeline,'Timeline overrides the planned legacy manual scope');
+    await publish(payload);
     const active=`#ss-scope-${scope==='timeline'?'manual':scope}`;
     await until(()=>driver.evaluate(()=>window.GRZSessionStats?.getState().nativeBound),'WoT host bridge was not bound');
     if(!await driver.evaluate(selector=>document.querySelector(selector)?.getAttribute('aria-pressed')==='true',active)) await click(active);
     const group='#ss-group-'+task.group;
     if(!await driver.evaluate(selector=>document.querySelector(selector)?.getAttribute('aria-pressed')==='true',group)) await click(group);
+    await resetScenarioScroll(driver);
     await idle();
-    await driver.evaluate(()=>{document.getElementById('ss-scroll').scrollTop=0;});
   }
   function orderFor(task) {
     return model?.scopes[task.scope]?.ordering[task.group];
@@ -366,7 +377,7 @@ async function measure(driver) {
 
 async function runCase(ctx, task, order, version, capture) {
   await ctx.applyOrder(task,order);
-  await ctx.driver.evaluate(()=>{document.getElementById('ss-scroll').scrollTop=0; window.__localWheels=[];});
+  await resetScenarioScroll(ctx.driver);
   await ctx.idle();
   const phases=[];
   const root=label(task)+'/'+variant(order);
@@ -386,9 +397,9 @@ async function runCase(ctx, task, order, version, capture) {
     assert(!state.overflow,`${state.overflow} filter controls overflow their container`);
     assert(!state.pinned||state.filterInside,'Pinned filters escaped the scroll viewport');
     assert.deepEqual(state.errors,[]);
-    assert.equal(state.wheels.length,step);
+    assert.equal(state.wheels.length,step,`Wrong number of wheel events after step ${step}`);
     assert(state.wheels.every(event=>event.trusted&&event.delta<0),'Wheel events did not reach the panel using native input');
-    if(!step) assert.equal(state.top,0);
+    if(!step) assert.equal(state.top,0,`Viewport started at ${state.top} px after the panel's back-to-top action`);
     else {
       assert(state.top>=previous.top,'Scrolling reversed unexpectedly');
       assert(previous.remaining<=1||state.top>previous.top,
