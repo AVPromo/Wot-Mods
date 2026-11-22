@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { readFileSync } = require('node:fs');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -60,12 +60,13 @@ const manifest = {
 };
 
 async function merge(t, {state={}, rows=[scenario,interaction], expected=1, missing=false,
-  rawManifest, rawLedger, images={}, additional=[], identity={}}={}) {
+  rawManifest, rawLedger, images={}, additional=[], identity={}, upstream={}, env={}}={}) {
   const directory = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'sessionstats-merge-'));
   t.after(async()=>fs.rm(directory,{recursive:true,force:true}));
   const output = path.join(directory,'report');
   const args = [path.join(__dirname,'merge-report.cjs'),'--out',output,'--expected-shards',String(expected)];
   for(const [key,value] of Object.entries(identity)) args.push('--expected-'+key,value);
+  for(const [key,value] of Object.entries(upstream)) args.push('--'+key+'-result',value);
   const inputs=missing ? [] : [{state,rows,rawManifest,rawLedger,images},...additional];
   for(const [index,input] of inputs.entries()) {
     const shard=path.join(directory,'shard-'+index);
@@ -80,7 +81,7 @@ async function merge(t, {state={}, rows=[scenario,interaction], expected=1, miss
     }
     args.push(shard);
   }
-  const result = spawnSync(process.execPath,args,{encoding:'utf8'});
+  const result = spawnSync(process.execPath,args,{encoding:'utf8',env:{...process.env,...env}});
   assert.ifError(result.error);
   if(inputs.some(input=>input.state?.fixture&&input.state.fixture!=='synthetic')) {
     await assert.rejects(fs.access(output),{code:'ENOENT'});
@@ -90,10 +91,10 @@ async function merge(t, {state={}, rows=[scenario,interaction], expected=1, miss
   const html = await fs.readFile(path.join(output,'index.html'),'utf8');
   const catalogue = await fs.readFile(path.join(output,'catalog.js'),'utf8');
   assert.match(html, /<script src="catalog\.js"><\/script>/);
-  assert.match(html, /Run incomplete/);
+  assert.match(html, /id="verdict"/);
   assert.ok(!catalogue.includes(failure));
   const data=JSON.parse(catalogue.slice('window.sessionStatsMatrix = '.length).trimEnd().slice(0,-1));
-  return {result,summary,data,output};
+  return {result,summary,data,html,output};
 }
 
 test('succeeds only after matching one scenario and one interaction to the manifest', async t => {
@@ -102,6 +103,62 @@ test('succeeds only after matching one scenario and one interaction to the manif
   assert.equal(summary.finished,true);
   assert.equal(summary.completed,1);
   assert.equal(summary.interactions,1);
+});
+
+test('reports a failed detailed Chromium job even when every rendered case passed',async t=>{
+  const upstream={render:'success',contracts:'failure',download:'success'};
+  const {result,summary,data,html}=await merge(t,{upstream,state:{upstream:{...upstream,contracts:'success'}}});
+  assert.equal(result.status,1);
+  assert.match(result.stderr,/Detailed Chromium contracts: Failed/);
+  assert.equal(summary.finished,true);
+  assert.equal(data.summary.failures,0);
+  assert.deepEqual(data.rows.map(row=>row.issues),[['pass'],['pass']]);
+  assert.match(html,/<strong>Run failed<\/strong>/);
+  assert.match(html,/<li class="failed">Detailed Chromium contracts · Failed<\/li>/);
+});
+
+test('reports other upstream failures and accepts a planned smoke skip',async t=>{
+  for(const [suite,upstream,jobStatus,exit] of [
+    ['full',{render:'failure',contracts:'success',download:'success'},'Chromium render shards · Failed',1],
+    ['full',{render:'success',contracts:'success',download:'failure'},'Shard download · Failed',1],
+    ['full',{render:'success',contracts:'cancelled',download:'success'},'Detailed Chromium contracts · Cancelled',1],
+    ['full',{render:'success',contracts:'skipped',download:'success'},'Detailed Chromium contracts · Skipped',1],
+    ['smoke',{render:'success',contracts:'skipped',download:'success'},'Detailed Chromium contracts · Skipped for smoke',0],
+  ]) {
+    await t.test(jobStatus,async check=>{
+      const {result,summary,html}=await merge(check,{upstream,state:{suite}});
+      assert.equal(result.status,exit);
+      assert.deepEqual(summary.upstream,upstream);
+      assert.ok(html.includes(jobStatus));
+      assert.match(html,exit?/Run failed/:/Run passed/);
+    });
+  }
+});
+
+test('a manual report uses rendered cases and ignores purported job outcomes in the shard',async t=>{
+  const {result,data,html}=await merge(t,{state:{upstream:{render:'failure',contracts:'failure',download:'failure'}}});
+  assert.equal(result.status,0);
+  assert.deepEqual(data.summary.jobs,[]);
+  assert.match(html,/Render checks passed/);
+  assert.doesNotMatch(html,/Detailed Chromium contracts ·/);
+});
+
+test('an older comment workflow uses the actual checkout, never the default-branch event SHA',async t=>{
+  const cwd=path.resolve(__dirname,'../../..');
+  const stamp=execFileSync('git',['rev-parse','--verify','HEAD'],{cwd,encoding:'utf8'}).trim();
+  const version=readFileSync(path.join(cwd,'mods/sessionstats/VERSION'),'utf8').trim();
+  const unrelated=stamp==='e'.repeat(40)?'f'.repeat(40):'e'.repeat(40);
+  const env={GITHUB_ACTIONS:'true',GITHUB_EVENT_NAME:'issue_comment',GITHUB_SHA:unrelated};
+  const {result,summary,data,html}=await merge(t,{env,state:{commit:unrelated,version},additional:[
+    {state:{commit:stamp,version}},
+  ]});
+  assert.equal(result.status,1);
+  assert.match(result.stderr,/does not match the requested version, suite, capture mode or commit/);
+  assert.equal(summary.commit,stamp);
+  assert.equal(summary.shards,1);
+  assert.equal(data.summary.commit,stamp);
+  assert.equal(data.rows.length,2);
+  assert.match(html,/Upstream CI status is unavailable in this report/);
 });
 
 test('a recorded failure fails the run while keeping its report', async t => {

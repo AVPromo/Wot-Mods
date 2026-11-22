@@ -1,5 +1,14 @@
 # Session Stats changelog
 
+## 0.9.36 - 2026-11-22
+
+- Preserve the order of combat results across concurrent clients and temporarily unreadable files, and finish accepted writes on clean shutdown.
+- Retry saving installation provenance and handle extended Windows paths throughout battle history and local settings.
+- Keep page refreshes, Back to source, sort timeouts and repeated timeline ranges responsive when replies arrive late.
+- Provide an inline retry when vehicle or map battle history stops responding.
+- Let newer window preferences save after a rejected or unanswered request.
+- Check actual Chromium wheel movement and show failed upstream checks in downloadable reports.
+
 ## 0.9.35 - 2026-11-22
 
 - Preserve battle receipts when reading their installation binding must be retried or the Windows profile path is long.

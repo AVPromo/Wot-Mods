@@ -43,6 +43,18 @@ const safeVersion = value => typeof value === 'string' && /^[0-9]+(?:\.[0-9]+){1
 const groupRanks = new Map(Object.keys(names.groups).map((name,index)=>[name,index]));
 const rangeRanks = new Map(Object.keys(names.ranges).map((name,index)=>[name,index]));
 const interactionStages = Object.keys(names.interactions).filter(name=>name!=='failure');
+const ciJobs = {'render':'Chromium render shards','contracts':'Detailed Chromium contracts','download':'Shard download'};
+const ciResults = {success:'Passed',failure:'Failed',cancelled:'Cancelled',skipped:'Skipped'};
+
+function ciOutcomes(state) {
+  if(!state.upstream) return [];
+  return Object.entries(ciJobs).map(([key,name])=>{
+    const result=state.upstream[key];
+    const smokeSkip=key==='contracts'&&result==='skipped'&&state.suite==='smoke';
+    return {name,label:smokeSkip?'Skipped for smoke':owns(ciResults,result)?ciResults[result]:'Unavailable',
+      failed:result!=='success'&&!smokeSkip};
+  });
+}
 
 function caseFromKey(key) {
   if (typeof key !== 'string' || key.length > 132) return null;
@@ -270,11 +282,12 @@ function showMatrix(names) {
   byId('viewer').addEventListener('close',()=>{byId('image').removeAttribute('src');});
   byId('title').textContent = 'Session Stats' + (summary.version ? ' '+summary.version : '');
   byId('summary').textContent = [
-    summary.incomplete ? 'Run incomplete' : '', summary.engine, summary.renderer, summary.suite,
+    summary.engine, summary.renderer, summary.suite,
     summary.commit ? `Commit ${summary.commit.slice(0, 12)}` : '',
     summary.expectedShards === null ? '' : 'Shards '+summary.shards+'/'+summary.expectedShards,
     'Cases '+summary.completed+'/'+summary.planned,
-    'Failures '+summary.failures, 'Visual differences '+summary.visualFailures,
+    'Case failures '+summary.failures, 'Visual differences '+summary.visualFailures,
+    summary.missingBaselines ? 'Missing baselines '+summary.missingBaselines : '',
     'Screenshots '+summary.frames, summary.omitted ? 'Omitted entries '+summary.omitted : ''
   ].filter(Boolean).join(' · ');
   render();
@@ -297,6 +310,7 @@ async function writeReport(directory,state) {
   }
   rows.sort(compareCases);
   omitted += count(state.omittedRows) ?? 0;
+  const jobs=ciOutcomes(state);
   const summary = {
     version:safeVersion(state.version),
     commit:typeof state.commit==='string'&&/^[a-f0-9]{40}$/.test(state.commit)?state.commit:undefined,
@@ -305,10 +319,16 @@ async function writeReport(directory,state) {
     suite:['smoke','full','build','quick'].includes(state.suite) ? state.suite : '',
     planned:count(state.planned) ?? rows.length, completed:count(state.completed) ?? rows.length,
     failures:(count(state.failed) ?? 0)+(count(state.interactionErrors) ?? 0),
-    visualFailures:count(state.visualFailures) ?? 0, frames, omitted,
+    visualFailures:count(state.visualFailures) ?? 0, missingBaselines:count(state.missingBaselines) ?? 0, frames, omitted,
     incomplete:state.finished===false||omitted>0,
-    shards:count(state.shards), expectedShards:count(state.expectedShards)
+    shards:count(state.shards), expectedShards:count(state.expectedShards),
+    jobs
   };
+  const failed=Boolean(summary.failures||summary.visualFailures||summary.missingBaselines||jobs.some(job=>job.failed));
+  const verdict=failed?'Run failed':summary.incomplete?'Run incomplete':jobs.length?'Run passed':'Render checks passed';
+  const jobStatus=jobs.length
+    ? `<ul aria-label="CI jobs">${jobs.map(job=>`<li${job.failed?' class="failed"':''}>${job.name} · ${job.label}</li>`).join('')}</ul>`
+    : state.legacyComment ? '<p>Upstream CI status is unavailable in this report. See the GitHub Actions run for the overall result.</p>' : '';
 
   await fs.writeFile(path.join(directory,'catalog.js'),
     'window.sessionStatsMatrix = '+JSON.stringify({rows,summary})+';\n');
@@ -332,6 +352,9 @@ dialog form{float:right}dialog img{display:block;max-width:100%;max-height:65vh;
 </head>
 <body>
 <h1 id="title">Session Stats</h1>
+<p id="verdict"${failed||summary.incomplete?' class="failed"':''}><strong>${verdict}</strong></p>
+${failed&&summary.incomplete?'<p>Partial case coverage</p>':''}
+${jobStatus}
 <p id="summary"></p>
 <div id="filters"></div>
 <nav class="pager" aria-label="Test case pages">
@@ -361,4 +384,4 @@ dialog form{float:right}dialog img{display:block;max-width:100%;max-height:65vh;
   await fs.writeFile(path.join(directory,'index.html'),html);
 }
 
-module.exports = { publicCase, writeReport };
+module.exports = { ciJobs, ciResults, ciOutcomes, publicCase, writeReport };

@@ -22,6 +22,7 @@ import threading
 import time
 
 from . import VERSION
+from .storage import _ensure_directory, native_data_path
 
 MAX_LOG_BYTES = 1024 * 1024
 BACKUP_COUNT = 3
@@ -301,16 +302,11 @@ def start_logging(data_dir, defer=None):
             data_dir = data_dir.decode(sys.getfilesystemencoding() or 'utf-8')
         directory = os.path.join(os.path.abspath(data_dir), 'logs')
         state.path = os.path.join(directory, 'session-stats.log')
-        state._key = os.path.normcase(state.path)
+        state._key = os.path.normcase(native_data_path(state.path))
         existing = _active.get(state._key)
         if existing is not None and not existing._closed:
             return existing
-        if not os.path.isdir(directory):
-            try:
-                os.makedirs(directory, 0o700)
-            except OSError as error:
-                if error.errno != errno.EEXIST or not os.path.isdir(directory):
-                    raise
+        _ensure_directory(native_data_path(directory))
         windows = os.name == 'nt'
         try:
             if windows:
@@ -320,7 +316,7 @@ def start_logging(data_dir, defer=None):
         except ImportError:
             lock_module = None
             state.path = os.path.join(directory, 'session-stats-%d.log' % os.getpid())
-        state._handler = _ModLogHandler(state.path, lock_module, windows, defer)
+        state._handler = _ModLogHandler(native_data_path(state.path), lock_module, windows, defer)
         state._handler.flush()  # Probe the destination without exposing data.
         if state._handler.error:
             state._error = state._handler.error

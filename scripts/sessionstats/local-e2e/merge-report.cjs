@@ -1,12 +1,13 @@
 'use strict';
 
 const assert=require('node:assert/strict');
+const {execFileSync}=require('node:child_process');
 const fs=require('node:fs/promises');
 const path=require('node:path');
-const {createReadStream}=require('node:fs');
+const {createReadStream,readFileSync}=require('node:fs');
 const {createInterface}=require('node:readline');
 const {parseArgs}=require('node:util');
-const {publicCase,writeReport}=require('./report.cjs');
+const {ciJobs,ciResults,ciOutcomes,publicCase,writeReport}=require('./report.cjs');
 const {validScreenshot,viewportForPanel}=require('./screenshot.cjs');
 
 const resultCounters=['completed','failed','interactions','interactionErrors','visualFailures','missingBaselines'];
@@ -37,7 +38,7 @@ async function transfer(directory,out,relative,viewport) {
   return target;
 }
 
-async function merge({out,input,expected,expectedIdentity}) {
+async function merge({out,input,expected,expectedIdentity,upstream,legacyComment}) {
   const files=[];
   const seen=new Set();
   const identityKeys=Object.keys(identityFields);
@@ -90,6 +91,7 @@ async function merge({out,input,expected,expectedIdentity}) {
   const summary={version:expectedIdentity.version??first?.version??'unknown',engine:'chromium',renderer:first?.renderer||null,
     suite:expectedIdentity.suite??first?.suite??'full',fixture:'synthetic',assets:'test-art',
     capture:expectedIdentity.capture??first?.capture??null,commit:expectedIdentity.commit??first?.commit,
+    upstream,legacyComment,
     expectedShards:expected,shards:files.length,omittedRows:0,
     finished:!invalidManifest&&files.length===expected&&files.every(({state})=>state.finished===true)};
   summary.planned=files.reduce((sum,file)=>sum+file.state.planned,0);
@@ -155,21 +157,39 @@ async function merge({out,input,expected,expectedIdentity}) {
     await fs.writeFile(path.join(out,'run.json'),JSON.stringify(summary,null,2)+'\n');
     await writeReport(out,summary);
   }
-  if(!summary.finished||summary.failed||summary.interactionErrors||summary.visualFailures||summary.missingBaselines) {
+  const failedJobs=ciOutcomes(summary).filter(job=>job.failed);
+  for(const job of failedJobs) console.error(`${job.name}: ${job.label}`);
+  if(!summary.finished||summary.failed||summary.interactionErrors||summary.visualFailures||summary.missingBaselines||
+      failedJobs.length) {
     process.exitCode=1;
   }
 }
 
+const jobKeys=Object.keys(ciJobs);
 const {values,positionals}=parseArgs({allowPositionals:true,
   options:{out:{type:'string'},'expected-shards':{type:'string'},'expected-version':{type:'string'},
-    'expected-suite':{type:'string'},'expected-capture':{type:'string'},'expected-commit':{type:'string'}}});
+    'expected-suite':{type:'string'},'expected-capture':{type:'string'},'expected-commit':{type:'string'},
+    ...Object.fromEntries(jobKeys.map(key=>[key+'-result',{type:'string'}]))}});
 const expected=Number(values['expected-shards']||positionals.length);
 const expectedIdentity=Object.fromEntries(Object.keys(identityFields)
   .filter(key=>values['expected-'+key]!==undefined).map(key=>[key,values['expected-'+key]]));
+const upstream=jobKeys.some(key=>values[key+'-result']!==undefined)
+  ? Object.fromEntries(jobKeys.map(key=>[key,values[key+'-result']])) : undefined;
+assert(!upstream||jobKeys.every(key=>Object.hasOwn(ciResults,upstream[key])),
+  'Provide valid render, contracts and download results together');
 assert(values.out&&Number.isSafeInteger(expected)&&expected>=1,
   'Use --out DIRECTORY [--expected-shards N] [--expected-version VERSION] '+
-  '[--expected-suite SUITE] [--expected-capture CAPTURE] [--expected-commit SHA] [shard directories]');
+  '[--expected-suite SUITE] [--expected-capture CAPTURE] [--expected-commit SHA] '+
+  '[--render-result RESULT --contracts-result RESULT --download-result RESULT] [shard directories]');
+const legacyComment=!upstream&&process.env.GITHUB_ACTIONS==='true'&&process.env.GITHUB_EVENT_NAME==='issue_comment';
+if(legacyComment&&!expectedIdentity.commit) {
+  // Older default-branch workflows pin this checkout to the tested PR head.
+  // GITHUB_SHA still points at the workflow's default-branch commit.
+  const checkout=path.resolve(__dirname,'../../..');
+  expectedIdentity.commit=execFileSync('git',['rev-parse','--verify','HEAD'],{cwd:checkout,encoding:'utf8'}).trim();
+  expectedIdentity.version??=readFileSync(path.join(checkout,'mods/sessionstats/VERSION'),'utf8').trim();
+}
 assert(Object.entries(expectedIdentity).every(([key,value])=>identityFields[key](value)),
   'Invalid expected version, suite, capture mode or commit');
-merge({out:path.resolve(values.out),expected,expectedIdentity,input:positionals})
+merge({out:path.resolve(values.out),expected,expectedIdentity,input:positionals,upstream,legacyComment})
   .catch(error=>{console.error(error.message);process.exitCode=1;});

@@ -217,6 +217,28 @@ class BrowserContainerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'does not match the planned matrix commit'):
                 qa.verify_target_checkout('b' * 40)
 
+    def test_only_legacy_comment_runs_pick_up_the_checked_out_commit_implicitly(self):
+        sha = 'a' * 40
+        unrelated = 'b' * 40
+        with patch.dict(qa.os.environ, {'GITHUB_ACTIONS': 'true', 'GITHUB_EVENT_NAME': 'issue_comment',
+                                       'GITHUB_SHA': unrelated}):
+            with patch.object(qa.subprocess, 'check_output', return_value=sha + '\n') as git:
+                self.assertIsNone(qa.target_commit(None, render_matrix=False))
+                git.assert_not_called()
+                self.assertEqual(qa.target_commit(None, render_matrix=True), sha)
+                self.assertEqual(git.call_args.args[0], ['git', 'rev-parse', '--verify', 'HEAD'])
+        with patch.dict(qa.os.environ, {'GITHUB_ACTIONS': 'true', 'GITHUB_EVENT_NAME': 'pull_request'}):
+            with patch.object(qa.subprocess, 'check_output') as git:
+                self.assertIsNone(qa.target_commit(None, render_matrix=True))
+                git.assert_not_called()
+
+    def test_merge_command_preserves_trusted_outcomes_separately_from_artifact_inputs(self):
+        upstream = {'render': 'success', 'contracts': 'failure', 'download': 'success'}
+        command = qa.merge_report_command('full', 'html', 2, ['--arbitrary-directory'], upstream=upstream)
+        for name, result in upstream.items():
+            self.assertEqual(command[command.index('--' + name + '-result') + 1], result)
+        self.assertEqual(command[-2:], ['--', '--arbitrary-directory'])
+
     def test_ci_report_cannot_target_a_private_path_outside_the_workspace(self):
         with patch.object(qa, 'ROOT', self.workspace):
             calls, error = self.invoke(e2e='full', report_dir=self.directory / 'private')

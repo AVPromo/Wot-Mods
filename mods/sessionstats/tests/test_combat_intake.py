@@ -60,6 +60,104 @@ class CombatIntakeTests(unittest.TestCase):
         self.assertEqual(self.intake.pending('EU:200')[0][2]['arena_id'], 'different')
         self.assertEqual(self.intake.pending('EU:300'), [])
 
+    def test_first_combat_write_after_restart_follows_published_receipts_after_clock_rollback(self):
+        from grz_session_stats import combat_intake
+        from test_config_path import changed
+        from test_runtime import Obj
+
+        account = 'EU:100'
+        with changed(combat_intake, 'time', Obj(time=lambda: 2000)):
+            self.assertTrue(self.intake.submit(account, 'result', {'arena_id': '42', 'credits': 75000}))
+            self.intake.close(wait=True)
+        restarted = CombatIntake(self.directory)
+        list_files = os.listdir
+        reading_threads = []
+
+        def track_listing(folder):
+            reading_threads.append(threading.current_thread().ident)
+            return list_files(folder)
+
+        with changed(os, 'listdir', track_listing):
+            try:
+                with changed(combat_intake, 'time', Obj(time=lambda: 1000)):
+                    self.assertTrue(restarted.submit(account, 'result', {'arena_id': '42', 'credits': 90000}))
+                    self.assertTrue(restarted.submit(account, 'result', {'arena_id': '42', 'credits': 95000}))
+            finally:
+                restarted.close(wait=True)
+        pending = self.intake.pending(account, limit=3)
+        self.assertEqual([capture['credits'] for receipt, kind, capture in pending], [75000, 90000, 95000])
+        self.assertEqual(len(reading_threads), 2)
+        self.assertNotIn(threading.current_thread().ident, reading_threads)
+
+    def test_interleaved_live_writers_keep_publication_order_after_clock_rollback(self):
+        from grz_session_stats import combat_intake
+        from test_config_path import changed
+        from test_runtime import Obj
+
+        account = 'EU:100'
+        other = CombatIntake(self.directory)
+
+        def publish(writer, timestamp, revision):
+            write = writer._write
+            published = threading.Event()
+
+            def tracked(*args):
+                write(*args)
+                published.set()
+
+            with changed(writer, '_write', tracked):
+                with changed(combat_intake, 'time', Obj(time=lambda: timestamp)):
+                    self.assertTrue(writer.submit(account, 'result', {'arena_id': '42', 'revision': revision}))
+                self.assertTrue(published.wait(5))
+
+        try:
+            publish(self.intake, 10, 1)
+            publish(other, 12, 2)
+            publish(self.intake, 8, 3)
+        finally:
+            self.intake.close(wait=True)
+            other.close(wait=True)
+        receipts = self.intake.pending(account, limit=3)
+        self.assertEqual([capture['revision'] for receipt, kind, capture in receipts], [1, 2, 3])
+
+    def test_overlapping_publications_at_the_same_timestamp_serialize_through_shutdown(self):
+        from grz_session_stats import combat_intake
+        from test_config_path import changed
+        from test_runtime import Obj
+
+        account = 'EU:100'
+        other = CombatIntake(self.directory)
+        entered, resume, other_entered = threading.Event(), threading.Event(), threading.Event()
+        first_write, other_write = self.intake._write, other._write
+
+        def held(*args):
+            entered.set()
+            if not resume.wait(5):
+                raise IOError(errno.EIO, 'Synthetic publication did not resume')
+            first_write(*args)
+
+        def tracked(*args):
+            other_entered.set()
+            other_write(*args)
+
+        self.intake._write = held
+        other._write = tracked
+        try:
+            with changed(combat_intake, 'time', Obj(time=lambda: 10)):
+                self.assertTrue(self.intake.submit(account, 'result', {'arena_id': '42', 'revision': 1}))
+                self.assertTrue(entered.wait(5))
+                self.assertTrue(other.submit(account, 'result', {'arena_id': '42', 'revision': 2}))
+                other.close()
+                self.assertFalse(other_entered.wait(0.15))
+        finally:
+            resume.set()
+            self.intake.close(wait=True)
+            other.close(wait=True)
+        self.assertFalse(other.failed)
+        first, second = self.intake.pending(account, limit=2)
+        self.assertEqual([first[2]['revision'], second[2]['revision']], [1, 2])
+        self.assertLess(self.intake.identity(first[0])[1], self.intake.identity(second[0])[1])
+
     @unittest.skipUnless(os.name == 'nt', 'Windows MAX_PATH fixture')
     def test_long_unicode_profile_preserves_paths_bindings_and_fifo(self):
         for length in (123, 235):
@@ -114,6 +212,24 @@ class CombatIntakeTests(unittest.TestCase):
         self.assertTrue(self.intake.failed)
         self.assertEqual(self.intake.pending('EU:100')[0][2]['arena_id'], '42')
 
+    def test_shutdown_retries_an_accepted_capture_after_a_temporary_write_error(self):
+        write = self.intake._write
+        attempts = []
+
+        def fail_once(*args):
+            attempts.append(None)
+            if len(attempts) == 1:
+                raise OSError(errno.EACCES, 'Synthetic temporary file lock')
+            write(*args)
+
+        self.intake._write = fail_once
+        with self.intake._condition:
+            self.assertTrue(self.intake.submit('EU:100', 'result', {'arena_id': '42'}))
+            self.intake.close()
+        self.intake.close(wait=True)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(self.intake.pending('EU:100')[0][2]['arena_id'], '42')
+
     def test_corrupt_committed_file_is_preserved_and_good_receipts_still_replay(self):
         self.intake.submit('EU:100', 'begin', {'arena_id': '42'})
         self.intake.submit('EU:100', 'result', {'arena_id': '42', 'xp': 840})
@@ -149,29 +265,31 @@ class CombatIntakeTests(unittest.TestCase):
         first, second = self.intake.pending(account, limit=2)
         other = CombatIntake(self.directory)
         capture(other, 'synthetic-independent', 1030)
+        self.assertTrue(other.submit('EU:200', 'begin', {'arena_id': 'unrelated-account'}))
         other.close(wait=True)
+        read_errors = iter((errno.EACCES, errno.ENOENT))
 
         def temporarily_locked(path, *args, **kwargs):
             if os.path.basename(path) == first[0].filename:
-                raise IOError(errno.EACCES, 'Synthetic temporary file lock')
+                raise IOError(next(read_errors), 'Synthetic temporary read failure')
             return open(path, *args, **kwargs)
 
         combat_intake.open = temporarily_locked
         try:
             runtime._drain_account_captures(self.intake, account, service)
+            self.assertTrue(self.intake.has_backlog(account, lambda *unused: False))
+            self.assertEqual(self.intake.pending('EU:200')[0][2]['arena_id'], 'unrelated-account')
         finally:
             del combat_intake.open
 
         self.assertFalse(service.has_combat_receipt(self.intake.identity(first[0])))
         self.assertFalse(service.has_combat_receipt(self.intake.identity(second[0])))
-        self.assertEqual(set(service._state['battles']), {'synthetic-independent'})
-        runtime._drain_installation_captures(self.intake, account, service)
-        producer = self.intake.identity(first[0])[0]
-        remaining = self.intake.pending(account, limit=3)
-        self.assertEqual([row for row in remaining if self.intake.identity(row[0])[0] == producer], [first, second])
+        self.assertEqual(service._state['battles'], {})
+        self.assertEqual(self.intake.pending(account, limit=3)[:2], [first, second])
 
         runtime._drain_account_captures(self.intake, account, service)
         runtime._drain_installation_captures(self.intake, account, service)
+        runtime._drain_account_captures(self.intake, account, service)
         runtime._drain_installation_captures(self.intake, account, service)
         self.assertEqual(set(service._state['battles']),
                          {'synthetic-first', 'synthetic-second', 'synthetic-independent'})
@@ -236,7 +354,7 @@ class CombatIntakeTests(unittest.TestCase):
         def temporarily_locked(path, *args, **kwargs):
             if os.path.basename(path) == launch + '.installation':
                 binding_reads.append(path)
-                if len(binding_reads) in (1, 3):
+                if len(binding_reads) == 1:
                     raise IOError(errno.EACCES, 'Synthetic temporary file lock')
             return open(path, *args, **kwargs)
 
@@ -250,12 +368,12 @@ class CombatIntakeTests(unittest.TestCase):
 
             runtime._drain_installation_captures(self.intake, account, service)
             self.assertEqual(len(binding_reads), 1)
-            self.assertEqual(self.intake.pending(account, limit=3), [first, second])
-            self.assertEqual(set(session.service._state['battles']),
-                             {session.battle_key(account, 'synthetic-independent')})
+            self.assertEqual(self.intake.pending(account, limit=3)[:2], [first, second])
+            self.assertEqual(session.service._state['battles'], {})
 
             runtime._drain_installation_captures(self.intake, account, service)
             self.assertEqual(len(binding_reads), 2)
+            runtime._drain_installation_captures(self.intake, account, service)
             self.assertEqual(self.intake.pending(account), [])
             self.assertEqual(set(session.service._state['battles']), {
                 session.battle_key(account, identifier)

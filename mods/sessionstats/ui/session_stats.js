@@ -353,10 +353,15 @@
             try { window.clearTimeout(timer); } catch (error) { /* The generation guard retires stale callbacks. */ }
         }
     }
+    function retireWindowPending() {
+        var pending = state.windowPending;
+        state.windowPending = null;
+        if (pending) { cancelUITimer(pending.timer); }
+    }
     function resetWindowSettings() {
         cancelWindowCommit();
         finishBackgroundDrag(null, false);
-        state.windowPending = null;
+        retireWindowPending();
         state.windowChanges = {};
         state.windowSaved = null;
         state.windowPrefs = null;
@@ -364,9 +369,9 @@
     }
     function windowSaveFailed() {
         var previous = state.windowPrefs;
-        state.windowPending = null;
-        state.windowChanges = {};
-        state.windowPrefs = copyWindowSettings(state.windowSaved);
+        retireWindowPending();
+        // Roll back the rejected write, preserving newer unsent user changes.
+        state.windowPrefs = mergeWindowSettings(state.windowSaved, state.windowChanges);
         showWindowSettings(previous);
         var error = t('window.save_error');
         if (state.actionError !== error) {
@@ -374,6 +379,9 @@
         }
         setActionError(error);
         queueResize();
+        if (Object.keys(state.windowChanges).length && !state.backgroundDrag && state.windowTimer === null) {
+            scheduleWindowCommit(0);
+        }
     }
     function commitWindowSettings() {
         cancelWindowCommit();
@@ -384,14 +392,25 @@
             return;
         }
         var account = state.payload && state.payload.account_key;
-        if (!account) { windowSaveFailed(); return; }
+        if (!account) {
+            state.windowChanges = {};
+            windowSaveFailed();
+            return;
+        }
         var changes = state.windowChanges;
         state.windowChanges = {};
         var request = 'window-' + Date.now().toString(36) + '-' + (++state.windowSequence);
-        state.windowPending = {id:request, changes:changes};
+        var pending = {id:request, changes:changes, timer:null};
+        state.windowPending = pending;
+        pending.timer = window.setTimeout(function () {
+            if (state.destroyed || state.windowPending !== pending) { return; }
+            windowSaveFailed();
+            // Read the model even if the original lightweight reply was lost.
+            invoke('viewport');
+        }, 10000);
         var args = {account_key:account, request_id:request};
         Object.keys(changes).forEach(function (key) { args[key] = changes[key]; });
-        if (!invoke('window_settings', args)) { windowSaveFailed(); }
+        if (!invoke('window_settings', args) && state.windowPending === pending) { windowSaveFailed(); }
     }
     function scheduleWindowCommit(delay) {
         cancelWindowCommit();
@@ -421,7 +440,7 @@
         var pending = state.windowPending;
         if (pending && ack && unwrap(ack.request_id) === pending.id) {
             if (unwrap(ack.saved) !== true) { windowSaveFailed(); return; }
-            state.windowPending = null;
+            retireWindowPending();
             if (state.windowStatusBeforeError && state.actionError === t('window.save_error')) {
                 setActionError(state.windowStatusBeforeError.error);
                 setStatus(state.windowStatusBeforeError.text);
@@ -1540,12 +1559,13 @@
             Number(id.slice(state.orderClient.length)) : null;
     }
     function hasOlderOrderReply(snapshot) {
-        if (!state.orderClient || !state.payload || state.payload.account_key !== snapshot.account_key) { return false; }
+        if (!state.payload || state.payload.account_key !== snapshot.account_key) { return false; }
         var displayed = state.payload.scopes;
         return Object.keys(displayed).some(function (name) {
             var prior = displayed[name], next = snapshot.scopes[name];
+            if (prior && next && earlierDataRevision(next.order_epoch, prior.order_epoch)) { return true; }
             // A new projection owner can legitimately have no known requests.
-            if (!prior || !next || !prior.order_epoch || prior.order_epoch !== next.order_epoch ||
+            if (!state.orderClient || !prior || !next || !prior.order_epoch || prior.order_epoch !== next.order_epoch ||
                     prior.period_id !== next.period_id || !prior.pagination || !next.pagination ||
                     next.loading || next.load_error) { return false; }
             return Object.keys(prior.pagination).some(function (group) {
@@ -1573,21 +1593,24 @@
         if (options.statistic === 'sum' && options.metric !== 'off' && !summableMetric(options.metric)) { options.statistic = 'avg'; }
         state.loadedCount = 40;
         if (state.nativeSession && scope.pagination) {
+            var deferred = state.orderIntent && state.orderIntent.deferred;
             clearOrderIntent();
             state.actionError = null;
             var intent = {context:viewContext(), group:state.group, options:options, id:orderRequestId(),
-                epoch:scope.order_epoch, timer:null};
+                epoch:scope.order_epoch, timer:null, deferred:deferred};
             state.orderIntent = intent;
             intent.timer = window.setTimeout(function () {
                 if (state.orderIntent !== intent) { return; }
                 clearOrderIntent();
                 if (!sameContext(intent.context) || state.group !== intent.group) { return; }
+                if (intent.deferred) { update(intent.deferred); }
                 renderSelects(currentScope());
                 setActionError(t('error.action'));
             }, 10000);
             renderSelects(scope);
             options.scope = scopeName(); options.group = state.group;
             options.period_id = scope.period_id; options.account_key = state.payload.account_key; options.request_id = intent.id;
+            if (intent.epoch) { options.order_epoch = intent.epoch; }
             if (!invoke('sort',options) && state.orderIntent === intent) { clearOrderIntent(); renderSelects(scope); }
         } else {
             if (options.metric !== 'off') { rememberedMetric(scope, options.metric); }
@@ -3125,6 +3148,16 @@
             order:savedOrder, revision:String(scope.data_revision || JSON.stringify(scope.summary)), until:Date.now() + 5000};
         paintReturnedSource();
     }
+    function discardBattleReturnNeighbor(returning, feed) {
+        var pending = feed && feed.pending;
+        if (!pending || pending.page !== returning.neighbor ||
+                !Object.prototype.hasOwnProperty.call(feed.cache, returning.page)) { return false; }
+        cancelUITimer(pending.timer);
+        feed.pending = null; feed.error = null;
+        feed.start = feed.last = returning.page;
+        returning.neighbor = null;
+        return true;
+    }
     function queueBattleReturn(returning) {
         if (state.battleReturn !== returning || state.battleReturnTimer !== null) { return; }
         var timer = window.setTimeout(function () {
@@ -3133,8 +3166,22 @@
             if (!sameContext(returning.origin.context) || state.group !== returning.origin.group) {
                 cancelBattleNavigation(); return;
             }
-            if (Date.now() >= returning.deadline) {
-                cancelBattleNavigation(); render(); setActionError(t('page.error')); return;
+            var now = Date.now();
+            // Mounting a fresh page can use up the remaining fetch time. Give
+            // the mounted view a separate, bounded interval to settle and focus.
+            if (returning.phase === 'restore' && returning.settleDeadline === null &&
+                    !state.feedStaging && nodes.groups.getAttribute('aria-busy') !== 'true') {
+                returning.settleDeadline = now + 2000;
+            }
+            if (now >= Math.max(returning.deadline, returning.settleDeadline || 0)) {
+                if (returning.phase === 'restore' && discardBattleReturnNeighbor(returning, state.feed)) {
+                    render(); queueBattleReturn(returning); return;
+                }
+                var deferred = state.orderIntent && state.orderIntent.id === returning.sortRequest && state.orderIntent.deferred;
+                cancelBattleNavigation();
+                if (deferred) { update(deferred); }
+                else { render(); }
+                setActionError(t('page.error')); return;
             }
             if (returning.phase === 'restore') { finishBattleReturn(returning); }
             else { queueBattleReturn(returning); }
@@ -3196,7 +3243,9 @@
             } else {
                 state.feedForceStart = returning.page;
                 var neighbor = origin.source && origin.source.neighbor ? returning.page + origin.source.neighbor : -1;
-                if (neighbor >= 0 && neighbor < meta.pages) { returning.neighbor = neighbor; }
+                if (neighbor >= 0 && neighbor < meta.pages && Date.now() < returning.deadline - 1000) {
+                    returning.neighbor = neighbor;
+                }
             }
             returning.mounted = true;
         }
@@ -3207,7 +3256,8 @@
         if (!origin || state.highlightedBattle !== target || !sameContext(origin.context)) { return; }
         cancelBattleNavigation(); clearBattleTarget(); retireFeed();
         state.group = origin.group; state.loadedCount = origin.loadedCount; clearOrderIntent();
-        var returning = {origin:origin, phase:'restore', deadline:Date.now() + 10000, stable:0, settled:Date.now(), lastOffset:null, requestedOffset:null, focused:null};
+        var returning = {origin:origin, phase:'restore', deadline:Date.now() + 10000, settleDeadline:null,
+            stable:0, settled:Date.now(), lastOffset:null, requestedOffset:null, focused:null};
         state.battleReturn = returning;
         var scope = currentScope(), actual = scope.ordering && scope.ordering[origin.group] || getOrder(scope);
         if (state.nativeSession && scope.pagination) {
@@ -3218,6 +3268,7 @@
                     id:returning.sortRequest, epoch:scope.order_epoch};
                 var args = {account_key:origin.context.account_key, scope:origin.context.scope, period_id:origin.context.period_id,
                     group:origin.group, request_id:returning.sortRequest};
+                if (scope.order_epoch) { args.order_epoch = scope.order_epoch; }
                 ['metric', 'statistic', 'direction', 'chronology'].forEach(function (key) { args[key] = origin.order[key]; });
                 if (!invoke('sort', args)) { cancelBattleNavigation(); setActionError(t('page.error')); }
             } else { requestBattleReturnPage(returning); }
@@ -3226,11 +3277,22 @@
     }
     function finishBattleReturn(returning) {
         if (state.battleReturn !== returning || !sameContext(returning.origin.context) || state.group !== returning.origin.group) { return; }
-        if (state.cardFlowQueued || state.groupMinHeight || state.feedStaging || nodes.groups.getAttribute('aria-busy') === 'true' || battleScrollPending(returning)) {
+        if (state.cardFlowQueued || state.groupMinHeight || state.feedStaging || nodes.groups.getAttribute('aria-busy') === 'true') {
             queueBattleReturn(returning); return;
         }
         var origin = returning.origin;
-        var scale = state.nativeScale || 1, scroll = nodes.scroll, viewport = scroll.getBoundingClientRect(), offset = origin.scroll * scale, anchor = null;
+        var scale = state.nativeScale || 1, scroll = nodes.scroll, maximum = scrollbarMetrics().maximum;
+        if (battleScrollPending(returning)) {
+            // Native scroll writes can be dropped, and rebuilding a last page
+            // can shrink the range before the previous write is acknowledged.
+            if (Math.abs(scroll.scrollTop - returning.requestedOffset) > scale) {
+                returning.requestedOffset = Math.min(maximum, returning.requestedOffset);
+                state.scrollTarget = returning.requestedOffset;
+                scroll.scrollTop = returning.requestedOffset;
+            }
+            queueBattleReturn(returning); return;
+        }
+        var viewport = scroll.getBoundingClientRect(), offset = origin.scroll * scale, anchor = null;
         origin.anchors.some(function (saved) {
             return (state.groupCards || []).some(function (card) {
                 if (card.getAttribute('data-group-id') !== saved.id) { return false; }
@@ -3266,7 +3328,7 @@
             offset = (layout === null ? scroll.scrollTop + box.top - viewport.top : layout) - anchor.saved.offset * scale;
         }
         var unclampedOffset = offset;
-        offset = Math.max(0, Math.min(scrollbarMetrics().maximum, offset));
+        offset = Math.max(0, Math.min(maximum, offset));
         if (returning.lastOffset === null || Math.abs(returning.lastOffset - offset) > scale) {
             returning.stable = 0; returning.settled = Date.now(); returning.lastOffset = offset;
         }
@@ -3572,20 +3634,55 @@
         var panel = append(card, element('div', 'ss-map-battles' + (vehicle ? ' ss-vehicle-battles' : '')));
         panel.setAttribute('role', 'region'); panel.setAttribute('aria-label', t(titleKey));
         var body = null, pagination = null, previous = null, next = null, pageText = null;
-        var rendered = null, renderedPage = null, requestedPage = null;
+        var loading = null, errorStatus = null, retry = null, rendered = null, renderedPage = null;
+        var request = null, failedPage = null;
         function live() {
             return sameContext(context) && state.group === group && getOrder(currentScope()).chronology === historyChronology && document.documentElement.contains(card);
         }
-        function load(page) {
-            if (!live() || requestedPage !== null) { return; }
-            requestedPage = page;
-            panel.setAttribute('aria-busy', 'true');
-            var args = {account_key:context.account_key, scope:context.scope, period_id:context.period_id, page:page, chronology:historyChronology};
-            args[kind + '_id'] = identifier;
-            if (!invoke(kind + '_battles', args)) {
-                requestedPage = null;
-                panel.setAttribute('aria-busy', 'false');
+        function expanded() { return button.getAttribute('aria-expanded') === 'true'; }
+        function retireRequest() {
+            var pending = request;
+            request = null;
+            if (pending) { cancelUITimer(pending.timer); cancelUITimer(pending.send); }
+        }
+        function showRequestStatus() {
+            panel.setAttribute('aria-busy', String(expanded() && request !== null));
+            var error = expanded() && failedPage !== null;
+            if (loading) { loading.style.display = error ? 'none' : ''; }
+            if (errorStatus && errorStatus.style.display !== (error ? 'flex' : 'none')) {
+                if (!error && document.activeElement === retry) {
+                    var intended = request && map.battle_list && request.page > map.battle_list.page ? next : previous;
+                    var other = intended === next ? previous : next;
+                    focusControl(!intended.disabled ? intended : !other.disabled ? other : button);
+                }
+                errorStatus.style.display = error ? 'flex' : 'none';
+                invalidateCardFlow(); queueResize();
             }
+        }
+        function load(page, deferred) {
+            if (request || (!deferred && !live())) { return; }
+            var pending = {page:page, timer:null, send:null};
+            request = pending;
+            failedPage = null;
+            showRequestStatus();
+            function fail() {
+                if (request !== pending) { return; }
+                retireRequest();
+                if (live() && expanded()) { failedPage = page; showRequestStatus(); }
+            }
+            function send() {
+                pending.send = null;
+                if (request !== pending) { return; }
+                if (!live() || !expanded()) { retireRequest(); showRequestStatus(); return; }
+                pending.timer = window.setTimeout(fail, 10000);
+                var args = {account_key:context.account_key, scope:context.scope, period_id:context.period_id,
+                    page:page, chronology:historyChronology};
+                args[kind + '_id'] = identifier;
+                if (!invoke(kind + '_battles', args)) { fail(); }
+            }
+            // An expanded card can be recreated by render before it is mounted.
+            if (deferred) { pending.send = window.setTimeout(send, 0); }
+            else { send(); }
         }
         function ensurePanel() {
             if (body) { return; }
@@ -3604,6 +3701,16 @@
             previous = pageButton(-1, 'previous');
             pageText = append(pagination, element('span', 'ss-map-battles-page'));
             next = pageButton(1, 'next');
+            errorStatus = append(panel, element('div', 'ss-page-status'));
+            errorStatus.style.display = 'none';
+            var errorText = append(errorStatus, element('span', '', t('page.error')));
+            errorText.setAttribute('role', 'status');
+            retry = append(errorStatus, element('button', 'ss-control ss-button ss-history-retry'));
+            retry.type = 'button';
+            append(retry, element('span', 'ss-control-label', t('page.retry')));
+            retry.onclick = function () {
+                if (failedPage !== null && live() && expanded()) { load(failedPage); }
+            };
         }
         function renderHistory() {
             ensurePanel();
@@ -3617,7 +3724,8 @@
                 if (pager.bottom > viewport.top + pinnedFilterHeight() && pager.top < viewport.bottom) { pagerTop = pager.top; }
             }
             clear(body);
-            if (!list) { append(body, element('p', 'ss-map-empty', t('maps.loading'))); }
+            loading = null;
+            if (!list) { loading = append(body, element('p', 'ss-map-empty', t('maps.loading'))); }
             else {
                 if (!list.items || !list.items.length) { append(body, element('p', 'ss-map-empty', t('maps.empty'))); }
                 (list.items || []).forEach(function (battle) {
@@ -3662,26 +3770,27 @@
             button.setAttribute('aria-expanded', String(open));
             button.title = t(open ? 'more.less' : 'more.button'); caption.textContent = button.title;
             panel.style.display = open ? 'block' : 'none';
-            if (open) {
-                renderHistory();
-                panel.setAttribute('aria-busy', String(requestedPage !== null || !map.battle_list));
-            }
+            if (open) { renderHistory(); }
+            else { retireRequest(); failedPage = null; }
+            showRequestStatus();
             queueResize();
         }
+        card._ssHistoryDispose = retireRequest;
         card._ssHistoryUpdate = function (item) {
             if (!live() || !item || String(item.id) !== identifier) { return false; }
-            if (item.battle_list && item.battle_list.chronology && item.battle_list.chronology !== historyChronology) { return true; }
-            map = item;
-            var list = map.battle_list;
+            var list = item.battle_list, wanted = request ? request.page : failedPage;
+            if (list && list.chronology && list.chronology !== historyChronology) { return true; }
             // Polling can deliver the previous page while our request is in
             // flight. A clamped reply is valid when the final page disappeared.
-            if (requestedPage !== null && list && list.page !== requestedPage && requestedPage < list.pages) { return true; }
-            if (list) { requestedPage = null; }
-            if (button.getAttribute('aria-expanded') === 'true' && renderHistory()) {
+            var clamped = list && wanted >= list.pages && list.page === list.pages - 1;
+            if (wanted !== null && (!list || (list.page !== wanted && !clamped))) { return true; }
+            map = item;
+            if (list) { retireRequest(); failedPage = null; }
+            if (expanded() && renderHistory()) {
                 invalidateCardFlow();
                 queueResize();
             }
-            panel.setAttribute('aria-busy', String(requestedPage !== null || !list));
+            showRequestStatus();
             return true;
         };
         button.onclick = function () {
@@ -3691,7 +3800,15 @@
             invalidateCardFlow(); show(open);
             if (open && !map.battle_list) { load(0); }
         };
-        show(state.openMaps[key] === true);
+        var restore = state.openMaps[key] === true;
+        show(restore);
+        if (restore && !map.battle_list) { load(0, true); }
+    }
+    function retireHistoryCards() {
+        var cards = nodes.groups.querySelectorAll('.ss-group'), index;
+        for (index = 0; index < cards.length; index += 1) {
+            if (cards[index]._ssHistoryDispose) { cards[index]._ssHistoryDispose(); }
+        }
     }
 
     function cardSortValue(item, options) {
@@ -4390,7 +4507,7 @@
     }
     function revealFeedTop(feed) {
         feed.prependAnchor = null; feed.topRequested = false; feed.navigationPage = null;
-        if (feed.start !== 0) {
+        if (feed.start !== 0 || (state.renderedFeed !== feed && feed.last !== 0)) {
             // A direct jump need not download every intervening page. Keep
             // their cache entries, but render a contiguous window at page one.
             feed.start = 0; feed.last = 0; feed.current = 0; feed.version += 1;
@@ -4449,17 +4566,18 @@
         }
         var request = 'page-' + Date.now().toString(36) + '-' + (++state.feedSequence);
         var pending = {page:index, id:request, navigate:!!navigate, timer:null};
+        var returning = state.battleReturn;
+        var optional = returning && returning.phase === 'restore' && index === returning.neighbor;
+        // Leave time to mount and focus the exact source if its neighboring page never arrives.
+        var timeout = optional ? Math.max(0, returning.deadline - Date.now() - 1000) : 10000;
         function fail() {
             if (state.destroyed || state.feed !== feed || feed.pending !== pending) { return; }
-            feed.pending = null; feed.error = index; feed.errorNavigate = pending.navigate;
-            var returning = state.battleReturn;
-            if (returning && index === returning.neighbor) {
+            if (optional && state.battleReturn === returning && discardBattleReturnNeighbor(returning, feed)) {
                 // The exact source page already arrived. Finish the return
                 // if its optional surrounding page could not be loaded.
-                returning.neighbor = null;
-                feed.start = feed.last = returning.page; feed.error = null;
                 render(); return;
             }
+            feed.pending = null; feed.error = index; feed.errorNavigate = pending.navigate;
             if (state.renderedFeed !== feed) { nodes.groups.setAttribute('aria-busy', 'false'); }
             showFeedPending(feed); updateFeedControls(); setStatus(t('page.error'));
         }
@@ -4476,7 +4594,7 @@
         }
         feed.pending = pending; feed.error = null;
         if (state.renderedFeed !== feed) { nodes.groups.setAttribute('aria-busy', 'true'); }
-        pending.timer = window.setTimeout(fail, 10000);
+        pending.timer = window.setTimeout(fail, timeout);
         showFeedPending(feed); updateFeedControls();
         // Never invoke a synchronous native model callback from inside render.
         if (typeof window.requestAnimationFrame === 'function') { window.requestAnimationFrame(send); }
@@ -4714,7 +4832,7 @@
             }
             var previousHeight = nodes.groups.getBoundingClientRect().height;
             if (previousHeight > 0) { nodes.groups.style.minHeight = previousHeight + 'px'; state.groupMinHeight = true; }
-            invalidateCardFlow(); clear(nodes.groups);
+            invalidateCardFlow(); retireHistoryCards(); clear(nodes.groups);
             nodes.groups.className = 'ss-card-layout' + (feed ? ' ss-feed-layout' : '');
             nodes.groups.setAttribute('role', 'list'); nodes.groups.removeAttribute('aria-owns');
             state.groupCards = []; state.cardPages = []; state.cardLayoutWide = null; state.cardLayoutKey = null;
@@ -5162,7 +5280,7 @@
                 nodes.scroll.scrollTop = oldTop; queueResize(); return;
             }
             clear(nodes.summary);
-            clear(nodes.groups);
+            retireHistoryCards(); clear(nodes.groups);
             state.list = [];
             state.renderedCount = 0;
             state.cardPages = []; state.groupCards = []; state.renderedFeed = null;
@@ -5253,13 +5371,20 @@
                 var intended = value.scopes[intent.context.scope];
                 var sameOwner = value.account_key === intent.context.account_key && intended &&
                     intended.period_id === intent.context.period_id && (!intended.order_epoch || intended.order_epoch === intent.epoch);
-                if (!sameOwner) { clearOrderIntent(); }
-                else if (!orderingUnavailable(intended, value)) {
+                if (!sameOwner || orderingUnavailable(intended, value)) { clearOrderIntent(); }
+                else {
                     var actual = intended.ordering && intended.ordering[intent.group];
                     var meta = intended.pagination && intended.pagination[intent.group];
                     // A refresh can contain the same options as a newer
                     // request (for example when switching A → B → A).
                     if (!meta || meta.order_request_id !== intent.id || !sameBattleOriginOrder(actual, intent.options)) {
+                        var latest = intent.deferred || state.payload;
+                        var latestRevision = latest.scopes[intent.context.scope].data_revision;
+                        var olderTimestamp = intended.data_revision === latestRevision && hasNumber(latest.generated_at) &&
+                            hasNumber(value.generated_at) && value.generated_at < latest.generated_at;
+                        if (!olderTimestamp && !earlierDataRevision(intended.data_revision, latestRevision)) {
+                            intent.deferred = value;
+                        }
                         return true;
                     }
                     if (intent.timer !== undefined) {
@@ -5454,6 +5579,7 @@
     document.getElementById('ss-page-previous').onclick = function () { changePage(-1); };
     document.getElementById('ss-page-next').onclick = function () { changePage(1); };
     if (nodes['scroll-top']) { nodes['scroll-top'].onclick = function () {
+        var returning = !!state.battleReturn;
         cancelBattleNavigation(); clearBattleTarget(); cancelPageJump();
         if (state.feed) {
             var feed = state.feed; feed.prependAnchor = null; feed.refreshAnchor = null;
@@ -5461,13 +5587,13 @@
             // Keep the requested data, but let Top supersede its old destination.
             feed.navigationPage = null; feed.errorNavigate = false;
             if (feed.pending) { feed.pending.navigate = false; }
-            if (feed.start > 0) {
+            if (feed.start > 0 || state.renderedFeed !== feed) {
                 feed.topRequested = true; feed.error = null;
                 if (feed.pending && feed.pending.page !== 0) { cancelUITimer(feed.pending.timer); feed.pending = null; }
                 if (Object.prototype.hasOwnProperty.call(feed.cache, 0)) { revealFeedTop(feed); render(); }
                 else if (!feed.pending) { requestFeedPage(feed, 0, false); }
             }
-        }
+        } else if (returning) { state.feedForceStart = 0; render(); }
         resetViewScroll(); updatePinnedFilters();
         queueResize();
     }; }
@@ -6290,6 +6416,7 @@
         cancelFilterLayout();
         cancelBattleNavigation();
         clearBattleTarget(); retireFeed(); state.renderedFeed = null;
+        retireHistoryCards();
         nodes.groups.style.minHeight = ''; state.groupMinHeight = false;
         document.removeEventListener('pointerdown', targetPointerDown, true);
         document.removeEventListener('mousedown', targetPointerDown, true);

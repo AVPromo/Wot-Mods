@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Builder contracts; Python 2.7 runs only the game-runtime tests."""
 from __future__ import unicode_literals
+import hashlib
 import os
 import re
 import shutil
@@ -178,7 +179,11 @@ class BuildContracts(unittest.TestCase):
         manifest = self.build.installer_checksums(files[0], files[1], config, '2.5.0.0')
         (self.directory/'SHA256SUMS.txt').write_bytes(manifest)
         self.assertEqual(len(manifest.splitlines()),3)
-        subprocess.check_output(['sha256sum','-c','SHA256SUMS.txt'],cwd=str(self.directory))
+        for line in manifest.decode('ascii').splitlines():
+            checksum, relative = line.split('  ', 1)
+            self.assertEqual(hashlib.sha256((self.directory/relative).read_bytes()).hexdigest(), checksum)
+        if shutil.which('sha256sum'):
+            subprocess.check_output(['sha256sum','-c','SHA256SUMS.txt'],cwd=str(self.directory))
 
     def test_versioned_build_artifact_is_checksummed_at_the_stable_install_path(self):
         raw=self.directory/'grz.sessionstats_0.3.3.wotmod'

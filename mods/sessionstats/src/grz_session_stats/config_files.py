@@ -12,7 +12,7 @@ import sys
 import tempfile
 
 from .appearance import MAX_CONFIG_BYTES, default_config
-from .storage import _PROCESS_LOCK, _WriteLock, _ensure_directory
+from .storage import _PROCESS_LOCK, _WriteLock, _ensure_directory, native_data_path
 
 LOG = logging.getLogger('grz.sessionstats')
 
@@ -52,7 +52,7 @@ def _prepare_file(path, legacy, limit, defaults=None):
     if os.path.lexists(path):
         return
     try:
-        with io.open(legacy, 'rb') as handle:
+        with io.open(native_data_path(legacy), 'rb') as handle:
             raw = handle.read(limit + 1)
     except (IOError, OSError) as error:
         if error.errno != errno.ENOENT:
@@ -74,7 +74,7 @@ def _prepare_file(path, legacy, limit, defaults=None):
 def prepare_config(path, legacy):
     """Best-effort migration/defaults; old files and existing targets stay intact."""
     try:
-        path = os.path.abspath(path)
+        path = native_data_path(os.path.abspath(path))
         if os.path.lexists(path) and not os.path.lexists(path + '.language-backup'):
             return
         with _settings_lock(path):
@@ -167,7 +167,7 @@ def _save_config(path, update, label):
         return False
     temporary = None
     try:
-        path = os.path.abspath(path)
+        path = native_data_path(os.path.abspath(path))
 
         def current():
             try:

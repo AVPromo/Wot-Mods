@@ -106,6 +106,27 @@ class PageCacheProtocolTests(unittest.TestCase):
         self.assertTrue(self.service.record_result(result('row-00010', 120, reconcile=True, xp_base=888)))
         self.assertNotEqual(self.service.timeline_snapshot()['data_revision'], selected['data_revision'])
 
+    def test_returning_to_a_timeline_range_creates_a_new_sort_owner_before_loading(self):
+        self.assertTrue(self.service.set_timeline_range('__custom__', '__custom__', 120, 130))
+        initial = self.finish()
+        period, epoch = initial['period_id'], initial['order_epoch']
+        self.assertTrue(self.service.set_order('timeline', 'battles', DEFAULT_ORDER, period, 'first', epoch))
+        self.assertTrue(self.service.set_timeline_range('', ''))
+        intervening = self.service.timeline_snapshot()
+        self.assertTrue(self.service.set_timeline_range('__custom__', '__custom__', 120, 130))
+        loading = self.service.timeline_snapshot()
+        self.assertTrue(loading['loading'])
+        self.assertEqual(loading['period_id'], period)
+        prefix, counter = epoch.rsplit(':', 1)
+        self.assertEqual(intervening['order_epoch'], '{0}:{1}'.format(prefix, int(counter) + 1))
+        self.assertEqual(loading['order_epoch'], '{0}:{1}'.format(prefix, int(counter) + 2))
+        returned = self.finish()
+        self.assertEqual(returned['order_epoch'], loading['order_epoch'])
+        self.assertNotIn('order_request_id', returned['pagination']['battles'])
+        self.assertFalse(self.service.set_order('timeline', 'battles', DEFAULT_ORDER, period, 'stale', epoch))
+        self.assertTrue(self.service.set_order('timeline', 'battles', DEFAULT_ORDER, period, 'latest', returned['order_epoch']))
+        self.assertEqual(self.service.timeline_snapshot()['pagination']['battles']['order_request_id'], 'latest')
+
     def test_rebuilding_same_period_retires_its_previous_revision(self):
         before = self.scope()
         self.service._rebuild_indexes()

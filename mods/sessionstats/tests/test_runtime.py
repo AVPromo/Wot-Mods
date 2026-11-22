@@ -3,18 +3,20 @@ from __future__ import unicode_literals
 
 import collections
 import copy
+import errno
 import json
 import logging
 import os
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
-from grz_session_stats import VERSION, runtime, views, footer
+from grz_session_stats import VERSION, combat_intake, runtime, views, footer
 from grz_session_stats.core import StatsService
 from test_normalize import raw_result, ARENA_ID, START
 
@@ -418,6 +420,86 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.summary()['battles'], 2)
         self.assertEqual(self.summary()['currencies']['credits']['net'], 64000)
 
+    def test_locked_older_capture_cannot_undo_a_newer_result_from_another_writer(self):
+        self.mod._installation_dir = self.directory
+        self.mod._on_account()
+        self.begin()
+        self.garage()
+        reader = self.mod._combat_intake
+        writer = combat_intake.CombatIntake(self.directory)
+        receipt_clock = combat_intake.time
+        try:
+            self.mod._combat_intake = writer
+            combat_intake.time = Obj(time=lambda: receipt_clock.time() + 60)
+            self.api.battle = True
+            self.api.events.onBattleResultsReceived(True, raw_result())
+        finally:
+            writer.close(wait=True)
+            combat_intake.time = receipt_clock
+            self.mod._combat_intake = reader
+        account = self.mod.active_key
+        older, = reader.pending(account)
+
+        def temporarily_locked(path, *args, **kwargs):
+            if os.path.basename(path) == older[0].filename:
+                raise IOError(errno.EACCES, 'Synthetic temporary file lock')
+            return open(path, *args, **kwargs)
+
+        combat_intake.open = temporarily_locked
+        try:
+            self.garage()
+            newer = raw_result()
+            newer['personal'][1]['credits'] = 90000
+            self.api.events.onBattleResultsReceived(True, newer)
+            wait_for_combat_capture(self.mod)
+            self.tick()
+            self.assertEqual(self.summary()['battles'], 0)
+            self.assertEqual(self.mod._instance_session.snapshot()[0]['summary']['battles'], 0)
+        finally:
+            del combat_intake.open
+
+        first, second = reader.pending(account, limit=2)
+        self.assertEqual(first, older)
+        self.assertNotEqual(reader.identity(first[0])[0], reader.identity(second[0])[0])
+        self.tick()
+        self.assertEqual(reader.pending(account), [])
+        session = self.mod._instance_session
+        account_record = self.mod.active_service._state['battles'][ARENA_ID]
+        installation_record = session.service._state['battles'][session.battle_key(account, ARENA_ID)]
+        for record in (account_record, installation_record):
+            self.assertEqual(record['currencies']['credits']['income'], 90000)
+
+    def test_stop_during_combat_waits_for_the_accepted_begin_and_result(self):
+        intake = self.mod._combat_intake
+        original_write = intake._write
+        entered, resume = threading.Event(), threading.Event()
+
+        def delayed_write(*args):
+            entered.set()
+            if not resume.wait(5):
+                raise IOError(errno.EIO, 'Synthetic write did not resume')
+            original_write(*args)
+
+        intake._write = delayed_write
+        timer = threading.Timer(0.6, resume.set)
+        try:
+            self.begin()
+            self.assertTrue(entered.wait(5))
+            self.api.events.onBattleResultsReceived(True, raw_result())
+            self.assertEqual(intake.waiting('EU:7'), 2)
+            timer.start()
+            self.mod.stop()
+            reopened = combat_intake.CombatIntake(self.directory)
+            captures = reopened.pending('EU:7', limit=2)
+            self.assertEqual([kind for receipt, kind, capture in captures], ['begin', 'result'])
+            self.assertEqual([capture['record']['arena_id'] for receipt, kind, capture in captures],
+                             [ARENA_ID, ARENA_ID])
+        finally:
+            resume.set()
+            intake.close(wait=True)
+            if timer.ident is not None:
+                timer.join()
+
     def test_expired_request_callback_cannot_consume_a_newer_retry(self):
         self.begin()
         self.garage()
@@ -566,18 +648,30 @@ class RuntimeTests(unittest.TestCase):
 
 class AdapterUtilityTests(unittest.TestCase):
     def test_data_directory_is_outside_versioned_mods_and_never_opens_preferences(self):
-        result = runtime.resolve_data_dir(environ={'APPDATA': '/user/roaming'})
-        self.assertEqual(result, '/user/roaming/grz_wot_session_stats')
-        bw = Obj(wg_getPreferencesFilePath=lambda: '/user/wargaming/preferences.xml')
-        self.assertEqual(runtime.resolve_data_dir(bw, {}), '/user/wargaming/grz_session_stats')
+        user = os.path.join(os.path.abspath(os.sep), 'user')
+        roaming = os.path.join(user, 'roaming')
+        result = runtime.resolve_data_dir(environ={'APPDATA': roaming})
+        self.assertEqual(result, os.path.join(roaming, 'grz_wot_session_stats'))
+        game = os.path.join(user, 'wargaming')
+        bw = Obj(wg_getPreferencesFilePath=lambda: os.path.join(game, 'preferences.xml'))
+        self.assertEqual(runtime.resolve_data_dir(bw, {}), os.path.join(game, 'grz_session_stats'))
         with self.assertRaises(RuntimeError):
             runtime.resolve_data_dir(environ={})
 
     def test_non_ascii_profile_bytes_are_decoded_before_unicode_path_join(self):
-        profile = '/user/Łukasz/roaming'
-        encoded = profile.encode(sys.getfilesystemencoding() or 'utf-8')
+        encoding = sys.getfilesystemencoding() or 'utf-8'
+        for name in ('Łukasz', 'René', 'Жан', '中文', 'あお', 'سارة'):
+            try:
+                if name.encode(encoding).decode(encoding) == name:
+                    break
+            except UnicodeError:
+                continue
+        else:
+            self.skipTest('No fixture name round-trips through this filesystem encoding')
+        profile = os.path.join(os.path.abspath(os.sep), 'user', name, 'roaming')
+        encoded = profile.encode(encoding)
         self.assertEqual(runtime.resolve_data_dir(environ={'APPDATA': encoded}),
-                         profile + '/grz_wot_session_stats')
+                         os.path.join(profile, 'grz_wot_session_stats'))
 
     def test_expected_table_validation_rejects_nonfinite_and_missing_coefficients(self):
         self.assertTrue(runtime._looks_like_expected(EXPECTED))

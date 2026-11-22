@@ -107,7 +107,7 @@ class ConfigFilesTests(unittest.TestCase):
     def test_unreadable_legacy_does_not_publish_defaults_over_unknown_preferences(self):
         original = files.io.open
         def denied(path, *args, **kwargs):
-            if path == self.legacy:
+            if path == files.native_data_path(self.legacy):
                 raise IOError(errno.EACCES, 'private failure details')
             return original(path, *args, **kwargs)
         with changed(files.io, 'open', denied):

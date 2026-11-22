@@ -2,7 +2,7 @@
 const fs=require('fs'),path=require('path'),assert=require('assert'),vm=require('vm');
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 function actualAvailability(){
-  const source=fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8');
+  const source=fs.readFileSync(path.join(__dirname,'../ui/session_stats.js'),'utf8').replace(/\r\n/g,'\n');
   const context={hasNumber:value=>typeof value==='number'&&Number.isFinite(value)};
   vm.createContext(context);
   for (const name of ['observedTotal','canonicalMetric','metricSeries','baseCreditAvailability']) {

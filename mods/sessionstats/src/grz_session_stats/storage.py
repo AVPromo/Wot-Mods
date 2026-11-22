@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 import uuid
 
@@ -58,6 +59,32 @@ def check_json_depth(value):
             raise ValueError('JSON nesting exceeds the supported data shape')
         children = current.values() if isinstance(current, dict) else current
         pending.extend((item, depth + 1) for item in children if isinstance(item, (dict, list)))
+
+
+def native_data_path(path):
+    """Use wide Windows paths for generated files, including temporary siblings."""
+    if sys.platform != 'win32':
+        return path
+    if isinstance(path, bytes):
+        path = path.decode(sys.getfilesystemencoding() or 'utf-8')
+    path = os.path.abspath(path)
+    # An extended spelling refers to the same location as older releases.
+    if path.startswith(('\\\\?\\', '\\\\.\\')):
+        return path
+    if path.startswith('\\\\'):
+        return '\\\\?\\UNC\\' + path[2:]
+    return '\\\\?\\' + path
+
+
+def logical_data_path(path):
+    """Keep drive and UNC paths in their ordinary spelling for display and identity."""
+    if sys.platform != 'win32':
+        return path
+    if path[:8].lower() == '\\\\?\\unc\\':
+        return '\\\\' + path[8:]
+    if path.startswith('\\\\?\\') and path[5:7] == ':\\':
+        return path[4:]
+    return path
 
 
 def _ensure_directory(directory):
@@ -158,7 +185,7 @@ class StateDelta(dict):
 
 class GenerationStore(object):
     def __init__(self, directory, schema_version=SCHEMA_VERSION, keep_generations=3):
-        self.directory = directory
+        self.directory = native_data_path(directory)
         self.schema_version = schema_version
         self.keep_generations = max(2, int(keep_generations))
         self.sequence = 0

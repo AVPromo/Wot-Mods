@@ -44,6 +44,26 @@ module.exports=async({browser,nativeHost,check})=>{
         scope.battles=Array.from({length:40},(_,index)=>({...__pageJumpSample,id:'synthetic-page-navigation-'+index}));
         delete scope.battle_focus;model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
       },scale);await page.locator('#ss-group-battles').click();await frames(page);
+      const topRequestCount=(await commands(page)).length;
+      await page.evaluate(()=>{
+        const thumb=document.getElementById('ss-scrollbar-thumb');
+        const box=thumb.getBoundingClientRect();
+        window.__topReplacedCard=document.querySelector('#ss-groups .ss-group');
+        thumb.dispatchEvent(new MouseEvent('mousedown',{button:0,buttons:1,clientY:box.top+2,bubbles:true,cancelable:true}));
+      });
+      await emit(page,0,null,2);
+      check('A refresh with cached page one defers replacing cards while the scrollbar is held at '+scale+'x',await page.evaluate(()=>
+        document.getElementById('ss-scrollbar').classList.contains('is-dragging')&&document.getElementById('ss-groups').getAttribute('aria-busy')==='true'&&
+        document.querySelector('#ss-groups .ss-group')===__topReplacedCard));
+      await page.evaluate(()=>{
+        document.getElementById('ss-scroll-top').click();
+        document.dispatchEvent(new MouseEvent('mouseup',{button:0,bubbles:true}));
+      });await frames(page);
+      check('Top installs the staged first page and clears the spinner without a native request at '+scale+'x',
+        (await commands(page)).length===topRequestCount&&await page.evaluate(()=>
+          document.getElementById('ss-groups').getAttribute('aria-busy')==='false'&&
+          !!document.querySelector('#ss-groups .ss-group')&&document.querySelector('#ss-groups .ss-group')!==__topReplacedCard&&
+          document.getElementById('ss-scroll').scrollTop===0));
       await page.locator('#ss-page-next').click();await frames(page);
       let sent=await commands(page),request=sent[sent.length-1];
       check('Next owns an asynchronous page-two request at '+scale+'x',request.page==='1'&&!!request.request_id);
@@ -82,7 +102,7 @@ module.exports=async({browser,nativeHost,check})=>{
         };
       });
       await page.locator('#ss-page-next').click();
-      await emit(page,1,null,2);
+      await emit(page,1,null,3);
       check('An active page destination survives a same-period revision without refetching the prefix at '+scale+'x',
         (await commands(page)).length===loaded&&await page.locator('.ss-continuous-page[data-page-index="1"]:not(.ss-page-pending)').count()===1);
       await page.evaluate(()=>{Element.prototype.getBoundingClientRect=__pageJumpRect;});

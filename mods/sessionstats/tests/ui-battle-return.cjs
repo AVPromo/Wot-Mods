@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='grz-return-navigation-') as directory:
                     accepted = service.set_page(command['scope'], command['group'], int(command['page']), command['period_id'], command.get('request_id'), command.get('anchor_id'))
                 elif accepted and action == 'sort':
                     options = dict((key, command[key]) for key in ('metric', 'statistic', 'direction', 'chronology'))
-                    accepted = service.set_order(command['scope'], command['group'], options, command['period_id'], command.get('request_id'))
+                    accepted = service.set_order(command['scope'], command['group'], options, command['period_id'], command.get('request_id'), command.get('order_epoch'))
                 elif accepted and action == 'vehicle_battles':
                     accepted = service.set_vehicle_battles(command['scope'], command['vehicle_id'], int(command['page']), command['period_id'], command.get('chronology'))
                 elif accepted:
@@ -181,47 +181,87 @@ module.exports=async({browser,nativeHost,check})=>{
       await sourceMarker(mapSource,scenario.name);
       if(scenario.revise)check('A revised return reloads fresh result values instead of reviving stale source cache',Number((await page.locator('#ss-groups [data-group-id="return-map-060"] .ss-group-wn8-kpi .ss-kpi-value').textContent()).replace(/\s/g,''))===Math.round(revisedRating));
     }
-    for(const moved of [false,true]){
+    for(const scenario of ['unchanged','missing neighbor','moved']){
+      const moved=scenario==='moved', missing=scenario==='missing neighbor';
       await configure('maps');
       const boundarySource=mapSource.replace(sourceCard,'return-map-040');
-      await page.locator(boundarySource).evaluate(button=>{
+      await page.locator(boundarySource).evaluate((button,margin)=>{
         const scroll=document.getElementById('ss-scroll'),viewport=scroll.getBoundingClientRect(),filter=document.getElementById('ss-filter-panel');
         const section=button.closest('.ss-continuous-page');
-        scroll.scrollTop+=section.getBoundingClientRect().top-viewport.top-filter.getBoundingClientRect().height-80;
-      });await frames(page,12);
+        scroll.scrollTop+=section.getBoundingClientRect().top-viewport.top-filter.getBoundingClientRect().height-margin;
+      },missing?450:80);await frames(page,12);
       const before=await page.locator(boundarySource).evaluate(button=>{
         const scroll=document.getElementById('ss-scroll').getBoundingClientRect(),filter=document.getElementById('ss-filter-panel');
         const first=[...document.querySelectorAll('#ss-groups .ss-group')].find(card=>card.getBoundingClientRect().bottom>filter.getBoundingClientRect().bottom&&card.getBoundingClientRect().top<scroll.bottom);
         const box=button.getBoundingClientRect();
         return {first:first&&Number(first.closest('.ss-continuous-page').dataset.pageIndex),page:Number(button.closest('.ss-continuous-page').dataset.pageIndex),offset:box.top-scroll.top,visible:box.bottom<=scroll.bottom&&box.top>filter.getBoundingClientRect().bottom};
       });
-      check('The previous page still supplies the first visible card at the clicked Maps boundary '+moved+' '+JSON.stringify(before),before.first===0&&before.page===1&&before.visible);
+      check('The previous page still supplies the first visible card at the clicked Maps boundary '+scenario+' '+JSON.stringify(before),before.first===0&&before.page===1&&before.visible);
       await page.locator(boundarySource).click();await opened();
       await publish((await driver.request({action:'revise'})).payload);await opened();
       const commandStart=await page.evaluate(()=>__grzCommands.length);
-      if(moved)await page.evaluate(()=>{window.__returnHoldNeighbor=true;window.__returnHeldNeighbor=null;});
+      if(moved||missing)await page.evaluate(()=>{window.__returnHoldNeighbor=true;window.__returnHeldNeighbor=null;});
+      if(missing)await page.evaluate(selector=>{
+        const scroll=document.getElementById('ss-scroll'),native=Object.getOwnPropertyDescriptor(Element.prototype,'scrollTop');
+        window.__returnDroppedClamp=false;
+        Object.defineProperty(scroll,'scrollTop',{configurable:true,get(){return native.get.call(this);},set(value){
+          if(!__returnDroppedClamp&&value===0&&native.get.call(this)>2&&document.querySelector(selector)){
+            window.__returnDroppedClamp=true;return;
+          }
+          native.set.call(this,value);
+        }});
+      },boundarySource);
       await page.locator('.ss-battle-return').click();
       let olderNeighbor=null;
-      if(moved){
+      if(moved||missing){
         await page.waitForFunction(()=>!!window.__returnHeldNeighbor);
         olderNeighbor=await page.evaluate(()=>{window.__returnHoldNeighbor=false;return __returnHeldNeighbor;});
-        await publish((await driver.request({action:'revise_move'})).payload);
+        if(moved)await publish((await driver.request({action:'revise_move'})).payload);
       }
-      await ready('maps');
-      await sourceMarker(boundarySource,moved?'moved boundary source':'revised boundary source');
+      try { await ready('maps',10000); }
+      catch (error) {
+        throw Error('Map return did not render '+scenario+': '+JSON.stringify(await page.evaluate(start=>({
+          status:document.getElementById('ss-status').textContent,busy:document.getElementById('ss-groups').getAttribute('aria-busy'),
+          bridgeErrors:__returnBridgeErrors,pending:__returnBridgePending,commands:__grzCommands.slice(start),
+          scope:JSON.parse(model.payload).scopes.timeline.pagination.maps,state:GRZSessionStats.getState()
+        }),commandStart)));
+      }
+      try { await sourceMarker(boundarySource,scenario+' boundary source'); }
+      catch (error) {
+        throw Error('Map return did not mark the source '+scenario+': '+JSON.stringify(await page.evaluate(({selector,start})=>{
+          const button=document.querySelector(selector),scroll=document.getElementById('ss-scroll');
+          const box=button&&button.getBoundingClientRect(),viewport=scroll.getBoundingClientRect();
+          return{alert:document.getElementById('ss-status').textContent,focus:document.activeElement.outerHTML.slice(0,300),
+            marker:document.querySelector('.ss-source-returned')?.outerHTML.slice(0,300),
+            top:scroll.scrollTop,maximum:scroll.scrollHeight-scroll.clientHeight,hasButton:!!button,offset:box&&box.top-viewport.top,
+            buttons:[...document.querySelectorAll('#ss-groups [data-group-id="return-map-040"] button[data-battle-id]')].map(node=>node.outerHTML.slice(0,200)),
+            pages:[...document.querySelectorAll('.ss-continuous-page')].map(node=>node.dataset.pageIndex),
+            bridgeErrors:__returnBridgeErrors,pending:__returnBridgePending,commands:__grzCommands.slice(start),
+            scope:JSON.parse(model.payload).scopes.timeline.pagination.maps};
+        },{selector:boundarySource,start:commandStart})));
+      }
       if(olderNeighbor)await publish(olderNeighbor);
       const after=await page.locator(boundarySource).evaluate((button,start)=>{
-        const scroll=document.getElementById('ss-scroll').getBoundingClientRect();
-        return{page:Number(button.closest('.ss-continuous-page').dataset.pageIndex),offset:button.getBoundingClientRect().top-scroll.top,
+        const scrollNode=document.getElementById('ss-scroll'),scroll=scrollNode.getBoundingClientRect(),box=button.getBoundingClientRect();
+        const edge=Math.max(scroll.top,document.getElementById('ss-filter-panel').getBoundingClientRect().bottom);
+        return{page:Number(button.closest('.ss-continuous-page').dataset.pageIndex),offset:box.top-scroll.top,
+          focused:document.activeElement===button,visible:box.top>=edge-1&&box.bottom<=scroll.bottom+1,top:scrollNode.scrollTop,
           pages:[...document.querySelectorAll('#ss-groups .ss-continuous-page')].map(section=>Number(section.dataset.pageIndex)),
           commands:__grzCommands.slice(start).filter(command=>command.action==='page'&&command.group==='maps')};
       },commandStart);
       const pageNumber=moved?3:1;
       const requestPattern=after.commands.map(command=>command.anchor_id||Number(command.page)).join(',');
-      check('Back asks for the clicked group and at most one adjacent page after a revision '+moved+' '+JSON.stringify(after),
-        after.page===pageNumber&&after.pages.join(',')===[pageNumber-1,pageNumber].join(',')&&
-        requestPattern===(moved?'return-map-040,0,return-map-040,2':'return-map-040,0'));
-      check('Back keeps the exact boundary source action at its original viewport offset '+moved+' '+JSON.stringify({before:before.offset,after:after.offset}),Math.abs(after.offset-before.offset)<=3);
+      const reanchoredWithoutNeighbor=moved&&requestPattern==='return-map-040,0,return-map-040';
+      const pages=missing||reanchoredWithoutNeighbor?[pageNumber]:[pageNumber-1,pageNumber];
+      check('Back asks for the clicked group and at most one adjacent page after a revision '+scenario+' '+JSON.stringify(after),
+        after.page===pageNumber&&after.pages.join(',')===pages.join(',')&&
+        (reanchoredWithoutNeighbor||requestPattern===(moved?'return-map-040,0,return-map-040,2':'return-map-040,0')));
+      check('Back keeps the exact boundary source action focused and visible '+scenario+' '+JSON.stringify({before,after}),after.focused&&after.visible);
+      if(missing){
+        const dropped=await page.evaluate(()=>{delete document.getElementById('ss-scroll').scrollTop;return __returnDroppedClamp;});
+        check('Back retries a dropped native setter and clamps the visible source to the available range '+JSON.stringify({before,after,dropped}),
+          dropped&&after.top<=1&&after.offset<before.offset-3);
+      }else check('Back keeps the exact boundary source action at its original viewport offset '+scenario+' '+JSON.stringify({before:before.offset,after:after.offset}),Math.abs(after.offset-before.offset)<=3);
     }
     for(const reordered of [false,true]){
       await configure('battles');

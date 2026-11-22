@@ -653,13 +653,22 @@ class StatsService(object):
             self._battle_focus.pop(scope, None)
         return True
 
-    def set_order(self, scope, group, options, period_id, request_id=None):
+    def _order_epoch(self, scope):
+        return '{0}:{1}'.format(self._empty_view_revision, self._order_epochs.get(scope, 0))
+
+    def _advance_order_epoch(self, scope):
+        self._order_epochs[scope] = self._order_epochs.get(scope, 0) + 1
+
+    def set_order(self, scope, group, options, period_id, request_id=None, order_epoch=None):
         from .projection import valid_order
         if (not valid_order(options, group) or not self.ready or self._closed or
                 group not in ('battles', 'vehicles', 'maps', 'tiers')):
             return False
         index = self._view_index(scope)
         if index is None or period_id != index.identifier:
+            return False
+        if order_epoch is not None and (not isinstance(order_epoch, (text_type, bytes)) or
+                                        _text(order_epoch) != self._order_epoch(scope)):
             return False
         if request_id is not None:
             if not isinstance(request_id, (text_type, bytes)):
@@ -682,7 +691,7 @@ class StatsService(object):
         requests = self._order_requests.setdefault(scope, {})
         if request_id is None:
             if requests.pop(group, None) is not None:
-                self._order_epochs[scope] = uuid.uuid4().hex
+                self._advance_order_epoch(scope)
         else:
             requests[group] = {'period_id': period_id, 'request_id': request_id}
         self._pages.setdefault(scope, {})[group] = 0
@@ -755,7 +764,7 @@ class StatsService(object):
         vehicles = self._vehicle_pages.get(name, {})
         vehicle_pages = vehicles.get('pages') if vehicles.get('period_id') == index.identifier else None
         scope = index.snapshot(label, started_at, self._pages.get(name), orders, map_pages, vehicle_pages)
-        scope['order_epoch'] = self._order_epochs.get(name, self._empty_view_revision)
+        scope['order_epoch'] = self._order_epoch(name)
         history = self._history_request.get(name)
         if history and history['period_id'] == index.identifier:
             battle_list = index._group_battles(history['kind'], history['id'], history['page'],
@@ -1138,7 +1147,7 @@ class StatsService(object):
         self._pages.pop('manual', None)
         self._page_requests.pop('manual', None)
         self._order_requests.pop('manual', None)
-        self._order_epochs.pop('manual', None)
+        self._advance_order_epoch('manual')
         self._map_pages.pop('manual', None)
         self._vehicle_pages.pop('manual', None)
         self._history_request.pop('manual', None)
@@ -1208,7 +1217,7 @@ class StatsService(object):
             self._pages.pop('timeline', None)
             self._page_requests.pop('timeline', None)
             self._order_requests.pop('timeline', None)
-            self._order_epochs.pop('timeline', None)
+            self._advance_order_epoch('timeline')
             self._map_pages.pop('timeline', None)
             self._vehicle_pages.pop('timeline', None)
             self._history_request.pop('timeline', None)

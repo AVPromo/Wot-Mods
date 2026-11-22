@@ -31,8 +31,8 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
     window:{setTimeout(callback,delay){timers.set(++sequence,{callback,delay});return sequence;},clearTimeout:id=>timers.delete(id)},
     document:{createElement:()=>new Node(),getElementById:id=>controls[id]||(controls[id]=new Node()),querySelector:selector=>selector==='.ss-sort-statistic'?statistic:null},
     t:key=>key,currentScope:()=>state.payload.scopes[state.scope],scopeName:()=>state.scope,
-    viewContext:()=>({account_key:state.payload.account_key,scope:state.scope,period_id:scope.period_id}),
-    sameContext:owner=>owner.account_key===state.payload.account_key&&owner.scope===state.scope&&owner.period_id===scope.period_id,
+    viewContext:()=>({account_key:state.payload.account_key,scope:state.scope,period_id:state.payload.scopes[state.scope].period_id}),
+    sameContext:owner=>owner.account_key===state.payload.account_key&&owner.scope===state.scope&&owner.period_id===state.payload.scopes[state.scope].period_id,
     cancelBattleNavigation(){},retireFeed(){state.feed=null;},render(){},closeSelect(){},
     unwrap:value=>value,hasOlderPageReply:()=>false,historyOnlyUpdate:()=>false,applyLanguage(){},applyAppearance(){},consumeBattleReturn(){},
     setActionError(message){state.actionError=message;context.renderFilterActivity(scope);},
@@ -43,7 +43,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   for(const field of ['chronology','statistic','metric','direction']){
     selects[field]={trigger:new Node(),label:new Node(),menu:new Node(),options:context.selectOptions[field].map(()=>new Node())};
   }
-  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','observedTotal','baseCreditAvailability','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning','clearOrderIntent','orderRequestId','orderReplySequence','hasOlderOrderReply','sameBattleOriginOrder','cancelUITimer','update'])
+  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','observedTotal','baseCreditAvailability','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning','clearOrderIntent','orderRequestId','orderReplySequence','hasOlderOrderReply','sameBattleOriginOrder','earlierDataRevision','cancelUITimer','update'])
     vm.runInContext(actual(name),context);
   context.hasNumber=value=>typeof value==='number'&&Number.isFinite(value);
   const warningOwner=new Node(),warningIcon=context.appendClientWarning(warningOwner,'ss-sort-partial-icon');
@@ -134,6 +134,45 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   assert(context.update(newOwner));
   assert.strictEqual(state.payload,newOwner,'A re-created projection can replace historical request acknowledgements');
   state.group='vehicles';
+  state.payload=latestPayload;
+  latestPayload.scopes.launch.data_revision='projection:1';
+  context.changeOrder('metric','xp_base');
+  const refreshed=(revision,language,timestamp=revision)=>({...latestPayload,generated_at:timestamp,localization:{language},scopes:{...latestPayload.scopes,
+    launch:{...latestPayload.scopes.launch,data_revision:'projection:'+revision}}});
+  context.update(refreshed(2,'de'));
+  context.changeOrder('metric','credits');
+  const sortTimer=timers.get(state.orderIntent.timer),latestRefresh=refreshed(4,'pl');
+  context.update(latestRefresh);
+  context.update(refreshed(3,'en'));
+  context.update(refreshed(4,'en',3));
+  assert.strictEqual(state.payload,latestPayload,'An unrelated refresh is deferred during the native sorting request');
+  sortTimer.callback();
+  assert.strictEqual(state.payload,latestRefresh,'Sort timeout installs the newest deferred refresh and its language');
+  assert.strictEqual(state.actionError,'error.action');
+  assert.strictEqual(context.getOrder(latestRefresh.scopes.launch).metric,'xp_received','Timeout preserves the confirmed native order');
+
+  const range=(period,count,loading,request)=>({...initialPayload,scopes:{...initialPayload.scopes,timeline:{
+    ...scope,period_id:period,order_epoch:'range-owner:'+count,loading,
+    pagination:{vehicles:{page:0,order_request_id:request}}
+  }}});
+  state.scope='timeline';
+  const originalRange=range('A',1,false),interveningRange=range('B',2,false);
+  const loadingRange=range('A',3,true),returnedRange=range('A',3,false);
+  assert(context.update(originalRange));assert(context.update(interveningRange));assert(context.update(loadingRange));
+  assert(context.update(originalRange));
+  assert.strictEqual(state.payload,loadingRange,'An earlier A cannot remove the loading state from reselected A');
+  assert(context.update(returnedRange));
+  context.changeOrder('metric','xp_received');
+  const newRangeIntent=state.orderIntent;
+  assert.strictEqual(commands.at(-1).order_epoch,'range-owner:3','Sort carries the current Timeline owner');
+  assert(context.update(interveningRange));assert(context.update(originalRange));
+  assert.strictEqual(state.payload,returnedRange,'Returned A ignores delayed snapshots for both retired ranges');
+  assert.strictEqual(state.orderIntent,newRangeIntent,'A delayed previous range cannot cancel a current sort');
+  const acknowledgedRange=range('A',3,false,newRangeIntent.id);
+  assert(context.update(acknowledgedRange));
+  assert.strictEqual(state.payload,acknowledgedRange);
+  assert.strictEqual(state.orderIntent,null);
+  state.scope='launch';
   state.payload=initialPayload;state.feedForceStart=null;render();
   const before=commands.length;scope.loading=true;render();controls['ss-sort-off'].onclick();context.changeOrder('metric','xp_base');
   assert.strictEqual(commands.length,before,'Busy retained toggle and selector callbacks cannot sort an unavailable projection');
@@ -438,6 +477,32 @@ module.exports=async({browser,nativeHost,check})=>{
       await page.locator('#ss-sort-metric .ss-select-trigger').click();await page.locator('#ss-sort-metric [data-value="credits_net_received"]').click();await frames(page);
       check('An unacknowledged native sort immediately owns the filter spinner'+caption,await page.locator('#ss-filter-loading').isVisible());
       await acknowledge();check('The matching native sort acknowledgement clears its spinner'+caption,!await page.locator('#ss-filter-loading').isVisible());
+      if(scale===1){
+        const confirmation=await page.evaluate(()=>{
+          const payload=JSON.parse(model.payload),scope=payload.scopes.timeline;
+          window.__beforeSortTimeout=payload;
+          const oldTimers=new Set(__grzTimers.keys());
+          document.querySelector('#ss-sort-metric [data-value="xp_base"]').onclick();
+          const deadline=[...__grzTimers.entries()].find(([id,timer])=>!oldTimers.has(id)&&timer.delay===10000);
+          if(!deadline)throw new Error('Expected a bounded native sort timeout');
+          window.__sortTimeout=deadline[1].callback;
+          const refreshed=JSON.parse(JSON.stringify(payload));
+          refreshed.scopes.timeline.summary.battles=765;
+          refreshed.scopes.timeline.data_revision='synthetic-sort-timeout:2';
+          refreshed.localization={language:'de',messages:{'error.action':'Synthetic German sort timeout'}};
+          model.payload=JSON.stringify(refreshed);__grzEvents['viewEnv.onDataChanged']();
+          return {before:scope.summary.battles,visible:document.querySelector('#ss-summary .ss-kpi-value').textContent};
+        });
+        check('A refresh waits while the current order is unconfirmed',confirmation.visible===String(confirmation.before)&&await page.locator('#ss-filter-loading').isVisible());
+        await page.evaluate(()=>__sortTimeout());await frames(page);
+        check('An unacknowledged sort keeps the latest statistics and language and clears only its spinner',
+          await page.locator('#ss-summary .ss-kpi-value').first().textContent()==='765'&&
+          await page.locator('html').getAttribute('lang')==='de'&&
+          await page.locator('#ss-status').textContent()==='Synthetic German sort timeout'&&
+          await page.locator('#ss-sort-metric .ss-select-trigger').textContent()==='Net credits (received)'&&
+          !await page.locator('#ss-filter-loading').isVisible());
+        await page.evaluate(()=>{model.payload=JSON.stringify(__beforeSortTimeout);__grzEvents['viewEnv.onDataChanged']();});await frames(page);
+      }
       await require('./ui-loading-overlay.cjs')({page,check,caption,scale,width,acknowledge,frames});
     }finally{await page.close();}
   }));

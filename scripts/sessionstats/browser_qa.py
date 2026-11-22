@@ -172,7 +172,7 @@ def e2e_command(profile, report_dir, shard, target_sha=None):
     return command
 
 
-def merge_report_command(profile, report_dir, expected_shards, parts, target_sha=None):
+def merge_report_command(profile, report_dir, expected_shards, parts, target_sha=None, upstream=None):
     suite, capture = E2E_MODES[profile]
     version = (ROOT / 'mods/sessionstats/VERSION').read_text(encoding='ascii').strip()
     command = ['node', 'scripts/sessionstats/local-e2e/merge-report.cjs', '--out', str(report_dir),
@@ -180,13 +180,33 @@ def merge_report_command(profile, report_dir, expected_shards, parts, target_sha
                '--expected-suite', suite, '--expected-capture', capture]
     if target_sha:
         command += ['--expected-commit', target_sha]
+    for name, result in (upstream or {}).items():
+        command += ['--' + name + '-result', result]
     return command + ['--', *parts]
 
 
+def checkout_commit():
+    sha = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=ROOT, text=True, timeout=10).strip()
+    if not re.fullmatch(r'[0-9a-f]{40}', sha):
+        raise RuntimeError('The matrix checkout does not have a valid commit SHA')
+    return sha
+
+
 def verify_target_checkout(sha):
-    actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True, timeout=10).strip()
-    if actual != sha:
+    if checkout_commit() != sha:
         raise RuntimeError('The checked-out commit does not match the planned matrix commit')
+
+
+def target_commit(explicit, *, render_matrix):
+    if explicit:
+        verify_target_checkout(explicit)
+        return explicit
+    # Before the default workflow passed --target-sha, its checkout was already
+    # pinned to the planned PR head. GITHUB_SHA names the default branch instead.
+    if (render_matrix and os.environ.get('GITHUB_ACTIONS') == 'true'
+            and os.environ.get('GITHUB_EVENT_NAME') == 'issue_comment'):
+        return checkout_commit()
+    return None
 
 
 def run(prepare=False, *, e2e=None, report_dir=None, shard=None, target_sha=None):
@@ -227,6 +247,10 @@ def main():
     parser.add_argument('--shard', help='Render the given full-matrix shard (N/M)')
     parser.add_argument('--expected-shards', type=int, help='Number of shards from the CI plan')
     parser.add_argument('--target-sha', help='Commit from the CI plan')
+    jobs = ('render', 'contracts', 'download')
+    for name in jobs:
+        parser.add_argument('--' + name + '-result', choices=('success', 'failure', 'cancelled', 'skipped'),
+                            help='Outcome from the workflow')
     parser.add_argument('parts', nargs='*', help='Shard directories to merge')
     args = parser.parse_args()
     if args.report_dir is not None and not (args.e2e or args.merge_report):
@@ -241,14 +265,16 @@ def main():
             parser.error('--merge-report requires --report-dir and a positive --expected-shards')
     elif args.expected_shards is not None or args.parts:
         parser.error('--expected-shards and shard directories require --merge-report')
+    upstream = {name: getattr(args, name + '_result') for name in jobs}
+    if any(upstream.values()) and (not args.merge_report or not all(upstream.values())):
+        parser.error('Provide all three job results with --merge-report')
     try:
-        if args.target_sha:
-            verify_target_checkout(args.target_sha)
+        sha = target_commit(args.target_sha, render_matrix=args.e2e or args.merge_report)
         if args.merge_report:
             command = merge_report_command(args.merge_report, args.report_dir, args.expected_shards, args.parts,
-                                           target_sha=args.target_sha)
+                                           target_sha=sha, upstream=upstream if all(upstream.values()) else None)
             return subprocess.run(command, cwd=ROOT, check=False).returncode
-        run(prepare=args.prepare, e2e=args.e2e, report_dir=args.report_dir, shard=args.shard, target_sha=args.target_sha)
+        run(prepare=args.prepare, e2e=args.e2e, report_dir=args.report_dir, shard=args.shard, target_sha=sha)
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print('Browser QA failed: ' + str(error), file=sys.stderr)
         return 1

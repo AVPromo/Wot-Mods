@@ -401,7 +401,7 @@ class Backend:
     def _navigation(service, scope, kind, group, period, action):
         if kind == 'sort':
             return service.set_order(scope, group, {key: action.get(key) for key in ORDER_FIELDS},
-                                     period, action.get('request_id'))
+                                     period, action.get('request_id'), action.get('order_epoch'))
         if kind == 'battle_select':
             return service.select_battle(scope, action.get('id'), period, action.get('request_id'))
         raw_page = action.get('page')

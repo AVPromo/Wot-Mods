@@ -13,7 +13,8 @@ module.exports=function(){
     canonicalMetric:value=>value,sameContext:saved=>!state.destroyed&&Object.keys(current).every(key=>current[key]===saved[key]),
     findBattleOriginFocus(){lookup++;return replacement;},cancelUITimer:id=>timers.delete(id),
     window:{setTimeout(callback,delay){const id=++sequence;timers.set(id,{callback,at:now+delay});return id;}}};
-  vm.createContext(context);vm.runInContext(['sameBattleOriginOrder','clearReturnedSource','returnedSourceMatches','paintReturnedSource','markReturnedSource'].map(name=>extract(source,name)).join('\n'),context);
+  vm.createContext(context);vm.runInContext(['sameBattleOriginOrder','clearReturnedSource','returnedSourceMatches','paintReturnedSource','markReturnedSource',
+    'discardBattleReturnNeighbor','queueBattleReturn'].map(name=>extract(source,name)).join('\n'),context);
   const origin=()=>({context:{...current},group:'vehicles',source:{summary:false,card:'synthetic-vehicle',battle:'synthetic-battle',metric:null,statistic:null}});
   function advance(ms){const end=now+ms;let turns=0;while(true){let next=null;for(const [id,timer]of timers)if(timer.at<=end&&(!next||timer.at<next[1].at))next=[id,timer];if(!next)break;assert(++turns<1000,'Marker scheduling stays bounded');now=next[1].at;timers.delete(next[0]);next[1].callback();}now=end;}
   const first=action();context.markReturnedSource(origin(),first);
@@ -47,5 +48,28 @@ module.exports=function(){
   financialOrigin.source={...financialOrigin.source,statistic:'max'};
   context.markReturnedSource(financialOrigin,max);
   assert(!min.classList.contains('ss-source-returned')&&max.classList.contains('ss-source-returned'),'A new exact source replaces the previous marker');
+  context.clearReturnedSource();
+  let busy=true,finished=0,rendered=0,status=null;
+  groups.getAttribute=()=>String(busy);
+  context.render=()=>{rendered++;busy=false;};
+  context.setActionError=message=>{status=message;};
+  context.t=key=>key;
+  context.cancelBattleNavigation=()=>{state.battleReturn=null;};
+  context.finishBattleReturn=()=>{finished++;};
+  const returning={origin:origin(),phase:'restore',page:1,neighbor:0,deadline:now+50,settleDeadline:null};
+  state.battleReturn=returning;state.battleReturnTimer=null;
+  state.feed={start:0,last:1,cache:{1:[]},pending:{page:0,timer:null}};
+  context.queueBattleReturn(returning);advance(100);
+  assert.strictEqual(rendered,1,'The overall deadline drops a stalled optional neighbor with the source already available');
+  assert.strictEqual(state.feed.pending,null);
+  assert.strictEqual(state.feed.start,1);
+  assert.strictEqual(state.battleReturn,returning);
+  assert.strictEqual(status,null);
+  advance(100);
+  assert.strictEqual(finished,1,'A newly mounted source can settle and restore focus after the fetch deadline');
+  assert.strictEqual(returning.settleDeadline,now+2000);
+  advance(2000);context.queueBattleReturn(returning);advance(100);
+  assert.strictEqual(status,'page.error','The extra layout interval remains bounded');
+  assert.strictEqual(state.battleReturn,null);
 };
 if(require.main===module){module.exports();process.stdout.write('Actual-source returned-action ownership, replacement and expiry checks passed.\n');}

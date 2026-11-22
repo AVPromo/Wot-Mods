@@ -3,12 +3,12 @@
 from __future__ import unicode_literals
 
 from collections import Counter, deque, namedtuple
+from contextlib import contextmanager
 import errno
 import hashlib
 import json
 import os
 import re
-import sys
 import threading
 import time
 import uuid
@@ -25,6 +25,44 @@ _LAUNCH = re.compile(r'^[a-f0-9]{32}\Z')
 _INSTALLATION = re.compile(r'^installation:[a-f0-9]{64}\Z')
 _Receipt = namedtuple('_Receipt', ('account', 'filename'))
 _RETRY_SECONDS = 1
+_SHUTDOWN_RETRY_SECONDS = 0.1
+_LOCK_RETRY_SECONDS = 0.02
+_SHUTDOWN_LOCK_RETRIES = 50
+
+
+class _PublicationBusy(Exception):
+    pass
+
+
+@contextmanager
+def _publication_lock(directory):
+    """Serialize receipt writers for this account, including other processes."""
+    path = os.path.join(directory, '.receipt-write.lock')
+    if os.name == 'nt':
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_TEMPORARY | os.O_NOINHERIT
+        try:
+            descriptor = os.open(path, flags, 0o600)
+        except OSError as error:
+            if error.errno == errno.EEXIST:
+                raise _PublicationBusy()
+            raise
+    else:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | getattr(os, 'O_CLOEXEC', 0), 0o600)
+    try:
+        if os.name != 'nt':
+            import fcntl
+            # Separate open descriptors contend even within one process. Keep
+            # the inode in place so it continues to coordinate all writers.
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (IOError, OSError) as error:
+                if error.errno in (errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK):
+                    raise _PublicationBusy()
+                raise
+        yield
+    finally:
+        # Windows deletes the temporary lock and POSIX releases flock.
+        os.close(descriptor)
 
 
 def _account_folder(account_key):
@@ -42,21 +80,6 @@ def _validated_text(value, pattern):
     return value if isinstance(value, text_type) and pattern.match(value) else None
 
 
-def _receipt_directory(data_dir):
-    if os.name != 'nt':
-        return os.path.join(data_dir, 'combat-intake')
-    if isinstance(data_dir, bytes) and not isinstance(data_dir, text_type):
-        data_dir = data_dir.decode(sys.getfilesystemencoding() or 'utf-8')
-    # CPython 2.7 uses wide Windows file APIs for Unicode paths. The extended
-    # spelling reaches the same directory when receipt names exceed MAX_PATH.
-    directory = os.path.abspath(os.path.join(data_dir, 'combat-intake'))
-    if directory.startswith(('\\\\?\\', '\\\\.\\')):
-        return directory
-    if directory.startswith('\\\\'):
-        return '\\\\?\\UNC\\' + directory[2:]
-    return '\\\\?\\' + directory
-
-
 class CombatIntake(object):
     """FIFO writer and garage-only reader for normalized, account-local data.
 
@@ -66,8 +89,9 @@ class CombatIntake(object):
     """
 
     def __init__(self, data_dir):
-        self._directory = _receipt_directory(data_dir)
-        self._storage = GenerationStore(self._directory)
+        subdirectory = b'combat-intake' if isinstance(data_dir, bytes) else 'combat-intake'
+        self._storage = GenerationStore(os.path.join(data_dir, subdirectory))
+        self._directory = self._storage.directory
         self._condition = threading.Condition()
         self._queue = deque()
         self._waiting = Counter()
@@ -103,9 +127,8 @@ class CombatIntake(object):
                     self._failed = True
                     return False
                 self._thread = worker
-            self._last_id = max(self._last_id + 1, int(time.time() * 1000000))
-            receipt = _Receipt(account, '%020d-%s.json' % (self._last_id, self._producer))
-            self._queue.append((receipt, kind, payload))
+            submitted_order = int(time.time() * 1000000)
+            self._queue.append((account, submitted_order, kind, payload))
             self._waiting[account] += 1
             self._condition.notify()
             return True
@@ -123,28 +146,66 @@ class CombatIntake(object):
             self._failed = True
 
     def _write_queue(self):
+        shutdown_retry = True
+        shutdown_lock_retries = _SHUTDOWN_LOCK_RETRIES
         while True:
             with self._condition:
                 while not self._queue and not self._closed:
                     self._condition.wait()
                 if not self._queue:
                     return
-                receipt, kind, payload = self._queue[0]
+                account, submitted_order, kind, payload = self._queue[0]
             try:
-                self._write(receipt, kind, payload)
+                directory = os.path.join(self._directory, account)
+                _ensure_directory(directory)
+                with _publication_lock(directory):
+                    receipt = self._next_receipt(account, submitted_order)
+                    self._write(receipt, kind, payload)
+            except _PublicationBusy:
+                with self._condition:
+                    if not self._closed or shutdown_lock_retries:
+                        if self._closed:
+                            shutdown_lock_retries -= 1
+                        self._condition.wait(_LOCK_RETRY_SECONDS)
+                        continue
+                    self._failed = True
             except (IOError, OSError):
                 with self._condition:
                     self._failed = True
                     if not self._closed:
                         self._condition.wait(_RETRY_SECONDS)
                         continue
+                    if shutdown_retry:
+                        # Allow a final retry after a short lock without
+                        # waiting repeatedly on an unavailable disk at exit.
+                        shutdown_retry = False
+                        self._condition.wait(_SHUTDOWN_RETRY_SECONDS)
+                        continue
             except (ValueError, TypeError, UnicodeError, OverflowError, RuntimeError):
                 self._mark_failed()
             with self._condition:
                 self._queue.popleft()
-                self._waiting[receipt.account] -= 1
-                if not self._waiting[receipt.account]:
-                    del self._waiting[receipt.account]
+                self._waiting[account] -= 1
+                if not self._waiting[account]:
+                    del self._waiting[account]
+
+    def _next_receipt(self, account, submitted_order):
+        filenames = self._receipt_filenames(account)
+        if filenames:
+            # Allocate after every visible receipt while publication is
+            # locked, even when simultaneous or older clocks collide.
+            self._last_id = max(self._last_id, int(_FILENAME.match(filenames[-1]).group(1)))
+        self._last_id = max(self._last_id + 1, submitted_order)
+        return _Receipt(account, '%020d-%s.json' % (self._last_id, self._producer))
+
+    def _receipt_filenames(self, account):
+        directory = os.path.join(self._directory, account)
+        try:
+            return sorted(name for name in os.listdir(directory) if _FILENAME.match(name))
+        except OSError as error:
+            if error.errno != errno.ENOENT:
+                raise
+            return []
 
     def _write(self, receipt, kind, payload):
         envelope = {'version': 1, 'account': receipt.account, 'kind': kind, 'payload': payload}
@@ -154,7 +215,6 @@ class CombatIntake(object):
             raise ValueError('Combat receipt is too large.')
         checksum = hashlib.sha256(encoded).hexdigest().encode('ascii')
         directory = os.path.join(self._directory, receipt.account)
-        _ensure_directory(directory)
         path = os.path.join(directory, receipt.filename)
         self._publish(path, checksum + b'\n' + encoded)
 
@@ -193,22 +253,28 @@ class CombatIntake(object):
 
     def pending(self, account_key, limit=1, skip=None, accept=None):
         """Read a bounded number of published receipts while in the garage."""
+        receipts, unused_blocked = self._pending(account_key, limit, skip, accept)
+        return receipts
+
+    def has_backlog(self, account_key, accept=None):
+        """Defer newer writes while an older receipt may still be replayed."""
+        if self.waiting(account_key):
+            return True
+        receipts, blocked = self._pending(account_key, 1, None, accept)
+        return bool(receipts) or blocked
+
+    def _pending(self, account_key, limit, skip, accept):
         account = _account_folder(account_key)
         directory = os.path.join(self._directory, account)
         try:
-            filenames = sorted(name for name in os.listdir(directory) if _FILENAME.match(name))
-        except OSError as error:
-            if error.errno != errno.ENOENT:
-                self._mark_failed()
-            return []
+            filenames = self._receipt_filenames(account)
+        except OSError:
+            self._mark_failed()
+            return [], True
         result = []
-        blocked_producers = set()
         for filename in filenames:
             if len(result) >= limit:
                 break
-            producer = _FILENAME.match(filename).group(2)
-            if producer in blocked_producers:
-                continue
             receipt = _Receipt(account, filename)
             if skip is not None and skip(receipt):
                 continue
@@ -230,15 +296,15 @@ class CombatIntake(object):
             except (IOError, OSError) as error:
                 if error.errno != errno.ENOENT:
                     self._mark_failed()
-                    # A later receipt must not advance this producer's
-                    # watermark past a file that can still be read on retry.
-                    blocked_producers.add(producer)
+                # Another producer may revise the same battle. Recheck a
+                # listed name before passing it, even if it disappeared.
+                return result, True
             except (ValueError, TypeError, UnicodeError, RuntimeError):
                 self._mark_failed()
             else:
                 if accepted:
                     result.append((receipt, kind, payload))
-        return result
+        return result, False
 
     def bind_installation(self, launch_id, installation_key):
         """Record the installation later identified for this launch in the garage."""

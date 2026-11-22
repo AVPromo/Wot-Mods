@@ -1,7 +1,7 @@
 /* WN8 keeps its palette; black figures get a readable backing inside the cell. */
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
 const root=path.resolve(__dirname,'..');
-const read=name=>fs.readFileSync(path.join(root,'ui',name),'utf8');
+const read=name=>fs.readFileSync(path.join(root,'ui',name),'utf8').replace(/\r\n/g,'\n');
 const bands=[[0,'#000000'],[300,'#cd3333'],[600,'#d77900'],[900,'#d7b600'],[1250,'#6d9521'],
   [1600,'#4c762e'],[1900,'#4a92b7'],[2350,'#83579d'],[2900,'#5a3175']];
 function isUnoutlinedBlackInk(shadow){return String(shadow)==='none';}

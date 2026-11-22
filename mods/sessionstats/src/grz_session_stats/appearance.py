@@ -16,6 +16,8 @@ import logging
 import math
 import re
 
+from .storage import native_data_path
+
 LOG = logging.getLogger('grz.sessionstats')
 CONFIG_FILENAME = 'grz.sessionstats.json'
 MAX_CONFIG_BYTES = 128 * 1024
@@ -1418,7 +1420,7 @@ def load_config(path):
     if path is None:
         return default_config()
     try:
-        with io.open(path, 'rb') as source:
+        with io.open(native_data_path(path), 'rb') as source:
             raw = source.read(MAX_CONFIG_BYTES + 1)
     except (IOError, OSError) as error:
         if error.errno == errno.ENOENT:

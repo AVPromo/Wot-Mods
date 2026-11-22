@@ -9,6 +9,7 @@ import sys
 from .localization import message
 from .core import StatsService
 from .normalize import text_type
+from .storage import logical_data_path, native_data_path
 
 
 def installation_key(root):
@@ -16,7 +17,7 @@ def installation_key(root):
         root = root.decode(sys.getfilesystemencoding() or 'utf-8')
     if not isinstance(root, text_type) or not os.path.isabs(root):
         raise ValueError('An absolute installation root is required.')
-    canonical = os.path.normcase(os.path.realpath(root))
+    canonical = os.path.normcase(logical_data_path(os.path.realpath(native_data_path(root))))
     return 'installation:' + hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
 

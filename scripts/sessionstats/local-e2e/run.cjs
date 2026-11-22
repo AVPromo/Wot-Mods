@@ -250,12 +250,34 @@ async function measure(driver) {
     const get=id=>document.getElementById(id);
     const panel=get('grz-session-stats').getBoundingClientRect(),scroll=get('ss-scroll'),scrollBox=scroll.getBoundingClientRect();
     const filter=get('ss-filter-panel'), filterBox=filter.getBoundingClientRect(), sort=get('ss-sorting'), sortBox=sort.getBoundingClientRect();
-    const contentTop=Math.max(scrollBox.top,filterBox.bottom);
-    const cards=Array.from(document.querySelectorAll('#ss-groups .ss-group'));
-    const visible=cards.filter(card=>{
+    const pinned=filter.classList.contains('is-pinned');
+    const contentTop=pinned ? Math.max(scrollBox.top,filterBox.bottom) : scrollBox.top;
+    const contentBottom=scrollBox.bottom;
+    const groups=get('ss-groups'), cards=Array.from(groups.querySelectorAll('.ss-group'));
+    // A translated filter can enlarge scrollHeight beyond the end of the list.
+    const paddingBottom=parseFloat(getComputedStyle(scroll).paddingBottom)||0;
+    const listRemaining=groups.getBoundingClientRect().bottom+paddingBottom-contentBottom;
+    const remaining=Math.max(0,Math.min(scroll.scrollHeight-scroll.clientHeight-scroll.scrollTop,listRemaining));
+    let visible=0, resultsTop=null, resultsReached=false;
+    for(const card of cards) {
       const box=card.getBoundingClientRect();
-      return box.width>0&&Math.min(scrollBox.bottom,box.bottom)>Math.max(contentTop,box.top)+1;
-    });
+      if(box.width<=0||box.height<=0) continue;
+      const top=Math.max(contentTop,box.top), bottom=Math.min(contentBottom,box.bottom);
+      const left=Math.max(scrollBox.left,box.left), right=Math.min(scrollBox.right,box.right);
+      if(right<=left+1) continue;
+      const intersects=bottom>top+1;
+      if(!intersects&&resultsTop!==null&&box.top>=resultsTop) continue;
+      const style=getComputedStyle(card);
+      const hidden=style.visibility==='hidden'||style.visibility==='collapse'||(style.opacity&&Number(style.opacity)===0);
+      if(!hidden) {
+        resultsTop=resultsTop===null ? box.top : Math.min(resultsTop,box.top);
+      }
+      if(!intersects) continue;
+      resultsReached=true;
+      if(hidden) continue;
+      const y=(top+bottom)/2;
+      if([0.5,0.25,0.75].some(ratio=>card.contains(document.elementFromPoint(left+(right-left)*ratio,y)))) visible++;
+    }
     const controls=Array.from(sort.querySelectorAll('.ss-select-trigger,#ss-sort-off')).filter(node=>{
       const box=node.getBoundingClientRect();
       return box.width>0&&box.height>0&&(box.left<sortBox.left-1||box.right>sortBox.right+1||box.top<sortBox.top-1||box.bottom>sortBox.bottom+1);
@@ -265,12 +287,12 @@ async function measure(driver) {
       const x=Math.round(scrollBox.left+scrollBox.width*xRatio),y=Math.round(scrollBox.top+scrollBox.height*yRatio);
       if(!wheelAt&&scroll.contains(document.elementFromPoint(x,y))) wheelAt={x,y};
     }
-    return {width:panel.width,height:panel.height,top:Math.round(scroll.scrollTop),visible:visible.length,
-      resultsReached:cards.some(card=>card.getBoundingClientRect().top<scrollBox.bottom-1),
+    return {width:panel.width,height:panel.height,top:Math.round(scroll.scrollTop),remaining,
+      visible,resultsTop,resultsReached,contentTop,contentBottom,
       mounted:cards.length,wheelAt,layout:get('ss-list-controls').getAttribute('data-filter-layout'),
       group:document.querySelector('.ss-group-tab[aria-pressed="true"]')?.id.slice('ss-group-'.length),
       version:get('ss-version').textContent,overflow:controls.length,warning:getComputedStyle(get('ss-sort-data-warning')).display!=='none',
-      pinned:filter.classList.contains('is-pinned'),filterInside:filterBox.top>=scrollBox.top-1&&filterBox.bottom<=scrollBox.bottom+1,
+      pinned,filterInside:filterBox.top>=scrollBox.top-1&&filterBox.bottom<=scrollBox.bottom+1,
       wheels:window.__localWheels.slice(),errors:window.__localErrors.slice()};
   });
 }
@@ -282,8 +304,9 @@ async function runCase(ctx, task, order, version, capture) {
   const phases=[];
   const root=label(task)+'/'+variant(order);
   for(let step=0;step<=3;step++) {
+    const previous=phases[step-1];
     if(step) {
-      const at=phases[step-1].wheelAt;
+      const at=previous.wheelAt;
       assert(at,'No visible point in the primary scrolling view');
       await ctx.driver.wheel(at.x,at.y,-120);
       await ctx.idle();
@@ -299,13 +322,28 @@ async function runCase(ctx, task, order, version, capture) {
     assert.equal(state.wheels.length,step);
     assert(state.wheels.every(event=>event.trusted&&event.delta<0),'Wheel events did not reach the panel using native input');
     if(!step) assert.equal(state.top,0);
-    else assert(state.top>=phases[step-1].top,'Scrolling reversed unexpectedly');
-    if(step===3&&scope.pagination[task.group].total>0){
+    else {
+      assert(state.top>=previous.top,'Scrolling reversed unexpectedly');
+      assert(previous.remaining<=1||state.top>previous.top,
+        `Wheel ${step} did not move the primary scroll viewport with ${Math.round(previous.remaining)} px available`);
+    }
+    if(scope.pagination[task.group].total>0) {
       assert(state.mounted>0,'Python returned results but the panel mounted no cards');
+      assert(state.resultsTop!==null,'Python returned results but no result card has visible layout');
       if(state.resultsReached) assert(state.visible>0,'The results area is visible without any result cards');
+    } else {
+      assert.equal(state.mounted,0,'The panel retained result cards for an empty Python response');
     }
     if(capture==='all'||(capture==='final'&&step===3)) state.image=await ctx.snapshot(root+'/'+step);
     phases.push(state);
+  }
+  const last=phases.at(-1);
+  if(last.mounted>0&&!phases.some(phase=>phase.visible>0)) {
+    // The compact summary can still be taller than three wheel movements.
+    // A clipped card must lie below the viewport and within its scroll range.
+    assert(last.contentBottom>last.contentTop+1&&last.resultsTop>=last.contentBottom-1&&
+      last.resultsTop<last.contentBottom+last.remaining-1,
+      'No result card appeared in the viewport or can be reached below it');
   }
   return {key:root,phases};
 }
@@ -509,4 +547,6 @@ async function main() {
   }
 }
 
-main().catch(error=>{console.error(error.message);process.exitCode=1;});
+if(require.main===module) main().catch(error=>{console.error(error.message);process.exitCode=1;});
+
+module.exports={runCase};

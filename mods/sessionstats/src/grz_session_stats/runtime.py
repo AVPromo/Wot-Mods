@@ -27,7 +27,7 @@ import uuid
 from . import VERSION
 from .normalize import arena_start, normalize_result, _number, _integer, text_type
 from .monitor import ResultMonitor
-from .storage import check_json_depth
+from .storage import check_json_depth, native_data_path
 
 LOG = logging.getLogger('grz.sessionstats')
 LAUNCH_ID = uuid.uuid4().hex
@@ -74,7 +74,7 @@ def resolve_data_dir(bigworld=None, environ=None):
 
 
 def _load_json_file(path):
-    with io.open(path, 'rb') as handle:
+    with io.open(native_data_path(path), 'rb') as handle:
         raw = handle.read(MAX_EXPECTED_BYTES + 1)
     if len(raw) > MAX_EXPECTED_BYTES:
         raise ValueError('JSON file exceeds size limit')
@@ -294,7 +294,7 @@ class GameAPI(object):
         return controller.getResults() if controller is not None else None
 
     def load_expected(self, data_dir):
-        override = os.path.join(data_dir, 'wn8exp.json')
+        override = os.path.join(native_data_path(data_dir), 'wn8exp.json')
         if os.path.isfile(override):
             try:
                 table = _load_json_file(override)
@@ -390,6 +390,7 @@ class Runtime(object):
         self._combat_beginnings = {}
         self._combat_diagnostics = []
         self._combat_installation = None
+        self._combat_binding_pending = False
         self._footer_activity = None
         self._log_handle = None
         self.log_path = None
@@ -820,6 +821,7 @@ class Runtime(object):
         from .config_path import find_installation_root
         from .sessions import installation_key
         self._combat_installation = None
+        self._combat_binding_pending = False
         try:
             self._installation_dir = self._installation_dir or find_installation_root()
             if self._installation_dir is not None:
@@ -834,7 +836,7 @@ class Runtime(object):
         # must not silently retain preferences from an earlier start.
         self.config = dict(DEFAULT_LOCAL_CONFIG)
         try:
-            cfg_file = os.path.join(self.data_dir, 'config.json')
+            cfg_file = os.path.join(native_data_path(self.data_dir), 'config.json')
             if os.path.isfile(cfg_file):
                 cfg = _load_json_file(cfg_file)
                 if not isinstance(cfg, dict):
@@ -987,7 +989,12 @@ class Runtime(object):
         self.running = False
         self._lifecycle = None
         if self._combat_intake is not None:
-            self._combat_intake.close(wait=not self.api.in_battle())
+            # Shutdown is the last opportunity to publish queued captures,
+            # including when the launcher is exiting directly from a battle.
+            self._combat_intake.close(wait=True)
+            self._bind_combat_installation()
+            if self._combat_intake.failed:
+                self._warn_once('combat_capture', message('storage.failed'))
             self._combat_intake = None
         self._close_cache_observer()
         self._hotkey_held = False
@@ -1126,10 +1133,12 @@ class Runtime(object):
             self._instance_session = InstallationSession(self.data_dir, root, LAUNCH_ID,
                                                         self.expected_table, self.now, self._started_at,
                                                         deferred=self._deferred_loading)
+            self._installation_dir = root
             if self._combat_installation is None and self._combat_intake is not None:
                 self._combat_installation = self._instance_session.service.account_key
-                if not self._combat_intake.bind_installation(LAUNCH_ID, self._combat_installation):
-                    self._warn_once('combat_capture', message('storage.failed'))
+                self._combat_binding_pending = True
+                if not self.api.in_battle():
+                    self._bind_combat_installation()
             # Only this process's records have known installation provenance.
             # Account archives from previous processes must not be guessed in.
             for account_key, service in self.services.items():
@@ -1275,10 +1284,18 @@ class Runtime(object):
         self._warn_once('combat_capture', message('storage.failed'))
         return False
 
+    def _bind_combat_installation(self):
+        if self._combat_binding_pending:
+            if self._combat_intake.bind_installation(LAUNCH_ID, self._combat_installation):
+                self._combat_binding_pending = False
+            else:
+                self._warn_once('combat_capture', message('storage.failed'))
+
     def _drain_combat_intake(self):
         intake = self._combat_intake
         if intake is None or self.api.is_replay() or self.api.in_battle():
             return
+        self._bind_combat_installation()
         if intake.failed:
             self._warn_once('combat_capture', message('storage.failed'))
         diagnostics, self._combat_diagnostics = self._combat_diagnostics, []
@@ -1310,8 +1327,7 @@ class Runtime(object):
                 self._window_call('refresh')
 
     def _capture_installation(self, intake, capture):
-        return (capture['installation'] or intake.bound_installation(capture['launch_id']) or
-                (self._combat_installation if capture['launch_id'] == LAUNCH_ID else None))
+        return capture['installation'] or intake.bound_installation(capture['launch_id'])
 
     def _drain_installation_captures(self, intake, account_key, service):
         installation = self._instance_session
@@ -1319,9 +1335,7 @@ class Runtime(object):
 
         def belongs_here(receipt, kind, capture):
             origin = self._capture_installation(intake, capture)
-            # A previous launch without a marker only belongs to the account.
-            belongs = (origin == self._combat_installation if origin else
-                       capture['launch_id'] != LAUNCH_ID)
+            belongs = origin is None or origin == self._combat_installation
             if belongs:
                 origins[receipt] = origin
             return belongs
@@ -1330,7 +1344,13 @@ class Runtime(object):
             identity = intake.identity(receipt)
             if not service.has_combat_receipt(identity):
                 break
-            if origins[receipt] is not None:
+            if origins[receipt] is None:
+                # Retain this launch's early captures until the discovered
+                # installation has a durable marker. Older unbound launches
+                # have no provenance to recover for the installation ledger.
+                if capture['launch_id'] == LAUNCH_ID:
+                    break
+            else:
                 if installation is None or not installation.service.ready:
                     break
                 record = capture['record']
@@ -1405,12 +1425,13 @@ class Runtime(object):
     def _process(self, results, account_key, service, reusable=None, source='event'):
         if not self.running:
             return False
-        if self.api.in_battle() or self._combat_backlog(account_key, service):
-            return self._process_result(results, account_key, service, reusable, source, stage=True)
+        arena_id = str(results.get('arenaUniqueID', '')) if isinstance(results, dict) else ''
+        if self.api.in_battle() or service is None or self._combat_backlog(account_key, service, arena_id):
+            return self._process_result(results, account_key, service, reusable, source, arena_id, stage=True)
         self._processing[account_key] = self._processing.get(account_key, 0) + 1
         self._publish_activity()
         try:
-            return self._process_result(results, account_key, service, reusable, source)
+            return self._process_result(results, account_key, service, reusable, source, arena_id)
         finally:
             remaining = max(0, self._processing.get(account_key, 1) - 1)
             if remaining:
@@ -1420,23 +1441,27 @@ class Runtime(object):
             self._publish_activity()
             self._service_diagnostics()
 
-    def _combat_backlog(self, account_key, service):
+    def _combat_backlog(self, account_key, service, arena_id):
         intake = self._combat_intake
         if intake is None:
             return False
-        if intake.waiting(account_key):
-            return True
 
         def blocks_new_result(receipt, kind, capture):
             if not service.has_combat_receipt(intake.identity(receipt)):
                 return True
-            return (self._combat_installation is not None and
-                    self._capture_installation(intake, capture) == self._combat_installation)
+            if self._combat_installation is None:
+                # Installation discovery can bind a pending result after the
+                # account ledger has saved it. Keep later revisions of that
+                # battle in replay order for the installation ledger too.
+                return kind == 'result' and capture['record']['arena_id'] == arena_id
+            origin = self._capture_installation(intake, capture)
+            if origin is None:
+                return capture['launch_id'] == LAUNCH_ID
+            return origin == self._combat_installation
 
-        return bool(intake.pending(account_key, accept=blocks_new_result))
+        return intake.has_backlog(account_key, accept=blocks_new_result)
 
-    def _process_result(self, results, account_key, service, reusable, source, stage=False):
-        arena_id = str(results.get('arenaUniqueID', '')) if isinstance(results, dict) else ''
+    def _process_result(self, results, account_key, service, reusable, source, arena_id, stage=False):
         context = {}
         context_getter = getattr(service, 'result_context', None)
         if callable(context_getter):
@@ -1898,7 +1923,7 @@ class Runtime(object):
                 return
             if action == 'sort':
                 options = dict((key, getter(key)) for key in ('metric', 'statistic', 'direction', 'chronology'))
-                if not service.set_order(scope, group, options, period_id, getter('request_id')):
+                if not service.set_order(scope, group, options, period_id, getter('request_id'), getter('order_epoch')):
                     return
             elif action == 'battle_select':
                 if not service.select_battle(scope, getter('id'), period_id, getter('request_id')):
