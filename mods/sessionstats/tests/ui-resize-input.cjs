@@ -324,6 +324,66 @@ module.exports = async function ({browser, nativeHost, check}) {
   check('Focus loss starts bounded release and destroying the panel retires its callback', release.blurArmed && release.destroyRetired);
   await missingRelease.close();
 
+  const missingStart = await nativeHost(browser, {viewport:{width:1600,height:1100,scale:1},drag:'supported'});
+  try {
+    check('A missed first native resize sample and outside release restore the next resize and titlebar move',
+      await missingStart.evaluate(()=>{
+        const grip=document.querySelector('[data-corner="se"]'),title=document.getElementById('ss-titlebar');
+        const commands=action=>__grzCommands.filter(command=>command.action===action);
+        function press(pointerId) {
+          grip.dispatchEvent(new PointerEvent('pointerdown',{pointerId,button:0,buttons:1,clientX:690,clientY:725,bubbles:true,cancelable:true}));
+          return commands('resize_begin').at(-1).token;
+        }
+        const first=press(1);
+        document.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,buttons:0,clientX:999,clientY:999,bubbles:true}));
+        const firstReleased=commands('resize_end').at(-1)?.token===first;
+        const second=press(2),lease=[...__grzTimers].find(([,timer])=>timer.delay===1500);
+        if(!lease) return false;
+        __grzTimers.delete(lease[0]);lease[1].callback();
+        title.dispatchEvent(new MouseEvent('mousedown',{button:0,buttons:1,bubbles:true,cancelable:true}));
+        document.dispatchEvent(new MouseEvent('mouseup',{button:2,buttons:1,bubbles:true}));
+        const titleStillHeld=__grzWindowEvents.at(-1).on===true;
+        document.dispatchEvent(new MouseEvent('mousemove',{buttons:0,bubbles:true}));
+        return firstReleased&&second!==first&&commands('resize_end').at(-1).token===second&&titleStillHeld&&
+          __grzWindowEvents.at(-1).on===false;
+      }));
+    check('A resize and the titlebar cannot compete for native drag ownership',await missingStart.evaluate(()=>{
+      const grip=document.querySelector('[data-corner="se"]'),title=document.getElementById('ss-titlebar');
+      const commands=action=>__grzCommands.filter(command=>command.action===action);
+      const press=()=>grip.dispatchEvent(new PointerEvent('pointerdown',{pointerId:12,button:0,buttons:1,
+        clientX:690,clientY:725,bubbles:true,cancelable:true}));
+      const titlePress=()=>title.dispatchEvent(new MouseEvent('mousedown',{button:0,buttons:1,bubbles:true,cancelable:true}));
+      const before=commands('resize_begin').length,dragEvents=__grzWindowEvents.length;
+      press();
+      const token=commands('resize_begin').at(-1).token;
+      titlePress();
+      document.dispatchEvent(new MouseEvent('mouseup',{button:0,bubbles:true}));
+      const resizeOwns=__grzWindowEvents.length===dragEvents&&commands('resize_end').every(command=>command.token!==token);
+      document.dispatchEvent(new PointerEvent('pointerup',{pointerId:12,button:0,clientX:690,clientY:725,bubbles:true}));
+      titlePress();press();
+      document.dispatchEvent(new MouseEvent('mouseup',{button:0,bubbles:true}));
+      return resizeOwns&&commands('resize_begin').length===before+1&&commands('resize_end').at(-1).token===token&&
+        __grzWindowEvents.length===dragEvents+2&&__grzWindowEvents.at(-2).on===true&&__grzWindowEvents.at(-1).on===false;
+    }));
+    check('An account switch cancels an active resize and its late samples without saving the old size',
+      await missingStart.evaluate(()=>{
+        const grip=document.querySelector('[data-corner="se"]');
+        grip.dispatchEvent(new PointerEvent('pointerdown',{pointerId:3,button:0,buttons:1,clientX:690,clientY:725,bubbles:true}));
+        const token=__grzCommands.filter(command=>command.action==='resize_begin').at(-1).token;
+        GRZSessionStats.update({resize_gesture:{token,sequence:1,width:1000,height:800,active:true}});
+        const lease=[...__grzTimers].find(([,timer])=>timer.delay===1500);
+        const before=__grzCommands.length,payload=JSON.parse(model.payload);
+        payload.account_key='synthetic-resize-replacement';payload.window_size=[750,800];
+        GRZSessionStats.update(payload);
+        GRZSessionStats.update({resize_gesture:{token,sequence:2,width:1050,height:800,active:false}});
+        lease[1].callback();
+        const after=__grzCommands.slice(before);
+        return after.some(command=>command.action==='resize_end'&&command.token===token)&&
+          !after.some(command=>command.action==='size_preference'||command.action==='window_settings')&&
+          document.getElementById('grz-session-stats').style.width==='750rem';
+      }));
+  }finally{await missingStart.close();}
+
   const feedPage = await nativeHost(browser, {
     initialViewport:{width:1700,height:1150}, viewport:{width:1700,height:1150,scale:1},
   });

@@ -35,6 +35,10 @@ class StorageError(Exception):
     pass
 
 
+class StorageBusyError(StorageError):
+    pass
+
+
 class UnsupportedSchemaError(StorageError):
     pass
 
@@ -153,11 +157,14 @@ class _WriteLock(object):
                 import fcntl
                 self.platform = fcntl
                 fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except (IOError, OSError, ImportError):
+        except (IOError, OSError, ImportError) as error:
             if self.handle is not None:
                 self.handle.close()
             self.handle = None
             _PROCESS_LOCK.release()
+            if self.platform is not None and getattr(error, 'errno', None) in (
+                    errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK, errno.EDEADLK):
+                raise StorageBusyError(message('storage.busy'))
             raise StorageError(message('storage.busy'))
         return self
 

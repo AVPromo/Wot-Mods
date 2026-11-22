@@ -1,5 +1,13 @@
 # Session Stats changelog
 
+## 0.9.38 - 2026-11-22
+
+- Preserve confirmed XP, damage and mission progress when replaying older results or migrating installation history.
+- Recover interrupted garage writes and known installation records across account switches. Keep independent receipt producers moving and retry concurrent startup writes.
+- Recover missing vehicle and map metadata from saved battles after a restart.
+- Keep map and vehicle history on the last requested page, bound the number of mounted history pages, and finish interrupted pointer gestures.
+- Report the requested Chromium matrix coverage and avoid changing controls that the selected sort does not use.
+
 ## 0.9.37 - 2026-11-22
 
 - Protect newer battle facts when another client publishes an older result, and retain installation provenance while its source is being resolved.

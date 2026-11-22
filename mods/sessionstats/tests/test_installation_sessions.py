@@ -229,7 +229,7 @@ class InstallationRuntimeTests(unittest.TestCase):
         account, arena = self.battle(resolved=False)
         key = self.mod.active_key
 
-        def fail(unused):
+        def fail(unused, before_commit=None):
             raise IOError('injected direct account I/O failure')
 
         with changed(account, 'record_result', fail):
@@ -426,6 +426,60 @@ class InstallationAliasMigrationTests(unittest.TestCase):
         key = migrated.battle_key('EU:7', '1')
         battle = migrated.service._state['battles'][key]
         self.assertEqual((battle['damage'], battle['free_xp'], battle['_capture_order']), (2777, 321, observation))
+
+    def test_alias_without_comparable_capture_order_only_fills_missing_facts(self):
+        old = self.old_session()
+        for arena in ('1', '2'):
+            self.record(old, arena, 110, damage=1000)
+        self.clock.value = 400
+        staged = self.old_session('later-wall-clock', deferred=True)
+        self.clock.value = 500
+        for arena in ('1', '2'):
+            correction = core_fixtures.result(arena_id=arena, damage=2100, free_xp=321, reconcile=True)
+            if arena == '2':
+                correction['_capture_order'] = [500000000, None, 0, 'a' * 32, 1]
+            staged.result('EU:7', correction)
+        staged.service.cancel_loading()
+
+        self.clock.value = 200
+        primary = self.open(self.game, 'direct-unstamped')
+        self.clock.value = 250
+        for arena in ('1', '2'):
+            corrected = core_fixtures.result(arena_id=arena, damage=2777, free_xp=None, reconcile=True,
+                                             vehicle_name='Vehicle 1', map_id='arena:17', map_name='Map 17')
+            primary.result('EU:7', corrected, allow_new=True)
+        self.clock.value = 600
+        with changed(sessions, '_installation_keys', lambda root: (self.key, self.old_key)):
+            migrated = self.open(self.alias, 'merge-unstamped')
+        self.assertTrue(migrated.service.ready, migrated.service.last_error)
+        for arena in ('1', '2'):
+            key = migrated.battle_key('EU:7', arena)
+            row = migrated.service._state['battles'][key]
+            self.assertEqual((row['damage'], row['free_xp']), (2777, 321))
+            resolved = core_fixtures.result(arena_id=arena)
+            self.assertEqual([row[field] for field in ('vehicle_name', 'map_id', 'map_name')],
+                             [resolved[field] for field in ('vehicle_name', 'map_id', 'map_name')])
+            self.assertNotIn('_capture_order', row)
+            self.assertEqual(row['_launch_id'], 'old-alias')
+
+    def test_alias_accepts_a_provably_newer_result_and_preserves_known_launches(self):
+        primary = self.open(self.game, 'direct')
+        first = [500000000, None, 0, 'a' * 32, 1]
+        confirmed = [100000000, None, 0, 'a' * 32, 2]
+        self.record(primary, '1', 110, damage=1000, reconcile=True, _capture_order=first)
+        primary.begin('EU:7', {'arena_id': '2', 'started_at': 110, 'vehicle_id': 1})
+        legacy = self.old_session()
+        self.record(legacy, '1', 110, damage=3000, reconcile=True, _capture_order=confirmed)
+        self.record(legacy, '2', 110, damage=2000)
+        self.clock.value = 200
+        with changed(sessions, '_installation_keys', lambda root: (self.key, self.old_key)):
+            migrated = self.open(self.alias, 'merge-newer-alias')
+        self.assertTrue(migrated.service.ready, migrated.service.last_error)
+        first_battle, second_battle = [migrated.service._state['battles'][migrated.battle_key('EU:7', arena)]
+                                       for arena in ('1', '2')]
+        self.assertEqual((first_battle['damage'], first_battle['_capture_order']), (3000, confirmed))
+        self.assertEqual(second_battle['damage'], 2000)
+        self.assertEqual([row['_launch_id'] for row in (first_battle, second_battle)], ['direct', 'direct'])
 
     @unittest.skipUnless(os.name == 'nt', 'Requires an NTFS directory junction')
     def test_observed_windows_junction_and_physical_path_share_saved_history(self):

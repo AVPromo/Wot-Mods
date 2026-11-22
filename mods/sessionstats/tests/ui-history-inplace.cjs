@@ -56,7 +56,8 @@ module.exports=async ({browser,nativeHost,check})=>{
       });
       async function publish(pageNumber, revision=0, pages=2) {
         await page.evaluate(({group,pageNumber,revision,pages})=>{
-          const payload=JSON.parse(model.payload),item=payload.scopes.launch[group][0];
+          const payload=JSON.parse(model.payload),scope=payload.scopes.launch,item=scope[group][0];
+          scope.history_navigation_revision=(scope.history_navigation_revision || 0)+1;
           payload.generated_at=(payload.generated_at || 0)+1;
           item.battle_list={page:pageNumber,pages,total:pages===3?23:13,page_size:10,
             items:Array.from({length:pageNumber===pages-1 ? 3 : 10},(_,index)=>({id:'history-battle-'+(pageNumber*10+index),
@@ -104,6 +105,7 @@ module.exports=async ({browser,nativeHost,check})=>{
       await page.evaluate(()=>{
         const n=__historyNodes;
         window.__retiredHistoryOpen=n.body.querySelector('.ss-map-battle-open').onclick;
+        window.__earlierNestedPage=JSON.parse(model.payload);
         n.next.scrollIntoView({block:'center'});n.next.focus();n.next.click();
         n.nextTop=n.next.getBoundingClientRect().top;n.panelHeight=n.panel.getBoundingClientRect().height;
       });
@@ -116,6 +118,25 @@ module.exports=async ({browser,nativeHost,check})=>{
           document.activeElement===n.previous && n.panel.getBoundingClientRect().height<n.panelHeight &&
           Math.abs(n.next.getBoundingClientRect().top-n.nextTop)<2;
       }));
+      for (const partial of [true,false]) {
+        check('A superseded '+group+' history page cannot rewind '+(partial?'an inline update':'a full redraw'),
+          await page.evaluate(({group,partial})=>{
+            const stale=JSON.parse(JSON.stringify(__earlierNestedPage)), scope=stale.scopes.launch;
+            // Wall time alone cannot establish navigation order. Include a
+            // case where the old patch would otherwise cause a full redraw.
+            stale.generated_at=JSON.parse(model.payload).generated_at+1;
+            if (!partial) {
+              stale.appearance={...stale.appearance,panel_css:'/* stale history */'};
+              const row=scope[group][0];
+              scope.battle_history={kind:group,id:row.id,battle_list:row.battle_list};
+              delete row.battle_list;
+            }
+            GRZSessionStats.update(stale);
+            const n=__historyNodes;
+            return n.card.isConnected && n.next.disabled && !n.previous.disabled &&
+              n.body.firstChild.getAttribute('data-battle-id')==='history-battle-10';
+          },{group,partial}));
+      }
       check('Retired '+group+' history row actions cannot navigate after a page replacement',await page.evaluate(()=>{
         const before=__grzCommands.filter(item=>item.action==='battle_select').length;
         __retiredHistoryOpen();return __grzCommands.filter(item=>item.action==='battle_select').length===before;

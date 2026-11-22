@@ -7,6 +7,7 @@ import os
 import sys
 
 from .localization import message
+from .combat_intake import installation_battle_id
 from .installation_migration import InstallationHistory
 from .normalize import text_type
 from .storage import logical_data_path, native_data_path
@@ -79,41 +80,48 @@ class InstallationSession(object):
         return (key == self.service.account_key or
                 isinstance(key, text_type) and key in self.service._state.get('_installation_aliases', {}))
 
-    @staticmethod
-    def battle_key(account_key, arena_id):
-        # Neither raw account IDs nor the physical installation path enter
-        # the shared ledger. Account-aware keys prevent cross-account aliases.
-        identity = text_type(account_key) + '\x00' + text_type(arena_id)
-        return 'installation-' + hashlib.sha256(identity.encode('utf-8')).hexdigest()
+    battle_key = staticmethod(installation_battle_id)
 
-    def begin(self, account_key, context, capture=None, receipt=None):
+    def knows_battle(self, identifier):
+        return identifier in self.service._state['battles']
+
+    def begin(self, account_key, context):
         fields = ('started_at', 'vehicle_id', 'map_id', 'vehicle_name',
                   'vehicle_tier', 'vehicle_type', 'map_name')
         metadata = dict((key, context.get(key)) for key in fields)
         if context.get('details'):
             metadata['details'] = context['details']
         arena_id = self.battle_key(account_key, context['arena_id'])
-        if capture is not None:
-            return self.service.replay_combat_capture(
-                dict(metadata, arena_id=arena_id, mode='random', complete=False),
-                capture['at'], capture['launch_id'], is_result=False, receipt=receipt)
         return self.service.begin_battle(arena_id, mode='random', **metadata)
 
-    def result(self, account_key, record, allow_new=False, capture=None, receipt=None):
+    def result(self, account_key, record, allow_new=False, before_commit=None):
         identifier = self.battle_key(account_key, record['arena_id'])
+        record = self._installation_result(identifier, record, allow_new)
+        return record is not None and self.service.record_result(record, before_commit=before_commit)
+
+    def replay_capture(self, identifier, kind, capture, receipt):
+        is_result = kind == 'result'
+        record = capture['record']
+        if is_result:
+            record = self._installation_result(identifier, record, capture['observed'])
+            if record is None:
+                return False
+        else:
+            record = dict(record, arena_id=identifier)
+        return self.service.replay_combat_capture(
+            record, capture['at'], capture['launch_id'], is_result=is_result, receipt=receipt)
+
+    def _installation_result(self, identifier, record, allow_new):
         # An old result first delivered here may belong to another installation.
         # Accept known beginnings or a battle observed by this runtime only.
-        if not allow_new and not self.service.loading and identifier not in self.service._state['battles']:
-            return False
+        if not allow_new and not self.service.loading and not self.knows_battle(identifier):
+            return None
         record = dict(record, arena_id=identifier)
         if record.get('_deferred_candidates'):
             record['_deferred_candidates'] = [dict(candidate, arena_id=identifier) for candidate in record['_deferred_candidates']]
         if self.service.loading and not allow_new:
             record['_require_known'] = True
-        if capture is not None:
-            return self.service.replay_combat_capture(
-                record, capture['at'], capture['launch_id'], is_result=True, receipt=receipt)
-        return self.service.record_result(record)
+        return record
 
     def snapshot(self):
         snapshot = self.service.snapshot()

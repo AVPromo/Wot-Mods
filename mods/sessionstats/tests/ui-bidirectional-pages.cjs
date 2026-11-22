@@ -52,7 +52,7 @@ function assertBidirectionalSource(source=shipped()){
     render(){context.renderGroups(scope);}};
   vm.createContext(context);
   for(const name of ['feedCollectionIdentity','feedIdentity','feedContextIdentity','battleOwnsViewport','retainBattleTargetAfterResize','cancelUITimer','cancelPageJump','beginPageJump','retireFeed','captureFeedAnchor','finishFeedAnchor',
-    'revealFeedTop','pageBoundary','showFeedPending','requestFeedPage','captureRefreshAnchor','visibleRefreshPage','retargetFeedRefresh','deferFeedRefresh',
+    'revealFeedTop','pageBoundary','showFeedPending','includeFeedPage','requestFeedPage','captureRefreshAnchor','visibleRefreshPage','retargetFeedRefresh','deferFeedRefresh',
     'battleScrollPending','finishRefreshAnchor','prepareFeed','updateFeedControls','retireHistoryCards','renderGroups',
     'suspendResizePrefetch','loadNearEdges','onScrollIntent','changePage'])
     vm.runInContext(sourceFunction(source,name),context);
@@ -155,9 +155,12 @@ function assertBidirectionalSource(source=shipped()){
   }
   nodes['scroll-top'].onclick();flush();
   if(state.feed.pending)reply(0,state.feed.pending);
-  for(let index=1;index<6;index++){state.feed.last=index;reply(index);}
-  state.feed.current=3;scroll.scrollTop=3350;
-  const visibleCard=state.cardPages[3].cards.find(card=>{
+  for(let index=1;index<6;index++){context.includeFeedPage(state.feed,index,true);reply(index);}
+  assert.deepStrictEqual(Array.from(state.cardPages,page=>page.index),[3,4,5],'A long feed mounts only its last three neighbouring pages');
+  assert.strictEqual(state.groupCards.length,85);
+  assert(Object.keys(state.feed.cache).length<=5,'Rows and signatures from distant pages leave the cache');
+  state.feed.current=3;scroll.scrollTop=350;
+  const visibleCard=state.cardPages[0].cards.find(card=>{
     const box=card.getBoundingClientRect();return box.bottom>50&&box.top<500;
   });
   const visibleID=visibleCard.getAttribute('data-group-id'),visibleTop=visibleCard.getBoundingClientRect().top;
@@ -212,6 +215,29 @@ function assertBidirectionalSource(source=shipped()){
     const replacement=state.cardPages[0].cards.find(card=>card.getAttribute('data-group-id')===expectedCard.getAttribute('data-group-id'));
     assert.strictEqual(replacement.getBoundingClientRect().top,expectedTop,'The visible result stays put after retargeting');
   }
+
+  // At capacity a new edge can be mounted without changing the visible
+  // coordinates, even after its opposite page and DOM handlers are removed.
+  nodes['scroll-top'].onclick();flush();
+  if(state.feed.pending)reply(0,state.feed.pending);
+  for(let index=1;index<=2;index++){context.includeFeedPage(state.feed,index,true);reply(index);}
+  state.feed.prependAnchor=null;state.scrollTarget=null;scroll.scrollTop=2450;
+  const leaving=state.cardPages[0],forwardAnchor=state.cardPages[2];
+  const forwardTop=forwardAnchor.section.getBoundingClientRect().top;
+  let disposed=0;leaving.cards[0]._ssHistoryDispose=()=>{disposed++;};
+  context.requestFeedPage(state.feed,3,false);flush();reply(3,state.feed.pending);
+  assert.deepStrictEqual(Array.from(state.cardPages,page=>page.index),[1,2,3]);
+  assert.strictEqual(forwardAnchor.section.getBoundingClientRect().top,forwardTop,'Removing the first page adjusts scroll by its height');
+  assert.strictEqual(disposed,1,'Leaving pages retire their history handlers');
+  state.feed.prependAnchor=null;state.scrollTarget=null;scroll.scrollTop=250;
+  const backwardAnchor=state.cardPages[0],backwardTop=backwardAnchor.section.getBoundingClientRect().top;
+  context.requestFeedPage(state.feed,0,false);flush();
+  if(state.feed.pending)reply(0,state.feed.pending);
+  assert.deepStrictEqual(Array.from(state.cardPages,page=>page.index),[0,1,2]);
+  assert.strictEqual(backwardAnchor.section.getBoundingClientRect().top,backwardTop,'Removing the last page keeps the old viewport during a prepend');
+  // Restore the focused page used by the following delayed layout test.
+  start();context.includeFeedPage(state.feed,4,true);reply(4);
+  state.feed.current=4;scroll.scrollTop=1300;
 
   state.highlightedBattle={id:state.groupCards[0].getAttribute('data-group-id'),context:context.viewContext(),request_id:'selection-before-wheel',followViewport:true};
   context.onScrollIntent({type:'wheel',deltaY:1,target:scroll});
@@ -315,6 +341,48 @@ module.exports=async({browser,nativeHost,check})=>{
       check('An older response after retarget completion does not restart or move the refreshed feed'+label,
         (await requests()).length===completedCount&&await card.count()===1&&
         Math.abs(refreshedOffset-await card.evaluate(node=>node.getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top))<=2*scale);
+
+      if(scale===1){
+        await page.evaluate(()=>{
+          const payload=JSON.parse(model.payload),scope=payload.scopes.launch;
+          payload.account_key='synthetic-feed-window';scope.period_id='synthetic-feed-window-period';
+          scope.data_revision='window:1';scope.pagination.battles={page:0,pages:6,page_size:40,total:205};
+          delete scope.battle_focus;window.__grzCommands=[];
+          model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+        });
+        await emit(0);
+        async function step(id,index){
+          const before=(await requests()).length;
+          await page.evaluate(id=>document.getElementById(id).onclick(),id);await frames(page);
+          const requested=(await requests()).slice(before).filter(command=>command.page===String(index)).at(-1);
+          if(requested) await emit(index,requested);
+        }
+        for(let index=1;index<=4;index++) await step('ss-page-next',index);
+        const mounted=()=>page.locator('.ss-continuous-page:not(.ss-page-pending)').evaluateAll(pages=>pages.map(node=>Number(node.dataset.pageIndex)));
+        check('Visiting five battle pages keeps three mounts and absolute accessible positions',
+          JSON.stringify(await mounted())==='[2,3,4]' &&
+          await page.locator('.ss-continuous-page[data-page-index="4"] [data-list-index="160"]').getAttribute('aria-posinset')==='161');
+        const beforeEdge=(await requests()).length;
+        await page.evaluate(()=>{
+          const scroll=document.getElementById('ss-scroll');
+          scroll.dispatchEvent(new WheelEvent('wheel',{deltaY:-1,bubbles:true,cancelable:true}));
+          scroll.scrollTop=scroll.scrollHeight;
+          scroll.dispatchEvent(new Event('scroll'));
+        });await frames(page);
+        const edge=(await requests()).slice(beforeEdge).find(command=>command.page==='5');
+        check('The tail of the bounded feed automatically requests its next page',!!edge);
+        const retained=page.locator('.ss-continuous-page[data-page-index="4"]'),offset=()=>retained.evaluate(node=>
+          node.getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top);
+        const beforeOffset=await offset();await emit(5,edge);
+        check('Appending at capacity retains the same battle viewport and evicts the opposite boundary',
+          Math.abs(await offset()-beforeOffset)<=2 && JSON.stringify(await mounted())==='[3,4,5]' &&
+          await page.locator('#ss-groups .ss-group').count()===85);
+        await step('ss-page-next',5);
+        for(let index=4;index>0;index--) await step('ss-page-previous',index);
+        check('Previous can revisit evicted pages without mounting the complete history',
+          JSON.stringify(await mounted())==='[1,2,3]' &&
+          await page.locator('.ss-continuous-page[data-page-index="1"] .ss-group').count()===40);
+      }
     }finally{await page.close();}
   }
 };

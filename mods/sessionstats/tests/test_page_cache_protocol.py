@@ -32,8 +32,13 @@ class PageCacheProtocolTests(unittest.TestCase):
         self.assertTrue(self.service.set_order('manual', 'battles', dict(DEFAULT_ORDER, metric='xp_base'), period))
         self.assertNotIn('request_id', self.scope()['pagination']['battles'])
         self.assertTrue(self.service.set_map_battles('manual', 'map-a', 0, period))
+        first_history = self.scope()['history_navigation_revision']
+        self.assertGreater(first_history, before['history_navigation_revision'])
         self.assertTrue(self.service.set_vehicle_battles('manual', '1', 0, period))
+        second_history = self.scope()['history_navigation_revision']
+        self.assertGreater(second_history, first_history)
         self.assertTrue(self.service.select_battle('manual', 'row-00000', period, 'jump-1'))
+        self.assertEqual(self.scope()['history_navigation_revision'], second_history)
         self.assertEqual(self.scope()['data_revision'], revision)
         self.assertEqual(self.service._state, state)
         self.assertEqual(self.service.store.sequence, sequence)
@@ -154,9 +159,11 @@ class PageCacheProtocolTests(unittest.TestCase):
             for chronology, expected in (('newest', 1), ('oldest', 0)):
                 options = dict(DEFAULT_ORDER, chronology=chronology)
                 self.assertTrue(self.service.set_order('manual', kind, options, period))
+                prior_navigation = self.scope()['history_navigation_revision']
                 self.assertTrue(self.service.set_page('manual', kind, 0, period, 'return-test', identifier,
                                                       epoch, 'row-00000'))
                 scope = self.scope()
+                self.assertGreater(scope['history_navigation_revision'], prior_navigation)
                 detail = next(row['battle_list'] for row in scope[kind] if row['id'] == identifier)
                 self.assertEqual(scope['pagination'][kind]['request_id'], 'return-test')
                 self.assertEqual(detail['page'], expected)
@@ -164,7 +171,9 @@ class PageCacheProtocolTests(unittest.TestCase):
                 self.assertEqual(scope['battle_history']['battle_list'], detail)
                 self.assertTrue(self.service.set_page('manual', kind, 0, period, 'missing-battle', identifier,
                                                       epoch, 'absent-fixture'))
-                self.assertEqual(next(row['battle_list'] for row in self.scope()[kind] if row['id'] == identifier), detail)
+                unchanged = self.scope()
+                self.assertEqual(next(row['battle_list'] for row in unchanged[kind] if row['id'] == identifier), detail)
+                self.assertEqual(unchanged['history_navigation_revision'], scope['history_navigation_revision'])
         self.assertFalse(self.service.set_page('manual', 'tiers', 0, period, 'wrong-group', '1', epoch, 'row-00000'))
         self.assertFalse(self.service.set_page('manual', 'maps', 0, period, 'missing-group', order_epoch=epoch,
                                                history_anchor_id='row-00000'))

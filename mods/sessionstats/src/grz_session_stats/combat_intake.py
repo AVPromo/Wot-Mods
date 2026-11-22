@@ -24,6 +24,7 @@ _ACCOUNT = re.compile(r'^[a-f0-9]{64}\Z')
 _FILENAME = re.compile(r'^([0-9]{20})-([a-f0-9]{32})\.json\Z')
 _LAUNCH = re.compile(r'^[a-f0-9]{32}\Z')
 _INSTALLATION = re.compile(r'^installation:[a-f0-9]{64}\Z')
+_INSTALLATION_BATTLE = re.compile(r'^installation-[a-f0-9]{64}\Z')
 _Receipt = namedtuple('_Receipt', ('account', 'filename'))
 _RETRY_SECONDS = 1
 _SHUTDOWN_RETRY_SECONDS = 0.1
@@ -72,6 +73,11 @@ def _account_folder(account_key):
     return hashlib.sha256(account_key.encode('utf-8')).hexdigest()
 
 
+def installation_battle_id(account_key, arena_id):
+    identity = text_type(account_key) + '\x00' + text_type(arena_id)
+    return 'installation-' + hashlib.sha256(identity.encode('utf-8')).hexdigest()
+
+
 def _validated_text(value, pattern):
     try:
         if isinstance(value, bytes) and not isinstance(value, text_type):
@@ -79,6 +85,10 @@ def _validated_text(value, pattern):
     except UnicodeError:
         return None
     return value if isinstance(value, text_type) and pattern.match(value) else None
+
+
+def captured_installation_battle(value):
+    return _validated_text(value, _INSTALLATION_BATTLE)
 
 
 class CombatIntake(object):
@@ -111,10 +121,15 @@ class CombatIntake(object):
     def capture_order(self):
         return self._clock.stamp()
 
-    @contextmanager
     def account_transaction(self, account_key, create=False):
         """Share the receipt writer's lock with garage reads and direct commits."""
-        directory = os.path.join(self._directory, _account_folder(account_key))
+        return self.folder_transaction(_account_folder(account_key), create)
+
+    @contextmanager
+    def folder_transaction(self, account, create=False):
+        if not _ACCOUNT.match(account):
+            raise ValueError('Invalid combat receipt account.')
+        directory = os.path.join(self._directory, account)
         lock = _publication_lock(directory)
         try:
             if create:
@@ -180,6 +195,16 @@ class CombatIntake(object):
             self._waiting[account] += 1
             self._condition.notify()
             return True
+
+    def persist_locked_result(self, account_key, payload):
+        """Publish a garage result before the first ledger write, under its account lock."""
+        try:
+            receipt = self._next_receipt(_account_folder(account_key), int(time.time() * 1000000))
+            self._write(receipt, 'result', payload)
+            return receipt
+        except (IOError, OSError, ValueError, TypeError, OverflowError, RuntimeError):
+            self._mark_failed()
+            return None
 
     def close(self, wait=False):
         with self._condition:
@@ -251,12 +276,13 @@ class CombatIntake(object):
 
     def _next_receipt(self, account, submitted_order):
         filenames = self._receipt_filenames(account)
-        if filenames:
-            # Allocate after every visible receipt while publication is
-            # locked, even when simultaneous or older clocks collide.
-            self._last_id = max(self._last_id, int(_FILENAME.match(filenames[-1]).group(1)))
-        self._last_id = max(self._last_id + 1, submitted_order)
-        return _Receipt(account, '%020d-%s.json' % (self._last_id, self._producer))
+        with self._condition:
+            if filenames:
+                # Allocate after every visible receipt while publication is
+                # locked, even when simultaneous or older clocks collide.
+                self._last_id = max(self._last_id, int(_FILENAME.match(filenames[-1]).group(1)))
+            self._last_id = max(self._last_id + 1, submitted_order)
+            return _Receipt(account, '%020d-%s.json' % (self._last_id, self._producer))
 
     def _receipt_filenames(self, account):
         directory = os.path.join(self._directory, account)
@@ -313,7 +339,23 @@ class CombatIntake(object):
 
     def pending(self, account_key, limit=1, skip=None, accept=None):
         """Read a bounded number of published receipts while in the garage."""
-        receipts, unused_blocked = self._pending(account_key, limit, skip, accept)
+        return self.pending_in_folder(_account_folder(account_key), limit, skip, accept)
+
+    account_folder = staticmethod(_account_folder)
+
+    def published_folders(self):
+        try:
+            return [name for name in sorted(os.listdir(self._directory))
+                    if _ACCOUNT.match(name) and self._receipt_filenames(name)]
+        except OSError as error:
+            if error.errno != errno.ENOENT:
+                self._mark_failed()
+            return []
+
+    def pending_in_folder(self, account, limit=1, skip=None, accept=None):
+        if not _ACCOUNT.match(account):
+            raise ValueError('Invalid combat receipt account.')
+        receipts, unused_blocked = self._pending(account, limit, skip, accept)
         return receipts
 
     def has_published(self, account_key):
@@ -327,11 +369,10 @@ class CombatIntake(object):
         """Defer newer writes while an older receipt may still be replayed."""
         if self.waiting(account_key):
             return True
-        receipts, blocked = self._pending(account_key, 1, None, accept)
+        receipts, blocked = self._pending(_account_folder(account_key), 1, None, accept)
         return bool(receipts) or blocked
 
-    def _pending(self, account_key, limit, skip, accept):
-        account = _account_folder(account_key)
+    def _pending(self, account, limit, skip, accept):
         directory = os.path.join(self._directory, account)
         try:
             filenames = self._receipt_filenames(account)

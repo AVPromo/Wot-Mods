@@ -45,12 +45,13 @@ const rangeRanks = new Map(Object.keys(names.ranges).map((name,index)=>[name,ind
 const interactionStages = Object.keys(names.interactions).filter(name=>name!=='failure');
 const ciJobs = {'render':'Chromium render shards','contracts':'Detailed Chromium contracts','download':'Shard download'};
 const ciResults = {success:'Passed',failure:'Failed',cancelled:'Cancelled',skipped:'Skipped'};
+const ciCoverage = ['build','smoke','full','exhaustive'];
 
 function ciOutcomes(state) {
   if(!state.upstream) return [];
   return Object.entries(ciJobs).map(([key,name])=>{
     const result=state.upstream[key];
-    const smokeSkip=key==='contracts'&&result==='skipped'&&state.suite==='smoke';
+    const smokeSkip=key==='contracts'&&result==='skipped'&&state.coverage==='smoke';
     return {name,label:smokeSkip?'Skipped for smoke':owns(ciResults,result)?ciResults[result]:'Unavailable',
       failed:result!=='success'&&!smokeSkip};
   });
@@ -282,7 +283,7 @@ function showMatrix(names) {
   byId('viewer').addEventListener('close',()=>{byId('image').removeAttribute('src');});
   byId('title').textContent = 'Session Stats' + (summary.version ? ' '+summary.version : '');
   byId('summary').textContent = [
-    summary.engine, summary.renderer, summary.suite,
+    summary.engine, summary.renderer, summary.coverage || summary.suite,
     summary.commit ? `Commit ${summary.commit.slice(0, 12)}` : '',
     summary.expectedShards === null ? '' : 'Shards '+summary.shards+'/'+summary.expectedShards,
     'Cases '+summary.completed+'/'+summary.planned,
@@ -317,6 +318,7 @@ async function writeReport(directory,state) {
     engine:['chromium','gameface'].includes(state.engine) ? state.engine : '',
     renderer:safeVersion(state.renderer),
     suite:['smoke','full','build','quick'].includes(state.suite) ? state.suite : '',
+    coverage:ciCoverage.includes(state.coverage) ? state.coverage : undefined,
     planned:count(state.planned) ?? rows.length, completed:count(state.completed) ?? rows.length,
     failures:(count(state.failed) ?? 0)+(count(state.interactionErrors) ?? 0),
     visualFailures:count(state.visualFailures) ?? 0, missingBaselines:count(state.missingBaselines) ?? 0, frames, omitted,
@@ -384,4 +386,4 @@ ${jobStatus}
   await fs.writeFile(path.join(directory,'index.html'),html);
 }
 
-module.exports = { ciJobs, ciResults, ciOutcomes, publicCase, writeReport };
+module.exports = { ciJobs, ciResults, ciCoverage, ciOutcomes, publicCase, writeReport };

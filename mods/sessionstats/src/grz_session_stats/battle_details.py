@@ -212,14 +212,16 @@ def merge_details(existing, incoming, revise):
                     row = dict(combined.get(key, legacy))
                     if item.get('objectives'):
                         objectives = dict((objective['key'], objective) for objective in row.get('objectives', ()))
+                        prior_keys = set(objectives)
                         for objective in item['objectives']:
                             known = dict(objectives.get(objective['key'], {}))
                             for name, entry in objective.items():
                                 if name not in known or revise:
                                     known[name] = entry
                             objectives[objective['key']] = known
-                        _set_progress(row, [objectives[name] for name in sorted(objectives)],
-                                      item.get('progress_state') == 'unchanged')
+                        comparable = (item.get('progress_state') == 'unchanged' or
+                                      (row.get('progress_state') == 'unchanged' and prior_keys == set(objectives)))
+                        _set_progress(row, [objectives[name] for name in sorted(objectives)], comparable)
                     for name, entry in item.items():
                         previous = row.get(name)
                         if name in ('objectives', 'progress_state') and row.get('objectives'):

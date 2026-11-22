@@ -25,9 +25,10 @@ import time
 import uuid
 
 from . import VERSION
+from .combat_intake import CombatIntake, captured_installation_battle, installation_battle_id
 from .normalize import arena_start, normalize_result, _number, _integer, text_type
 from .monitor import ResultMonitor
-from .storage import StorageError, check_json_depth, native_data_path
+from .storage import GenerationStore, StorageError, check_json_depth, native_data_path
 
 LOG = logging.getLogger('grz.sessionstats')
 LAUNCH_ID = uuid.uuid4().hex
@@ -361,6 +362,7 @@ class Runtime(object):
         self.contexts = {}
         self._queued_crucible = None
         self.recent = {}
+        self._metadata_cursor = {}
         self.retries = {}
         self.inflight = {}
         self.subscriptions = []
@@ -817,7 +819,6 @@ class Runtime(object):
         if self.data_dir is None:
             self.data_dir = resolve_data_dir(self.api.bw)
             self._start_log()
-        from .combat_intake import CombatIntake
         from .config_path import find_installation_root
         from .sessions import installation_key
         self._combat_installation = None
@@ -1162,18 +1163,18 @@ class Runtime(object):
             if record.get('_result_seen'):
                 self._record_installation(account_key, record, is_result=True)
 
-    def _record_installation(self, account_key, record, is_result=False):
+    def _record_installation(self, account_key, record, is_result=False, before_commit=None):
         """Return None for a failed attempt, including a lost write race."""
         session = self._ensure_installation_session()
         if session is None:
-            return False
+            return None if self._combat_installation is not None else False
         try:
             if not session.service.refresh_capture_history():
                 raise StorageError(message('installation.save'))
             session.service.last_error = None
             if is_result:
                 observed = (account_key, str(record['arena_id'])) in self._observed_arenas
-                changed = session.result(account_key, record, allow_new=observed)
+                changed = session.result(account_key, record, allow_new=observed, before_commit=before_commit)
             else:
                 changed = session.begin(account_key, record)
             if session.service.last_error:
@@ -1284,9 +1285,13 @@ class Runtime(object):
             return self._native_account()
         return self.active_key if self._ensure_service() is not None else None
 
+    def _capture_payload(self, account_key, record, observed):
+        return {'at': self.now(), 'launch_id': LAUNCH_ID, 'record': record,
+                'observed': observed, 'installation': self._combat_installation,
+                'installation_battle': installation_battle_id(account_key, record['arena_id'])}
+
     def _stage_combat_capture(self, kind, account_key, record, observed=False):
-        payload = {'at': self.now(), 'launch_id': LAUNCH_ID, 'record': record,
-                   'observed': observed, 'installation': self._combat_installation}
+        payload = self._capture_payload(account_key, record, observed)
         if self._combat_intake is not None and self._combat_intake.submit(account_key, kind, payload):
             return True
         self._warn_once('combat_capture', message('storage.failed'))
@@ -1309,14 +1314,22 @@ class Runtime(object):
         diagnostics, self._combat_diagnostics = self._combat_diagnostics, []
         for issues, source in diagnostics:
             self.monitor.report(issues, source)
+        loaded = set()
         for account_key, service in self.services.items():
             if not service.ready:
                 continue
             with intake.account_transaction(account_key) as locked:
                 if not locked or not intake.has_published(account_key) or not service.refresh_capture_history():
                     continue
+                loaded.add(intake.account_folder(account_key))
                 self._drain_account_captures(intake, account_key, service)
                 self._drain_installation_captures(intake, account_key, service)
+        if self._instance_session is not None and self._instance_session.service.ready:
+            for folder in intake.published_folders():
+                if folder not in loaded:
+                    with intake.folder_transaction(folder) as locked:
+                        if locked:
+                            self._drain_installation_captures(intake, None, folder=folder)
         self._schedule_loading()
 
     def _drain_account_captures(self, intake, account_key, service):
@@ -1345,53 +1358,83 @@ class Runtime(object):
         accepts = getattr(self._instance_session, 'accepts_installation', None)
         return origin == self._combat_installation or (callable(accepts) and accepts(origin))
 
-    def _drain_installation_captures(self, intake, account_key, service):
+    def _legacy_capture_account(self, intake, folder):
+        try:
+            saved = GenerationStore(os.path.join(self.data_dir, folder)).load()
+            account = saved.get('account_key') if isinstance(saved, dict) else None
+            if isinstance(account, text_type) and intake.account_folder(account) == folder:
+                return account
+        except (StorageError, IOError, OSError):
+            pass
+        return None
+
+    def _drain_installation_captures(self, intake, account_key, service=None, folder=None):
+        folder = intake.account_folder(account_key) if folder is None else folder
         installation = self._instance_session
-        if installation is not None and installation.service.ready:
-            # Aliases learned by a peer must be visible before choosing which
-            # receipts this installation owns.
-            installation.service.refresh_capture_history()
-        origins = {}
+        target = installation.service if installation is not None and installation.service.ready else None
+        if target is not None and not target.refresh_capture_history():
+            return
+        eligible, blocked, pending_beginnings = {}, set(), set()
+        legacy_account = [account_key] if account_key is not None else []
 
-        def belongs_here(receipt, kind, capture):
-            origin = self._capture_installation(intake, capture)
-            belongs = origin is None or self._owns_capture_installation(origin)
-            if belongs:
-                origins[receipt] = origin
-            return belongs
+        def already_installed(receipt):
+            return service is None and target.has_combat_receipt(intake.identity(receipt))
 
-        for receipt, kind, capture in intake.pending(account_key, limit=2, accept=belongs_here):
+        def can_finish(receipt, kind, capture):
             identity = intake.identity(receipt)
-            if not service.has_combat_receipt(identity):
-                break
-            if origins[receipt] is None:
-                # Another live launch may publish its marker after we have
-                # already committed the account result. Check the binding
-                # again if its lease disappeared during the lookup.
-                launch = capture['launch_id']
-                if launch == LAUNCH_ID or intake.launch_is_alive(launch):
-                    break
+            producer = identity[0]
+            if producer in blocked:
+                return False
+            try:
                 origin = self._capture_installation(intake, capture)
-                if origin is not None and not self._owns_capture_installation(origin):
-                    continue
-            else:
-                origin = origins[receipt]
+                if origin is None:
+                    # Another live launch may publish its marker after we have
+                    # committed the account result. Hold back its producer only.
+                    launch = capture['launch_id']
+                    if launch == LAUNCH_ID or intake.launch_is_alive(launch):
+                        blocked.add(producer)
+                        return False
+                    origin = self._capture_installation(intake, capture)
+            except (IOError, OSError):
+                blocked.add(producer)
+                return False
+            if origin is not None and (target is None or not self._owns_capture_installation(origin)):
+                return False
+            if service is not None and not service.has_combat_receipt(identity):
+                blocked.add(producer)
+                return False
+            identifier = None
             if origin is not None:
-                if (installation is None or not installation.service.ready or
-                        not installation.service.refresh_capture_history()):
+                identifier = captured_installation_battle(capture.get('installation_battle')) if service is None else None
+                if identifier is None:
+                    if not legacy_account:
+                        legacy_account.append(self._legacy_capture_account(intake, folder))
+                    if legacy_account[0] is None:
+                        blocked.add(producer)
+                        return False
+                    identifier = installation_battle_id(legacy_account[0], capture['record']['arena_id'])
+                if service is None and kind == 'result' and not capture['observed']:
+                    if identifier not in pending_beginnings and not installation.knows_battle(identifier):
+                        return False
+                if kind == 'begin':
+                    pending_beginnings.add(identifier)
+            elif service is None:
+                return False
+            eligible[receipt] = (identity, identifier)
+            return True
+
+        for receipt, kind, capture in intake.pending_in_folder(folder, limit=2, skip=already_installed, accept=can_finish):
+            identity, identifier = eligible[receipt]
+            if identifier is not None:
+                if not target.refresh_capture_history():
                     break
-                record = capture['record']
-                installation.service.last_error = None
-                if kind == 'result':
-                    changed = installation.result(account_key, record, allow_new=capture['observed'],
-                                                  capture=capture, receipt=identity)
-                else:
-                    changed = installation.begin(account_key, record, capture=capture, receipt=identity)
-                if installation.service.last_error:
+                target.last_error = None
+                changed = installation.replay_capture(identifier, kind, capture, identity)
+                if target.last_error:
                     break
                 if changed and self._instance_tab_enabled:
                     self._window_call('refresh')
-            if not intake.ack(receipt):
+            if service is not None and not intake.ack(receipt):
                 break
 
     def _on_avatar(self, *args, **kwargs):
@@ -1549,10 +1592,9 @@ class Runtime(object):
             return False
         if order is not None:
             record['_capture_order'] = order
-            if source in ('refresh', 'postbattle', 'cache', 'native_cache'):
-                # Reading an existing native bundle again is not a new
-                # delivery. Avoid durably stamping every unchanged bundle.
-                record['_passive_capture'] = True
+        if source in ('refresh', 'postbattle', 'cache', 'native_cache'):
+            # Reading an existing native bundle is not a new delivery.
+            record['_passive_capture'] = True
         if source == 'late_cache':
             # An expired request can still carry the only available result.
             # Fill unknowns, but never revise facts from a newer delivery.
@@ -1565,6 +1607,7 @@ class Runtime(object):
             # A current result can arrive even when the avatar-ready event was
             # missed. Replayed historical events must not revive waiting.
             self._observed_arenas.add((account_key, record['arena_id']))
+        borrowed_bonus = False
         if reusable is None and source != 'late_cache' and native_account:
             try:
                 # A cache callback can be older than the displayed result.
@@ -1581,6 +1624,7 @@ class Runtime(object):
                         str(posted_raw.get('arenaUniqueID')) == record['arena_id'] and
                         _integer(avatar.get('accountDBID')) == context['account_dbid']):
                     reusable = getattr(posted, 'reusable', None)
+                    borrowed_bonus = reusable is not None
             except Exception:
                 self.monitor.fault('bonus_reader', 'postedResults.reusable', 'readable bonus data', 'exception', source)
                 self._warn_once('results:bonus',
@@ -1597,6 +1641,8 @@ class Runtime(object):
                     if value is not None and (applied or target['xp_received'] is None):
                         target['xp_received'] = value
                         target['xp_bonus_applied'] = applied
+                        if borrowed_bonus:
+                            target['_passive_bonus'] = True
                 except Exception:
                     self.monitor.fault('bonus_fields', 'reusable.personal.xpProgress', 'supported bonus fields', 'exception', source)
                     self._warn_once('results:bonus',
@@ -1606,17 +1652,36 @@ class Runtime(object):
         if stage:
             return self._stage_combat_capture(
                 'result', account_key, record, observed=observed)
+        return self._save_garage_result(account_key, service, record, observed, source)
+
+    def _save_garage_result(self, account_key, service, record, observed, source):
+        intake = self._combat_intake
+        self._ensure_installation_session()
+        receipt = [None]
+
+        def persist():
+            if receipt[0] is None:
+                receipt[0] = intake.persist_locked_result(account_key, self._capture_payload(account_key, record, observed))
+                if receipt[0] is None:
+                    raise StorageError(message('storage.failed'))
+
+        # No durable receipt is needed for an unchanged read. The first
+        # ledger about to change publishes one for any known installation.
+        before_commit = persist if intake is not None and self._combat_installation is not None else None
         service.last_error = None
         try:
-            changed = service.record_result(record)
+            changed = service.record_result(record, before_commit=before_commit)
         except (StorageError, IOError, OSError):
             changed = False
             service.last_error = message('storage.failed')
         if service.last_error:
             LOG.error('Statistics storage reported an error; previous data preserved.')
-            return self._stage_combat_capture('result', account_key, record, observed=observed)
-        installation_changed = self._record_installation(account_key, record, is_result=True)
-        if installation_changed is None:
+            return receipt[0] is not None or self._stage_combat_capture('result', account_key, record, observed=observed)
+        installation_changed = self._record_installation(account_key, record, is_result=True, before_commit=before_commit)
+        if receipt[0] is not None:
+            if installation_changed is not None:
+                intake.ack(receipt[0])
+        elif installation_changed is None:
             self._stage_combat_capture('result', account_key, record, observed=observed)
         LOG.info('Result normalized: source=%s complete=%s changed=%s', source, record.get('complete'), changed)
         self._remember_result(account_key, record)
@@ -1688,12 +1753,91 @@ class Runtime(object):
             try:
                 bundle = self.api.posted_bundle(arena_id)
                 raw = getattr(bundle, 'results', None)
-                if raw is not None:
+                if isinstance(raw, dict) and str(raw.get('arenaUniqueID')) == arena_id:
                     self._process(raw, account_key, self.services[account_key], getattr(bundle, 'reusable', None), source='refresh')
             except Exception:
                 self._warn_once('results:bonus', message('runtime.bonus'), exception=True)
                 self.monitor.fault('bonus_reader', 'postedResults.reusable', 'readable bonus data', 'exception', 'refresh')
+        if self.active_service is not None:
+            self._repair_saved_metadata(self.active_service, self.active_key, limit=8)
+            self._repair_installation_metadata(limit=8)
         self._service_diagnostics()
+
+    def _repair_saved_metadata(self, service, account_key, limit=2):
+        """Use bounded garage passes so complete historical results can be repaired."""
+        for arena_id in service.metadata_candidates(self._metadata_cursor.get(account_key), limit):
+            self._metadata_cursor[account_key] = arena_id
+            try:
+                bundle = self.api.posted_bundle(arena_id)
+                raw = getattr(bundle, 'results', None)
+                if isinstance(raw, dict) and str(raw.get('arenaUniqueID')) == arena_id:
+                    self._process(raw, account_key, service, getattr(bundle, 'reusable', None), source='refresh')
+                self._repair_account_metadata(service, account_key, arena_id)
+            except (StorageError, IOError, OSError, KeyError, AttributeError, TypeError, ValueError, RuntimeError):
+                self._warn_once('results:metadata', message('runtime.processed'), exception=True, visible=False)
+
+    def _locally_resolved_metadata(self, service, arena_id):
+        vehicle_id, arena_type = service.metadata_request(arena_id)
+        record = {'arena_id': arena_id, '_passive_capture': True}
+        for identifier, resolver, fields in (
+                (vehicle_id, self.api.vehicle_info, (('vehicle_name', 'name'), ('vehicle_tier', 'tier'), ('vehicle_type', 'type'))),
+                (arena_type, self.api.map_info, (('map_id', 'id'), ('map_name', 'name')))):
+            if identifier is None:
+                continue
+            try:
+                resolved = resolver(identifier)
+            except (LookupError, AttributeError, TypeError, ValueError, RuntimeError):
+                continue
+            if isinstance(resolved, dict):
+                for field, native in fields:
+                    if resolved.get(native) is not None:
+                        record[field] = resolved[native]
+        if len(record) == 2:
+            return None
+        if vehicle_id is not None:
+            record['vehicle_id'] = vehicle_id
+        if arena_type is not None:
+            record['_arena_type_id'] = arena_type
+            if 'map_name' in record and 'map_id' not in record:
+                record['map_id'] = service.result_context(arena_id).get('map_id')
+        order = self._capture_result_order()
+        if order is not None:
+            record['_capture_order'] = order
+        return record
+
+    def _repair_account_metadata(self, service, account_key, arena_id):
+        intake = self._combat_intake
+        if intake is None:
+            record = self._locally_resolved_metadata(service, arena_id)
+            if record is not None:
+                self._save_garage_result(account_key, service, record, False, 'metadata')
+            return
+        with intake.account_transaction(account_key, create=True) as locked:
+            if (locked and service.refresh_capture_history() and
+                    not self._combat_backlog(account_key, service, arena_id)):
+                record = self._locally_resolved_metadata(service, arena_id)
+                if record is not None:
+                    self._save_garage_result(account_key, service, record, False, 'metadata')
+
+    def _repair_installation_metadata(self, limit=2):
+        installation = self._instance_session
+        if installation is None:
+            return
+        service = installation.service
+        if not service.ready or not service.metadata_candidates(None, 1) or not service.refresh_capture_history():
+            return
+        key = service.account_key
+        changed = False
+        for arena_id in service.metadata_candidates(self._metadata_cursor.get(key), limit):
+            self._metadata_cursor[key] = arena_id
+            record = self._locally_resolved_metadata(service, arena_id)
+            if record is not None:
+                service.last_error = None
+                changed = service.record_result(record) or changed
+                if service.last_error:
+                    break
+        if changed and self._instance_tab_enabled:
+            self._window_call('refresh')
 
     def _tick(self):
         self._tick_id = self._tick_callback = None
@@ -1715,6 +1859,8 @@ class Runtime(object):
                 self._drain_combat_intake()
                 self._resume_bonus_refresh()
                 self._poll_one(service, self.active_key)
+                self._repair_saved_metadata(service, self.active_key)
+                self._repair_installation_metadata()
         except Exception:
             self._warn_once('tick', message('runtime.tick'), exception=True)
         finally:

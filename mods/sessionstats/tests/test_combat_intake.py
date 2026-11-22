@@ -369,7 +369,8 @@ class CombatIntakeTests(unittest.TestCase):
             runtime._drain_installation_captures(self.intake, account, service)
             self.assertEqual(len(binding_reads), 1)
             self.assertEqual(self.intake.pending(account, limit=3)[:2], [first, second])
-            self.assertEqual(session.service._state['battles'], {})
+            self.assertEqual(set(session.service._state['battles']),
+                             {session.battle_key(account, 'synthetic-independent')})
 
             runtime._drain_installation_captures(self.intake, account, service)
             self.assertEqual(len(binding_reads), 2)

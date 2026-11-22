@@ -1,6 +1,6 @@
 # Session Stats for World of Tanks
 
-Version 0.9.37 source: independent sessions, WN8, XP, finances including bonds,
+Version 0.9.38 source: independent sessions, WN8, XP, finances including bonds,
 vehicle/map/battle grouping, result health checks, local logging and configurable
 appearance. See the [user guide](USER_GUIDE.txt) and [changelog](CHANGELOG.md).
 
@@ -378,9 +378,11 @@ loading boundary; failed requests offer Retry. Previous/Next scroll to an alread
 loaded page or fetch the adjacent page. The native double-chevron button returns
 to the full summary and page one of the selected result order, fetching it when
 navigation initially opened a later page.
-The grouping and sorting bar pins inside the scroll viewport. Filter changes
-retain the current pixel offset, rebuilding the loaded window atomically for
-a new ordering or index revision. New account histories start at the top.
+The grouping and sorting bar pins inside the scroll viewport. Changing the
+sort returns to page one. Refreshing the current order preserves the visible
+position where possible. The panel keeps up to three neighboring result pages
+in the layout and can fetch earlier pages again when needed. New account
+histories start at the top.
 The sort controls use a shorter strip when the selected metric has no
 statistic choice. Overall row placement follows the available panel width.
 

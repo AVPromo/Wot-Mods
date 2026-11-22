@@ -19,7 +19,8 @@ import uuid
 from .loading import complete, items, values
 
 from . import VERSION
-from .storage import GenerationStore, StateDelta, SCHEMA_VERSION, StorageError
+from .storage import (GenerationStore, StateDelta, SCHEMA_VERSION, StorageBusyError, StorageError,
+                      UnsupportedSchemaError)
 
 try:
     text_type = unicode
@@ -293,6 +294,33 @@ def _generated_names(kind, identifier):
     return names
 
 
+def _metadata_gaps(record):
+    if not record.get('_result_seen'):
+        return False, False, None
+    vehicle_name = record.get('vehicle_name')
+    unknown_vehicle = not vehicle_name or vehicle_name in _generated_names('vehicle', record.get('vehicle_id'))
+    map_id, map_name = record.get('map_id') or '', record.get('map_name') or ''
+    numbered_map = map_id.startswith('arena:')
+    suffix = map_id[6:] if numbered_map else map_name.rsplit(' ', 1)[-1]
+    arena_type = int(suffix) if 0 < len(suffix) <= 10 and all(char in '0123456789' for char in suffix) else None
+    map_fallback = map_name in _generated_names('map', arena_type)
+    if not numbered_map and not map_fallback:
+        arena_type = None
+    return unknown_vehicle, numbered_map or map_id in ('', 'unknown') or not map_name or map_fallback, arena_type
+
+
+def _restrict_unverified_facts(old, incoming, arena_type_id):
+    previous_vehicle, vehicle = old.get('vehicle_id'), incoming.get('vehicle_id')
+    if previous_vehicle is not None and vehicle is not None and previous_vehicle != vehicle:
+        for field in _NUMBERS + ('vehicle_id', 'vehicle_name', 'vehicle_tier', 'vehicle_type',
+                                 'xp_bonus_applied', 'complete', 'currencies', 'details'):
+            incoming.pop(field, None)
+    previous_map, map_id = old.get('map_id'), incoming.get('map_id')
+    numbered = 'arena:{0}'.format(arena_type_id) if arena_type_id is not None else None
+    if previous_map and map_id and previous_map not in ('unknown', numbered, map_id):
+        incoming.pop('map_name', None)
+
+
 def _repair_result_metadata(old, incoming, merged, arena_type_id):
     """Promote generated placeholders without revising confirmed results."""
     repaired = []
@@ -352,13 +380,19 @@ class StatsService(object):
         self._map_pages = {}
         self._vehicle_pages = {}
         self._history_request = {}
+        self._history_navigation_revisions = {}
         self._battle_focus = {}
         self._receipt = None
         self.capture_clock_domain = None
         self._intake = None
+        self._intake_open_pending = False
+        clock = getattr(time, 'clock', None) if os.name == 'nt' else None
+        self._loading_clock = getattr(time, 'perf_counter', None) or clock or time.time
+        self._load_retry_after = None
         self._received_context = {}
         self._received_records = {}
         self._pending_ids = set()
+        self._metadata_ids = []
         self._unassigned = 0
         self.loading, self.ready, self._closed = True, False, False
         self.loading_phase = 'history'
@@ -371,15 +405,26 @@ class StatsService(object):
             if deferred or os.path.isdir(os.path.join(self.store.directory, 'startup-intake')):
                 from .intake import Intake
                 self._intake = Intake(self.store.directory, self.account_key)
-                self._intake.append('open', self._requested_launch, current_time)
-                if self._intake.store.warning:
-                    self._warnings.append(self._intake.store.warning)
+                self._intake_open_pending = True
+                self._append_startup_open()
+        except StorageBusyError:
+            # Deferred callers keep loading while another process publishes.
+            pass
         except (StorageError, IOError, OSError, ValueError, TypeError) as error:
             self._fail_loading(error)
         self._loader = self._initialize_steps() if self.loading else None
         if not deferred:
             while self.loading:
                 self.advance_loading(budget=1.0)
+                if self._load_retry_after is not None:
+                    time.sleep(max(0, self._load_retry_after - self._loading_clock()))
+
+    def _append_startup_open(self):
+        if self._intake_open_pending:
+            self._intake.append('open', self._requested_launch, self._initial_time)
+            self._intake_open_pending = False
+            if self._intake.store.warning:
+                self._warnings.append(self._intake.store.warning)
 
     def _fail_loading(self, error):
         self.store.read_only = True
@@ -389,7 +434,10 @@ class StatsService(object):
     def advance_loading(self, budget=0.002, max_steps=512):
         if not self.loading or self._closed:
             return False
-        timer = getattr(time, 'perf_counter', time.time)
+        timer = self._loading_clock
+        if self._load_retry_after is not None and timer() < self._load_retry_after:
+            return True
+        self._load_retry_after = None
         deadline = timer() + max(0, budget)
         try:
             for unused in range(max(1, max_steps)):
@@ -400,7 +448,7 @@ class StatsService(object):
                     self.loading = False
                     self.ready = not self.store.read_only
                     break
-                if timer() >= deadline:
+                if self._load_retry_after is not None or timer() >= deadline:
                     break
         except Exception as error:
             self._fail_loading(error)
@@ -416,16 +464,48 @@ class StatsService(object):
         self.loading = False
 
     def _initialize_steps(self):
+        generation_retries, lock_retries = 0, 0
+        while True:
+            try:
+                self._append_startup_open()
+                for step in self._initialize_generation_steps():
+                    yield step
+                return
+            except StorageBusyError:
+                if lock_retries == 50:
+                    raise
+                lock_retries += 1
+                # Release the callback between lock attempts so a peer's I/O
+                # cannot block or spin the game thread during history loading.
+                self._load_retry_after = self._loading_clock() + 0.01
+            except (StorageError, IOError, OSError) as error:
+                if (generation_retries == 3 or isinstance(error, UnsupportedSchemaError) or
+                        not self.store.changed_on_disk()):
+                    raise
+                generation_retries += 1
+            # A peer owns the lock or committed during incremental loading.
+            # Rebuild and replay only receipts beyond the durable watermarks.
+            self.store = GenerationStore(self.store.directory, self.store.schema_version,
+                                         self.store.keep_generations)
+            self._indexes = None
+            self.loading_phase = 'history'
+            yield None
+
+    def _initialize_generation_steps(self):
         output = [None]
         for step in self.store.load_steps(output, self._validate_state_steps):
             yield step
+        if self._intake is not None:
+            self._intake.refresh()
         existing = output[0]
         if existing is not None:
             self._state = existing
-        elif self._intake is not None and self._intake.events:
-            first = _number(self._intake.events[0].get('at'), True)
-            if first is None:
-                raise StorageError(message('core.time'))
+        else:
+            first = self._initial_time
+            if self._intake is not None and self._intake.events:
+                first = _number(self._intake.events[0].get('at'), True)
+                if first is None:
+                    raise StorageError(message('core.time'))
             self._state = self._empty_state(first)
         if self.store.warning:
             self._warnings.append(self.store.warning)
@@ -447,8 +527,12 @@ class StatsService(object):
         for step in self._rebuild_indexes_steps():
             yield step
         self.loading_phase = 'receipts'
+        if self._intake is not None:
+            self._intake.refresh()
         for step in self._drain_intake_steps():
             yield step
+        if self.store.changed_on_disk():
+            raise StorageError(message('storage.changed'))
         self.launch_id = self._requested_launch
         self._received_context.clear()
         self._received_records.clear()
@@ -547,6 +631,8 @@ class StatsService(object):
             result['_capture_order'] = order
         if passive:
             result['_passive_capture'] = True
+        if context.get('passive_bonus') is True:
+            result['_passive_bonus'] = True
         if 'arena_type_id' in context:
             result['_arena_type_id'] = context['arena_type_id']
         return result
@@ -558,7 +644,7 @@ class StatsService(object):
             context['arena_type_id'] = record['_arena_type_id']
         if record.get('_deferred_candidates'):
             context['candidates'] = [{'record': _clean_record(candidate),
-                                      'context': copy.deepcopy(candidate.get('_deferred_context', {}))}
+                                      'context': StatsService._capture_context(candidate)}
                                      for candidate in record['_deferred_candidates']]
         if record.get('_require_known'):
             context['require_known'] = True
@@ -566,6 +652,8 @@ class StatsService(object):
             context['capture_order'] = record['_capture_order']
         if record.get('_passive_capture') is True:
             context['passive_capture'] = True
+        if record.get('_passive_bonus') is True:
+            context['passive_bonus'] = True
         return context
 
     def has_combat_receipt(self, receipt):
@@ -624,15 +712,18 @@ class StatsService(object):
         finally:
             self._receipt = None
 
-    def _queue_record(self, record, timestamp, is_result):
+    def _queue_record(self, record, timestamp, is_result, before_commit=None):
         try:
             if self._intake is None or self._closed or self.store.read_only:
                 raise StorageError(message('storage.readonly'))
+            self._append_startup_open()
             context = self._capture_context(record)
             cleaned = _clean_record(record)
             key = (is_result, cleaned['arena_id'])
             if self._received_records.get(key) == (cleaned, context):
                 return False
+            if before_commit is not None:
+                before_commit()
             self._intake.append('result' if is_result else 'begin', self._requested_launch,
                                 timestamp, cleaned, context)
             self._received_records[key] = (cleaned, context)
@@ -655,6 +746,7 @@ class StatsService(object):
         if self._timeline_enabled:
             self._indexes['timeline'] = ScopeIndex('timeline', self.expected_table)
         self._pending_ids = set()
+        self._metadata_ids = []
         self._unassigned = 0
         members = dict((name, []) for name in self._indexes)
         for record in values(self._state['battles']):
@@ -662,6 +754,8 @@ class StatsService(object):
                 continue
             if self._pending(record):
                 self._pending_ids.add(record['arena_id'])
+            if any(_metadata_gaps(record)[:2]):
+                self._metadata_ids.append(record['arena_id'])
             if record.get('_manual_id') is None or record.get('_launch_id') is None:
                 self._unassigned += 1
             item = None
@@ -673,6 +767,7 @@ class StatsService(object):
             if self._timeline_enabled:
                 members['timeline'].append(item or contribution(record, self.expected_table))
             yield None
+        self._metadata_ids.sort()
         for name, index in self._indexes.items():
             for step in index.build_steps(members[name]):
                 yield step
@@ -684,6 +779,13 @@ class StatsService(object):
         self._pending_ids.discard(identifier)
         if self._pending(record):
             self._pending_ids.add(identifier)
+        metadata_index = bisect.bisect_left(self._metadata_ids, identifier)
+        in_metadata = metadata_index < len(self._metadata_ids) and self._metadata_ids[metadata_index] == identifier
+        needs_metadata = any(_metadata_gaps(record)[:2])
+        if needs_metadata and not in_metadata:
+            self._metadata_ids.insert(metadata_index, identifier)
+        elif in_metadata and not needs_metadata:
+            self._metadata_ids.pop(metadata_index)
         for name, field in (('launch', '_launch_id'), ('manual', '_manual_id')):
             index = self._indexes[name]
             if record.get(field) == index.identifier:
@@ -784,6 +886,7 @@ class StatsService(object):
             current = opened.get(scope)
             if current and current['period_id'] == period_id:
                 current['pages'] = dict((identifier, 0) for identifier in current['pages'])
+                self._advance_history_navigation(scope)
             history = self._history_request.get(scope)
             if history and history['kind'] == group:
                 self._history_request.pop(scope, None)
@@ -828,6 +931,10 @@ class StatsService(object):
             opened[scope] = current
         current['pages'][group_id] = page
         self._history_request[scope] = {'period_id': period_id, 'kind': kind, 'id': group_id, 'page': page}
+        self._advance_history_navigation(scope)
+
+    def _advance_history_navigation(self, scope):
+        self._history_navigation_revisions[scope] = self._history_navigation_revisions.get(scope, 0) + 1
 
     def select_battle(self, scope, identifier, period_id, request_id, order_epoch=None):
         if (not self.ready or self._closed or
@@ -869,6 +976,7 @@ class StatsService(object):
         vehicle_pages = vehicles.get('pages') if vehicles.get('period_id') == index.identifier else None
         scope = index.snapshot(label, started_at, self._pages.get(name), orders, map_pages, vehicle_pages)
         scope['order_epoch'] = self._order_epoch(name)
+        scope['history_navigation_revision'] = self._history_navigation_revisions.get(name, 0)
         history = self._history_request.get(name)
         if history and history['period_id'] == index.identifier:
             battle_list = index._group_battles(history['kind'], history['id'], history['page'],
@@ -1032,6 +1140,8 @@ class StatsService(object):
                                           if key not in kinds + ('battles',)), changes, periods)
             self.store.save(payload)
         except StorageError as error:
+            if self.loading and isinstance(error, StorageBusyError):
+                raise
             self.last_error = _text(error)
             return False
         self._state = candidate
@@ -1084,7 +1194,7 @@ class StatsService(object):
             return self._queue_record(record, timestamp, False)
         return self._apply(record, timestamp, is_result=False)
 
-    def record_result(self, record):
+    def record_result(self, record, before_commit=None):
         if self._closed or (not self.ready and not self.loading):
             self.last_error = self.last_error or message('storage.readonly')
             return False
@@ -1094,8 +1204,8 @@ class StatsService(object):
         if record.get('mode') not in (None, 'random') or record.get('is_replay') or record.get('isReplay'):
             return False
         if self.loading:
-            return self._queue_record(record, self._time(), True)
-        return self._apply(record, self._time(), is_result=True)
+            return self._queue_record(record, self._time(), True, before_commit)
+        return self._apply(record, self._time(), is_result=True, before_commit=before_commit)
 
     def result_context(self, arena_id, include_received=True):
         """Known metadata for one result, including after a client restart.
@@ -1153,7 +1263,7 @@ class StatsService(object):
             answer['status'] = 'pending'
         return answer
 
-    def _apply(self, record, timestamp, is_result, captured_launch=None):
+    def _apply(self, record, timestamp, is_result, captured_launch=None, before_commit=None):
         try:
             incoming = _clean_record(record)
         except (ValueError, TypeError, OverflowError) as error:
@@ -1182,18 +1292,23 @@ class StatsService(object):
                 incoming.pop('xp_bonus_applied', None)
             if 'warnings' in old:
                 incoming.pop('warnings', None)
+        arena_type_id = record.get('_arena_type_id')
+        if not revise and old:
+            _restrict_unverified_facts(old, incoming, arena_type_id)
         # The raw server-result cache may predate an already applied premium XP
         # bonus even after restart. Only another bonus-aware reading can revise it.
-        if old.get('xp_bonus_applied') and not incoming.get('xp_bonus_applied'):
+        passive_bonus = passive or record.get('_passive_bonus') is True
+        if old.get('xp_bonus_applied') and (not incoming.get('xp_bonus_applied') or
+                                           (passive_bonus and old.get('xp_received') is not None)):
             incoming.pop('xp_received', None)
         merged = _merge_known(old, incoming, revise)
         if is_result and not revise and old:
-            _repair_result_metadata(old, incoming, merged, record.get('_arena_type_id'))
+            _repair_result_metadata(old, incoming, merged, arena_type_id)
         # The native XP controller is specifically re-read to pick up a
         # multiplier applied after the original battle-result delivery.
         xp = incoming.get('xp_received')
-        changed_bonus = (passive and not stale and incoming.get('xp_bonus_applied') and xp is not None and
-                         (xp != old.get('xp_received') or not old.get('xp_bonus_applied')))
+        changed_bonus = (passive_bonus and not stale and incoming.get('xp_bonus_applied') and xp is not None and
+                         (old.get('xp_received') is None or not old.get('xp_bonus_applied')))
         if changed_bonus:
             merged['xp_received'] = xp
         if merged.get('mode') not in (None, 'random'):
@@ -1248,6 +1363,8 @@ class StatsService(object):
         if merged == old:
             if advance_order:
                 merged['_capture_order'] = order
+                if before_commit is not None:
+                    before_commit()
                 if self._commit(self._candidate(), {arena_id: merged}):
                     old['_capture_order'] = order
             return False
@@ -1257,6 +1374,8 @@ class StatsService(object):
         merged['_updated_at'] = max(old.get('_updated_at', 0), timestamp)
         candidate = self._candidate()
         self._touch(candidate, timestamp)
+        if before_commit is not None:
+            before_commit()
         if not self._commit(candidate, {arena_id: merged}):
             return False
         # Publish the single immutable replacement only after durable commit.
@@ -1466,6 +1585,20 @@ class StatsService(object):
 
     def pending_arena_ids(self):
         return [] if self.loading else sorted(self._pending_ids)
+
+    def metadata_candidates(self, after, limit):
+        if not self.ready or not self._metadata_ids:
+            return []
+        index = bisect.bisect_right(self._metadata_ids, after) if after is not None else 0
+        identifiers = self._metadata_ids[index:index + limit]
+        if len(identifiers) < limit:
+            identifiers += self._metadata_ids[:min(index, limit - len(identifiers))]
+        return identifiers
+
+    def metadata_request(self, identifier):
+        record = self._state['battles'].get(identifier, {})
+        vehicle, arena, arena_type = _metadata_gaps(record)
+        return (record.get('vehicle_id') if vehicle else None, arena_type if arena else None)
 
     @staticmethod
     def _pending(record):

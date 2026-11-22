@@ -43,7 +43,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   for(const field of ['chronology','statistic','metric','direction']){
     selects[field]={trigger:new Node(),label:new Node(),menu:new Node(),options:context.selectOptions[field].map(()=>new Node())};
   }
-  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','observedTotal','baseCreditAvailability','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning','clearOrderIntent','orderRequestId','orderReplySequence','hasOlderOrderReply','sameBattleOriginOrder','earlierDataRevision','cancelUITimer','update'])
+  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','observedTotal','baseCreditAvailability','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning','clearOrderIntent','orderRequestId','orderReplySequence','hasOlderOrderReply','hasOlderHistoryReply','sameBattleOriginOrder','earlierDataRevision','cancelUITimer','update'])
     vm.runInContext(actual(name),context);
   context.hasNumber=value=>typeof value==='number'&&Number.isFinite(value);
   const warningOwner=new Node(),warningIcon=context.appendClientWarning(warningOwner,'ss-sort-partial-icon');

@@ -204,6 +204,7 @@ class BrowserContainerTests(unittest.TestCase):
                 merge = qa.merge_report_command(profile, report, count, parts, target_sha=sha)
                 self.assertEqual(merge[merge.index('--expected-version') + 1], '9.8.7')
                 self.assertEqual(merge[merge.index('--expected-shards') + 1], str(count))
+                self.assertEqual(merge[merge.index('--coverage') + 1], profile)
                 self.assertEqual(render[render.index('--commit') + 1], sha)
                 self.assertEqual(merge[merge.index('--expected-commit') + 1], sha)
                 for key in ('suite', 'capture'):
@@ -239,6 +240,39 @@ class BrowserContainerTests(unittest.TestCase):
         for name, result in upstream.items():
             self.assertEqual(command[command.index('--' + name + '-result') + 1], result)
         self.assertEqual(command[-2:], ['--', '--arbitrary-directory'])
+
+    @unittest.skipUnless(shutil.which('node'), 'Node is required for the real merge CLI')
+    def test_comment_smoke_wrapper_accepts_its_planned_skip_but_propagates_a_real_failure(self):
+        shard = self.directory / 'shard'
+        key = '625x730/en/history/vehicles/xp_received-sum-desc-newest'
+        case = shard / key
+        case.mkdir(parents=True)
+        fixture = ROOT / 'scripts/sessionstats/local-e2e/fixtures/viewport-645x750.jpg'
+        shots = []
+        for position in range(4):
+            filename = '{}.jpg'.format(position)
+            shutil.copyfile(fixture, case / filename)
+            shots.append({'image': key + '/' + filename})
+        (shard / 'run.json').write_text(json.dumps({
+            'engine': 'chromium', 'fixture': 'synthetic', 'assets': 'test-art',
+            'version': (ROOT / 'mods/sessionstats/VERSION').read_text().strip(),
+            'suite': 'build', 'capture': 'all', 'shard': '1/1', 'finished': True,
+            'planned': 1, 'completed': 1, 'failed': 0, 'interactions': 0,
+            'interactionErrors': 0, 'visualFailures': 0, 'missingBaselines': 0,
+        }), encoding='utf-8')
+        (shard / 'results.ndjson').write_text(
+            json.dumps({'key': key, 'shots': shots}) + '\n', encoding='utf-8')
+        for result, expected, verdict in (('skipped', 0, 'Run passed'), ('failure', 1, 'Run failed')):
+            with self.subTest(result=result):
+                output = self.directory / ('report-' + result)
+                command = [sys.executable, '-I', str(ROOT / 'scripts/sessionstats/browser_qa.py'),
+                           '--merge-report', 'smoke', '--expected-shards', '1',
+                           '--report-dir', str(output), '--render-result', 'success',
+                           '--contracts-result', result, '--download-result', 'success', '--', str(shard)]
+                completed = subprocess.run(command, capture_output=True, text=True, timeout=30, cwd=ROOT)
+                self.assertEqual(completed.returncode, expected, completed.stderr)
+                self.assertIn(verdict, (output / 'index.html').read_text(encoding='utf-8'))
+                self.assertTrue((output / key / '3.jpg').is_file())
 
     def test_ci_report_cannot_target_a_private_path_outside_the_workspace(self):
         with patch.object(qa, 'ROOT', self.workspace):

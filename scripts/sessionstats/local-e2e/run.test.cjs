@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const {test} = require('node:test');
-const {runCase} = require('./run.cjs');
+const {applySortOrder,runCase} = require('./run.cjs');
 
 const task={width:365,height:730,language:'en',range:'since-sunday',group:'vehicles',scope:'timeline'};
 const order={metric:'off',statistic:'avg',direction:'desc',chronology:'newest'};
@@ -10,6 +10,35 @@ const version='0.9.35';
 const phase=(top,remaining,layout={})=>({top,remaining,visible:1,mounted:3,resultsReached:true,resultsTop:330,
   contentTop:120,contentBottom:650,...layout});
 const clipped={visible:0,resultsReached:false,resultsTop:830};
+
+test('the runner preserves a preceding Max selection when the next sort hides Statistic',async()=>{
+  for(const [group,metric] of [['vehicles','win_rate'],['maps','battles'],['battles','xp_received']]) {
+    const current={...order,metric:'battle_wn8',statistic:'max',direction:'asc'};
+    const selected=[];
+    await applySortOrder(group,{...order,metric},{
+      wide:false,read:()=>current,idle:async()=>{},
+      click:async()=>assert.fail('The wide toggle is unavailable'),
+      select:async(selector,value)=>{
+        assert.notEqual(selector,'#ss-sort-statistic','The Statistic control is hidden');
+        selected.push(selector);
+        current[selector.slice('#ss-sort-'.length)]=value;
+      },
+    });
+    assert.deepEqual(selected,['#ss-sort-metric','#ss-sort-direction']);
+    assert.equal(current.statistic,'max');
+  }
+});
+
+test('the runner still checks acceptance of an applicable Statistic selection',async()=>{
+  const current={...order,metric:'battle_wn8',statistic:'max'};
+  const selected=[];
+  await assert.rejects(applySortOrder('vehicles',{...current,statistic:'min'},{
+    wide:false,read:()=>current,idle:async()=>{},
+    click:async()=>assert.fail('The wide toggle is unavailable'),
+    select:async(selector,value)=>selected.push([selector,value]),
+  }),/Python did not accept statistic/);
+  assert.deepEqual(selected,[['#ss-sort-statistic','min']]);
+});
 
 function mounted({page,offset,ids},wide=false,top=0) {
   const cards=ids.map((id,index)=>({id,page:String(page),index:String(offset+index),lane:wide?index%2:0,

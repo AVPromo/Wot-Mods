@@ -1,5 +1,5 @@
 SESSION STATS — WORLD OF TANKS PC MOD
-Version 0.9.37 • 2026-11-22 • target: Wargaming EU 2.4.1.1
+Version 0.9.38 • 2026-11-22 • target: Wargaming EU 2.4.1.1
 
 This USER_GUIDE.txt covers setup and day-to-day use. See INSTALL.txt for a
 short installation checklist, CHANGELOG.md for release history, and

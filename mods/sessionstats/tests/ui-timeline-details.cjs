@@ -698,8 +698,7 @@ module.exports = async function ({browser, nativeHost, check}) {
     await captured.evaluate(() => __nativeSize[0] === 1400 && !__grzCommands.some(command => command.action === 'resize_end')));
   await captured.evaluate(() => {
     delete document.getElementById('grz-session-stats').getBoundingClientRect;
-    document.dispatchEvent(new PointerEvent('pointercancel',{pointerId:91,bubbles:true}));
-    window.dispatchEvent(new Event('blur'));
+    document.dispatchEvent(new PointerEvent('pointerout',{pointerId:91,buttons:1,bubbles:true}));
     GRZSessionStats.update({resize_gesture:{token:__gestureToken,width:940,height:890,active:true}});
   });
   await captured.waitForFunction(() => __nativeSize[0] === 940 && __nativeSize[1] === 890);

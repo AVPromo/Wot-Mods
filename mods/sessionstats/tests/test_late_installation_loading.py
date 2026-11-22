@@ -18,6 +18,7 @@ from test_config_path import changed
 from test_normalize import normalize_result, raw_result, START, ARENA_ID
 from test_runtime import FakeAPI, FakeWindow, Obj, wait_for_combat_capture
 from grz_session_stats import capture_order, config_path, runtime
+from grz_session_stats.combat_intake import CombatIntake
 from grz_session_stats.localization import message
 from grz_session_stats.sessions import InstallationSession
 
@@ -455,6 +456,172 @@ class LateInstallationLoadingTests(unittest.TestCase):
             self.assertEqual((row['vehicle_name'], row['map_id'], row['map_name'], row['damage']),
                              ('Confirmed Vehicle', 'resolved-geometry', 'Confirmed Map', 2777))
         self.assertEqual([service.store.sequence for service in services], before)
+
+    def test_old_applied_bonus_cannot_replace_a_newer_applied_bonus(self):
+        self.discover()
+        self.finish()
+        self.clock.value = START + 600
+
+        def bonus(xp):
+            return Obj(personal=Obj(xpProgress={1: {'xp': xp}}, isAddXPBonusApplied=True))
+
+        self.api.posts[ARENA_ID] = Obj(results=raw_result(), reusable=bonus(4550))
+        self.mod._on_results(True, raw_result())
+        revised = raw_result()
+        revised['personal'][1]['damageDealt'] = 2777
+        self.mod._on_posted(bonus(5000), Obj(getResults=lambda: Obj(results=revised)))
+        self.mod._refresh_posted()
+        for row in self._recorded_battle_pair():
+            self.assertEqual((row['xp_received'], row['damage']), (5000, 2777))
+
+        revised['personal'][1]['damageDealt'] = 2800
+        self.mod._on_results(True, revised)
+        for row in self._recorded_battle_pair():
+            self.assertEqual((row['xp_received'], row['damage']), (5000, 2800))
+
+        self.mod._on_posted(bonus(5100), Obj(getResults=lambda: Obj(results=revised)))
+        self.assertEqual([row['xp_received'] for row in self._recorded_battle_pair()], [5100, 5100])
+
+    def test_garage_result_survives_exit_between_ledger_writes(self):
+        self.discover()
+        self.finish()
+        self.clock.value = START + 600
+        account = self.mod.active_key
+        identifier = self.mod._instance_session.battle_key(account, ARENA_ID)
+
+        def interrupted(*args, **kwargs):
+            raise KeyboardInterrupt()
+
+        with changed(self.mod, '_record_installation', interrupted):
+            with self.assertRaises(KeyboardInterrupt):
+                self.mod._on_results(True, raw_result())
+        self.assertTrue(self.mod.active_service._state['battles'][ARENA_ID]['complete'])
+        self.assertNotIn(identifier, self.mod._instance_session.service._state['battles'])
+        self.assertEqual(len(self.mod._combat_intake.pending(account)), 1)
+        self.api.battle = True  # Prevent an orderly garage drain before reopening.
+        self.restart()
+        self.assertEqual([row['damage'] for row in self._recorded_battle_pair()], [2100, 2100])
+        self.assertEqual(self.mod._combat_intake.pending(account), [])
+
+    def test_live_unbound_producer_does_not_block_other_installation_receipts(self):
+        self.discover()
+        self.finish()
+        self.clock.value = START + 600
+        account = self.mod.active_key
+        launch_id = 'a' * 32
+        foreign = CombatIntake(self.directory, launch_id)
+        install_key = self.mod._combat_installation
+        keys = [str((number << 32) | START) for number in (12346, 12347, 12348)]
+
+        def send(writer, launch, arena_id, origin):
+            payload = self.mod._capture_payload(account, normalize_result(raw_result(arena_id=arena_id)), True)
+            payload.update(launch_id=launch, installation=origin)
+            self.assertTrue(writer.submit(account, 'result', payload))
+            deadline = time.time() + 3
+            while writer.waiting(account) and time.time() < deadline:
+                time.sleep(0.005)
+            self.assertFalse(writer.waiting(account))
+
+        try:
+            send(foreign, launch_id, keys[0], None)
+            send(foreign, launch_id, keys[1], install_key)
+            self.assertTrue(self.mod._combat_intake.launch_is_alive(launch_id))
+            send(self.mod._combat_intake, runtime.LAUNCH_ID, keys[2], install_key)
+            for unused in range(3):
+                self.mod._drain_combat_intake()
+            installation = self.mod._instance_session
+            ids = [installation.battle_key(account, key) for key in keys]
+            self.assertEqual(sorted(installation.service._state['battles']), [ids[2]])
+            self.assertTrue(foreign.bind_installation(launch_id, install_key))
+            self.mod._drain_combat_intake()
+            self.assertEqual(sorted(installation.service._state['battles']), sorted(ids))
+        finally:
+            foreign.close(wait=True)
+
+    def test_bound_receipts_recover_installation_while_logged_into_another_account(self):
+        self.discover()
+        self.finish()
+        self.clock.value = START + 600
+        account = self.mod.active_key
+        self.api.battle = True
+        for number in (12340, 12341):
+            older_arena = str((number << 32) | (START - 60))
+            record = normalize_result(raw_result(arena_id=older_arena))
+            self.mod._stage_combat_capture('result', account, record, observed=False)
+        self.api.context = {'arena_id': ARENA_ID, 'started_at': START, 'vehicle_id': 1, 'map_id': 'map'}
+        self.mod._on_avatar()
+        self.mod._on_results(True, raw_result())
+        wait_for_combat_capture(self.mod)
+        intake = self.mod._combat_intake
+        with intake.account_transaction(account) as locked:
+            self.assertTrue(locked)
+            # A receipt written by 0.9.37 has no opaque installation battle key.
+            begin, kind, capture = intake.pending(account, limit=4)[2]
+            self.assertEqual(kind, 'begin')
+            capture.pop('installation_battle')
+            self.assertTrue(intake.ack(begin))
+            intake._write(begin, kind, capture)
+        self.assertEqual(len(intake.pending(account, limit=5)), 4)
+        self.mod.stop()
+        self.api.battle = False
+        self.api.dbid = 8
+        self.clock.value = START + 900
+        with changed(runtime, 'LAUNCH_ID', uuid.uuid4().hex):
+            self.mod = self.open(self.directory)
+            self.finish()
+            installation = self.mod._instance_session
+            identifier = installation.battle_key(account, ARENA_ID)
+            self.assertEqual(sorted(self.mod.services), ['EU:8'])
+            self.assertEqual(installation.service._state['battles'][identifier]['damage'], 2100)
+            self.assertEqual(len(self.mod._combat_intake.pending(account, limit=5)), 4)
+            self.api.dbid = 7
+            self.finish()
+            self.mod._drain_combat_intake()
+            self.assertEqual(self.mod.active_service._state['battles'][ARENA_ID]['damage'], 2100)
+            self.assertEqual(self.mod._combat_intake.pending(account), [])
+
+    def test_complete_history_recovers_metadata_after_restart_without_cached_result(self):
+        self.discover()
+        self.finish()
+        self.clock.value = START + 600
+
+        def unavailable(unused):
+            raise LookupError('Synthetic resolver unavailable before restart')
+
+        self.api.vehicle_info = self.api.map_info = unavailable
+        revised = raw_result()
+        revised['personal'][1]['damageDealt'] = 2777
+        self.mod._on_results(True, revised)
+        for row in self._recorded_battle_pair():
+            self.assertTrue(row['complete'])
+            self.assertEqual((row['vehicle_name'], row['map_id']), ('Vehicle 1', 'arena:17'))
+
+        self.api.vehicle_info = lambda unused: {'name': 'Recovered Vehicle'}
+        self.api.map_info = lambda unused: {'id': 'recovered-map', 'name': 'Recovered Map'}
+        self.restart()
+        for row in self._recorded_battle_pair():
+            self.assertEqual((row['vehicle_name'], row['map_id'], row['map_name'], row['damage']),
+                             ('Recovered Vehicle', 'recovered-map', 'Recovered Map', 2777))
+        self.assertEqual(self.mod.active_service.metadata_candidates(None, 5), [])
+
+    def test_repairs_installation_metadata_when_account_was_already_repaired(self):
+        self.discover()
+        self.finish()
+        self.clock.value = START + 600
+        self.api.vehicle_info = lambda unused: {'name': 'Resolved Vehicle'}
+        self.api.map_info = lambda unused: {'id': 'resolved-map', 'name': 'Resolved Map'}
+        self.mod._on_results(True, raw_result())
+        installation = self.mod._instance_session
+        identifier = installation.battle_key(self.mod.active_key, ARENA_ID)
+        self.assertTrue(installation.service.record_result({
+            'arena_id': identifier, 'reconcile': True,
+            'map_id': 'arena:17', 'map_name': 'Map 17', 'vehicle_name': 'Vehicle 1'}))
+        self.assertEqual(self.mod.active_service.metadata_candidates(None, 5), [])
+        self.assertEqual(installation.service.metadata_candidates(None, 5), [identifier])
+        self.restart()
+        for row in self._recorded_battle_pair():
+            self.assertEqual((row['vehicle_name'], row['map_id'], row['map_name']),
+                             ('Resolved Vehicle', 'resolved-map', 'Resolved Map'))
 
     def restart(self):
         wait_for_combat_capture(self.mod)

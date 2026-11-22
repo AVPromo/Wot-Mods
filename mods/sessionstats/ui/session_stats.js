@@ -482,7 +482,8 @@
         previewWindowSettings({background_transparency:value}, false);
     }
     function beginBackgroundDrag(event) {
-        if (event.button !== 0 || state.destroyed || state.resize || state.dragging || state.dialog || state.backgroundDrag) { return; }
+        if (event.button !== 0 || state.destroyed || state.resize || state.dragging || state.dialog ||
+                state.backgroundDrag || state.scrollbarDrag) { return; }
         consumeResizeInput(event);
         cancelWindowCommit();
         var slider = nodes['background-transparency'];
@@ -493,16 +494,32 @@
         }
         backgroundPosition(event);
     }
+    function pointerUp(event) {
+        return event && (event.type === 'mouseup' || event.type === 'pointerup');
+    }
+    function otherButtonReleased(event) {
+        return pointerUp(event) && hasNumber(event.button) && event.button !== 0;
+    }
+    function matchesDragPointer(drag, event) {
+        // Pointer events and their compatibility mouse events are delivered
+        // together. Only the stream that started a gesture can move or release it.
+        return !event || event.type === 'blur' || drag.pointer === event.pointerId;
+    }
+    function primaryButtonMissing(event) {
+        return (event.type === 'mousemove' || event.type === 'pointermove') &&
+            hasNumber(event.buttons) && !(event.buttons & 1);
+    }
     function moveBackgroundDrag(event) {
         var drag = state.backgroundDrag;
-        if (!drag || (event.pointerId !== undefined && drag.pointer !== event.pointerId)) { return; }
+        if (!drag || !matchesDragPointer(drag, event)) { return; }
+        if (primaryButtonMissing(event)) { finishBackgroundDrag(); return; }
         consumeResizeInput(event);
         backgroundPosition(event);
     }
     function finishBackgroundDrag(event, commit) {
         var drag = state.backgroundDrag;
-        if (!drag || (event && event.pointerId !== undefined && drag.pointer !== event.pointerId)) { return; }
-        if (event && (event.type === 'mouseup' || event.type === 'pointerup')) { moveBackgroundDrag(event); }
+        if (!drag || !matchesDragPointer(drag, event) || otherButtonReleased(event)) { return; }
+        if (pointerUp(event)) { moveBackgroundDrag(event); }
         state.backgroundDrag = null;
         var slider = nodes['background-transparency'];
         if (drag.pointer !== undefined && slider && typeof slider.releasePointerCapture === 'function') {
@@ -534,6 +551,7 @@
         document.addEventListener(sliderEvents ? 'pointermove' : 'mousemove', moveBackgroundDrag);
         document.addEventListener(sliderEvents ? 'pointerup' : 'mouseup', finishBackgroundDrag);
         document.addEventListener('pointercancel', finishBackgroundDrag);
+        nodes['background-transparency'].addEventListener('lostpointercapture', finishBackgroundDrag);
         nodes['background-transparency'].addEventListener('keydown', backgroundKey);
         window.addEventListener('blur', finishBackgroundDrag);
     }
@@ -2381,10 +2399,25 @@
             };
             updateHand();
         }
-        function dragClock(event) { if (live() && picker.dragging) { event.preventDefault(); clockPoint(event); } }
-        function releaseClock() { if (picker.dragging) { picker.dragging = false; if (live() && picker.clock === 'hours') { picker.clock = 'minutes'; draw(); focusClock(); } } }
-        document.addEventListener('mousemove', dragClock, true); document.addEventListener('mouseup', releaseClock, true);
-        picker.removeDrag = function () { document.removeEventListener('mousemove', dragClock, true); document.removeEventListener('mouseup', releaseClock, true); };
+        function cancelClockDrag() { picker.dragging = false; }
+        function dragClock(event) {
+            if (!live() || !picker.dragging) { return; }
+            if (primaryButtonMissing(event)) { cancelClockDrag(); return; }
+            event.preventDefault(); clockPoint(event);
+        }
+        function releaseClock(event) {
+            if (!picker.dragging || otherButtonReleased(event)) { return; }
+            cancelClockDrag();
+            if (live() && picker.clock === 'hours') { picker.clock = 'minutes'; draw(); focusClock(); }
+        }
+        document.addEventListener('mousemove', dragClock, true);
+        document.addEventListener('mouseup', releaseClock, true);
+        window.addEventListener('blur', cancelClockDrag);
+        picker.removeDrag = function () {
+            document.removeEventListener('mousemove', dragClock, true);
+            document.removeEventListener('mouseup', releaseClock, true);
+            window.removeEventListener('blur', cancelClockDrag);
+        };
         function updateTime() {
             hour.querySelector('.ss-control-label').textContent = datePad(format.hour12 ? picker.hour % 12 || 12 : picker.hour);
             minute.querySelector('.ss-control-label').textContent = datePad(picker.minute);
@@ -4464,6 +4497,17 @@
             !(returning && returning.phase === 'page' && meta.request_id === returning.request) &&
             earlierDataRevision(incoming.data_revision, current.data_revision);
     }
+    function hasOlderHistoryReply(snapshot) {
+        if (!state.payload || snapshot.account_key !== state.payload.account_key) { return false; }
+        return Object.keys(snapshot.scopes).some(function (name) {
+            var incoming = snapshot.scopes[name], current = state.payload.scopes[name];
+            // A nested page changes view state even when the battle data and
+            // sort order are unchanged. The native counter survives card remounts.
+            return incoming && current && incoming.period_id === current.period_id && incoming.order_epoch === current.order_epoch &&
+                hasNumber(incoming.history_navigation_revision) && hasNumber(current.history_navigation_revision) &&
+                incoming.history_navigation_revision < current.history_navigation_revision;
+        });
+    }
     function cancelUITimer(timer) {
         if (timer !== null && timer !== undefined) { try { window.clearTimeout(timer); } catch (error) { /* Ownership guards retire retained callbacks. */ } }
     }
@@ -4473,11 +4517,17 @@
         if (feed) { feed.prependAnchor = null; }
         if (feed && feed.pending) { cancelUITimer(feed.pending.timer); }
     }
-    function captureFeedAnchor(feed) {
-        if (feed.prependAnchor && (Date.now() >= feed.prependAnchor.deadline || feed.prependAnchor.attempts >= 40)) { feed.prependAnchor = null; }
-        if (state.feed !== feed || state.renderedFeed !== feed || feed.prependAnchor || feed.topRequested ||
+    function captureFeedAnchor(feed, retainedIndex) {
+        if (state.feed !== feed || state.renderedFeed !== feed || feed.topRequested ||
                 state.pageJump || state.battleJump || !state.cardPages || !state.cardPages.length) { return; }
-        var section = state.cardPages[0].section, box = section.getBoundingClientRect();
+        var page = retainedIndex === undefined ? state.cardPages[0] :
+            state.cardPages.filter(function (item) { return item.index === retainedIndex; })[0];
+        if (!page) { return; }
+        var anchor = feed.prependAnchor, section = page.section;
+        if (anchor && (Date.now() >= anchor.deadline || anchor.attempts >= 40 ||
+                (retainedIndex !== undefined && anchor.section !== section))) { feed.prependAnchor = null; }
+        if (feed.prependAnchor) { return; }
+        var box = section.getBoundingClientRect();
         var viewport = nodes.scroll.getBoundingClientRect(), rawTop = nodes.scroll.scrollTop;
         if (!(box.height > 1) || !(box.width > 1)) { return; }
         feed.prependAnchor = {section:section, position:box.top - viewport.top + rawTop,
@@ -4560,12 +4610,24 @@
         finishFeedAnchor();
         if (feed.prependAnchor) { queueResize(); }
     }
+    function includeFeedPage(feed, index, navigate) {
+        // Keep three neighbouring pages mounted. When scrolling forward,
+        // preserve a retained page's position as its predecessor leaves.
+        var start = Math.min(feed.start, index), last = Math.max(feed.last, index);
+        if (index < feed.start) {
+            if (!navigate) { captureFeedAnchor(feed); }
+            last = Math.min(last, start + 2);
+        } else if (index > feed.last) {
+            start = Math.max(start, last - 2);
+            if (!navigate && start > feed.start) { captureFeedAnchor(feed, start); }
+        }
+        feed.start = start; feed.last = last;
+    }
     function requestFeedPage(feed, index, navigate) {
         if (state.destroyed || state.pendingBattle || state.feed !== feed || feed.pending || index < 0 || index >= feed.pages) { return; }
         if (navigate) { cancelPageJump(); feed.refreshAnchor = null; }
         if (Object.prototype.hasOwnProperty.call(feed.cache, index) && index >= feed.start - 1 && index <= feed.last + 1) {
-            if (index < feed.start && !navigate) { captureFeedAnchor(feed); }
-            feed.start = Math.min(feed.start, index); feed.last = Math.max(feed.last, index);
+            includeFeedPage(feed, index, navigate);
             feed.error = null;
             if (navigate) { beginPageJump(feed, index); }
             render(); return;
@@ -4757,13 +4819,13 @@
             if (Object.prototype.hasOwnProperty.call(feed.signatures, meta.page) && feed.signatures[meta.page] !== signature) { feed.version += 1; }
             feed.signatures[meta.page] = signature; feed.cache[meta.page] = rows.slice(0);
             if (pending) {
-                if (meta.page < feed.start && !pending.navigate && !feed.topRequested) { captureFeedAnchor(feed); }
+                if (meta.page < feed.start - 1 && !pending.navigate) { captureFeedAnchor(feed); }
                 cancelUITimer(pending.timer);
                 feed.pending = null; feed.error = null;
                 // A cancelled direct Top request may still fill its cache;
                 // it must not splice a gap into the user's current window.
                 if (meta.page >= feed.start - 1 && meta.page <= feed.last + 1) {
-                    feed.start = Math.min(feed.start, meta.page); feed.last = Math.max(feed.last, meta.page);
+                    includeFeedPage(feed, meta.page, pending.navigate);
                 }
                 if (pending.navigate) { feed.navigationPage = meta.page; }
             }
@@ -4860,6 +4922,20 @@
             // Replace a loading boundary only after the new page has its full
             // height, so a viewport at the old bottom never clamps upward.
             if (pending && pending.parentNode) { pending.parentNode.removeChild(pending); }
+            state.cardPages = state.cardPages.filter(function (page) {
+                if (page.index >= feed.start && page.index <= feed.last) { return true; }
+                page.cards.forEach(function (card) { if (card._ssHistoryDispose) { card._ssHistoryDispose(); } });
+                page.section.parentNode.removeChild(page.section);
+                return false;
+            });
+            // Retain nearby results for a quick reversal, and page one for
+            // Top. Older pages can be requested again with the current order.
+            Object.keys(feed.cache).forEach(function (index) {
+                var page = Number(index);
+                if (page && (page < feed.start - 1 || page > feed.last + 1)) {
+                    delete feed.cache[index]; delete feed.signatures[index];
+                }
+            });
             state.cardPages.sort(function (a, b) { return a.index - b.index; });
             var cursor = nodes.groups.firstElementChild;
             state.cardPages.forEach(function (page) {
@@ -4868,6 +4944,8 @@
             });
             state.groupCards = []; state.list = [];
             state.cardPages.forEach(function (page) { state.groupCards = state.groupCards.concat(page.cards); state.list = state.list.concat(page.items); });
+            state.renderedCount = state.groupCards.length;
+            state.loadedCount = Math.max(40, state.renderedCount);
             showFeedPending(feed); updateFeedControls();
         } else {
             state.list = ordered(scope[state.group] || [], getOrder(scope));
@@ -5332,7 +5410,7 @@
         if (scope.pending > 0) { status.push(t('status.pending', [number(scope.pending)])); }
         if (visibleWarnings.length) { status.push(t('status.notes', [visibleWarnings.length])); }
         setStatus(state.actionError || status.join(' · '));
-        if (!scrollingRefresh) { nodes.scroll.scrollTop = oldTop; }
+        if (!scrollingRefresh && !(state.feed && state.feed.prependAnchor)) { nodes.scroll.scrollTop = oldTop; }
         queueResize();
     }
     function update(payload) {
@@ -5371,7 +5449,7 @@
             }
             if (!value || typeof value !== 'object' || !value.scopes ||
                     !value.scopes.launch || !value.scopes.manual) { throw new Error('Invalid snapshot'); }
-            if (hasOlderOrderReply(value) || hasOlderPageReply(value)) { return true; }
+            if (hasOlderOrderReply(value) || hasOlderPageReply(value) || hasOlderHistoryReply(value)) { return true; }
             var intent = state.orderIntent;
             if (intent) {
                 var intended = value.scopes[intent.context.scope];
@@ -5403,6 +5481,9 @@
             if (historyOnlyUpdate(value)) { return true; }
             if (state.payload && state.payload.account_key !== value.account_key) {
                 showReset(false);
+                if (state.resize) { finishResize(state.resize, true, false); }
+                if (state.dragging) { endNativeDrag(); }
+                if (state.scrollbarDrag) { endScrollbar(); }
                 resetWindowSettings();
                 state.openBattles = {};
                 state.openMaps = {};
@@ -5448,7 +5529,8 @@
         }
         function signature(snapshot) {
             return JSON.stringify(snapshot, function (key, item) {
-                return key === 'battle_list' || key === 'battle_history' || (this === snapshot && key === 'generated_at') ? undefined : item;
+                return key === 'battle_list' || key === 'battle_history' || key === 'history_navigation_revision' ||
+                    (this === snapshot && key === 'generated_at') ? undefined : item;
             });
         }
         if (signature(state.payload) !== signature(value)) { return false; }
@@ -5516,14 +5598,18 @@
             return true;
         } catch (error) { return false; }
     }
-    function endNativeDrag() {
-        if (!state.dragging) { return; }
+    function recoverNativeDrag(event) {
+        if (state.dragging && primaryButtonMissing(event)) { endNativeDrag(); }
+    }
+    function endNativeDrag(event) {
+        if (!state.dragging || otherButtonReleased(event)) { return; }
         state.dragging = false;
         nativeMove(false);
         invoke('drag', {active:false});
     }
     function beginNativeDrag(event) {
-        if (!event || event.button !== 0 || state.dialog || state.dragging || (state.windowPrefs && state.windowPrefs.maximized)) { return; }
+        if (!event || event.button !== 0 || state.dialog || state.dragging || state.resize || state.scrollbarDrag ||
+                state.backgroundDrag || (state.windowPrefs && state.windowPrefs.maximized)) { return; }
         var target = event.target;
         while (target && target !== nodes.titlebar) {
             if (target === nodes['title-actions'] || target === nodes.close || target.tagName === 'BUTTON') { return; }
@@ -5578,7 +5664,7 @@
         if (Object.prototype.hasOwnProperty.call(feed.cache, page)) {
             beginPageJump(feed, page);
             if (page < feed.start || page > feed.last) {
-                feed.start = Math.min(feed.start, page); feed.last = Math.max(feed.last, page); render();
+                includeFeedPage(feed, page, true); render();
             } else { finishPageJump(); }
         } else { requestFeedPage(feed, page, true); }
     }
@@ -5641,6 +5727,7 @@
     nodes.scroll.addEventListener('scroll', queueScrollEdges);
     root.addEventListener('wheel', onNativeWheel, false);
     nodes.titlebar.addEventListener('mousedown', beginNativeDrag);
+    document.addEventListener('mousemove', recoverNativeDrag, true);
     document.addEventListener('mouseup', endNativeDrag);
     window.addEventListener('blur', endNativeDrag);
     function onKeyDown(event) {
@@ -5900,7 +5987,7 @@
     function beginResize(event) {
         if (event.button !== 0) { return; }
         consumeResizeInput(event);
-        if (state.resize || state.dragging || state.dialog) { return; }
+        if (state.resize || state.dragging || state.backgroundDrag || state.scrollbarDrag || state.dialog) { return; }
         if (state.windowPrefs && state.windowPrefs.maximized) { return; }
         suspendResizePrefetch();
         var rect = root.getBoundingClientRect();
@@ -5919,22 +6006,27 @@
         }
         if (state.bound) {
             invoke('drag', {active:true});
-            if (state.resize === drag) { invoke('resize_begin', {corner:corner, token:drag.token}); }
+            if (state.resize === drag) {
+                watchResizeRelease(drag, 1500);
+                invoke('resize_begin', {corner:corner, token:drag.token});
+            }
         }
         event.preventDefault();
     }
     function moveResize(event) {
         var drag = state.resize;
-        if (!drag || (event.pointerId !== undefined && drag.pointer !== event.pointerId)) { return; }
+        if (!drag || !matchesDragPointer(drag, event)) { return; }
+        if (primaryButtonMissing(event)) { endResize(event); return; }
         consumeResizeInput(event);
         requestResizeCursor(drag.grip, true);
         if (drag.native) { return; }
+        if (state.bound && !pointerUp(event)) { watchResizeRelease(drag, 1500); }
         var west = drag.corner.indexOf('w') >= 0, north = drag.corner.indexOf('n') >= 0;
         var horizontal = west || drag.corner.indexOf('e') >= 0;
         var vertical = north || drag.corner.indexOf('s') >= 0;
         setLogicalSize((drag.width + (horizontal ? (event.clientX - drag.x) * (west ? -1 : 1) : 0)) / state.nativeScale,
             (drag.height + (vertical ? (event.clientY - drag.y) * (north ? -1 : 1) : 0)) / state.nativeScale);
-        if (event.type !== 'mouseup' && event.type !== 'pointerup') { queueResize(); }
+        if (!pointerUp(event)) { queueResize(); }
     }
     function watchResizeRelease(drag, delay) {
         cancelUITimer(drag.releaseTimer);
@@ -5947,9 +6039,7 @@
     }
     function endResize(notify) {
         var drag = state.resize;
-        if (!drag) { return; }
-        if (notify && ((drag.pointer !== undefined && notify.pointerId !== undefined && drag.pointer !== notify.pointerId) ||
-                ((notify.type === 'mouseup' || notify.type === 'pointerup') && hasNumber(notify.button) && notify.button !== 0))) { return; }
+        if (!drag || !matchesDragPointer(drag, notify) || otherButtonReleased(notify)) { return; }
         if (notify) { consumeResizeInput(notify); }
         if (drag.native && !state.destroyed) {
             // The game samples the release once more. If its terminal update
@@ -5959,12 +6049,10 @@
             watchResizeRelease(drag, 400);
             if (invoke('resize_end', {token:drag.token})) { return; }
         }
-        if (!drag.native && notify && (notify.type === 'mouseup' || notify.type === 'pointerup')) {
-            moveResize(notify);
-        }
+        if (!drag.native && pointerUp(notify)) { moveResize(notify); }
         finishResize(drag, !drag.ending);
     }
-    function finishResize(drag, notifyNative) {
+    function finishResize(drag, notifyNative, saveSize) {
         if (state.resize !== drag) { return; }
         state.resize = null;
         cancelUITimer(drag.releaseTimer);
@@ -5981,9 +6069,9 @@
         if (state.bound) {
             if (notifyNative) { invoke('resize_end', {token:drag.token}); }
             invoke('drag', {active:false});
-            if (state.logicalSize) { invoke('size_preference', state.logicalSize); }
+            if (saveSize !== false && state.logicalSize) { invoke('size_preference', state.logicalSize); }
         }
-        if (!state.destroyed && state.logicalSize) {
+        if (saveSize !== false && !state.destroyed && state.logicalSize) {
             previewWindowSettings({maximized:false, restored_width:Math.round(state.logicalSize.width),
                 restored_height:Math.round(state.logicalSize.height)}, false, true);
             // A native release can be delivered inside its model transaction.
@@ -6020,6 +6108,7 @@
         for (var index = 0; index < grips.length; index += 1) {
             grips[index][method]('mousedown', beginResize);
             grips[index][method]('pointerdown', beginResize);
+            grips[index][method]('lostpointercapture', endResize);
             grips[index][method]('keydown', keyboardResize);
             grips[index][method]('mouseenter', resizeHover);
             grips[index][method]('mouseover', resizeHover);
@@ -6123,12 +6212,10 @@
     }
     function moveScrollbar(event) {
         var drag = state.scrollbarDrag;
-        if (!drag || state.destroyed || (drag.pointer !== undefined && event.pointerId !== undefined && drag.pointer !== event.pointerId)) { return; }
+        if (!drag || state.destroyed || !matchesDragPointer(drag, event)) { return; }
         // A native surface may miss the outside release when pointer capture
         // is unavailable. The returning DOM move must not revive that drag.
-        if (hasNumber(event.buttons) && !(event.buttons & 1) && event.type !== 'mouseup' && event.type !== 'pointerup') {
-            endScrollbar(); return;
-        }
+        if (primaryButtonMissing(event)) { endScrollbar(); return; }
         consumeResizeInput(event);
         if (drag.track || !hasNumber(event.clientY)) { return; }
         var metrics = scrollbarMetrics(), box = nodes.scrollbar.getBoundingClientRect();
@@ -6138,9 +6225,8 @@
     }
     function endScrollbar(event) {
         var drag = state.scrollbarDrag, rail = nodes.scrollbar;
-        if (!drag || (event && drag.pointer !== undefined && event.pointerId !== undefined && drag.pointer !== event.pointerId)) { return; }
-        if (event && (event.type === 'mouseup' || event.type === 'pointerup') && hasNumber(event.button) && event.button !== 0) { return; }
-        if (event && (event.type === 'mouseup' || event.type === 'pointerup')) { moveScrollbar(event); }
+        if (!drag || !matchesDragPointer(drag, event) || otherButtonReleased(event)) { return; }
+        if (pointerUp(event)) { moveScrollbar(event); }
         state.scrollbarDrag = null;
         if (state.feed && state.feed.refreshInput) { deferFeedRefresh(state.feed); }
         if (rail) {
@@ -6452,6 +6538,7 @@
             document.removeEventListener(sliderEvents ? 'pointermove' : 'mousemove', moveBackgroundDrag);
             document.removeEventListener(sliderEvents ? 'pointerup' : 'mouseup', finishBackgroundDrag);
             document.removeEventListener('pointercancel', finishBackgroundDrag);
+            nodes['background-transparency'].removeEventListener('lostpointercapture', finishBackgroundDrag);
             nodes['background-transparency'].removeEventListener('keydown', backgroundKey);
             window.removeEventListener('blur', finishBackgroundDrag);
         }
@@ -6499,6 +6586,7 @@
         root.removeEventListener('wheel', onNativeWheel, false);
         document.removeEventListener('keydown', onKeyDown);
         nodes.titlebar.removeEventListener('mousedown', beginNativeDrag);
+        document.removeEventListener('mousemove', recoverNativeDrag, true);
         document.removeEventListener('mouseup', endNativeDrag);
         window.removeEventListener('blur', endNativeDrag);
         cancelRetry();

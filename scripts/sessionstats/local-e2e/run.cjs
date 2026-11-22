@@ -20,6 +20,32 @@ const label = ({width,height,language,range,group}) => `${width}x${height}/${lan
 const variant = order => [order.metric,order.statistic,order.direction,order.chronology].join('-');
 const actionFields = ['metric','statistic','direction','chronology'];
 
+async function applySortOrder(group, order, {wide, read, click, select, idle}) {
+  const toggle='#ss-sort-off';
+  const fields=['metric','chronology'];
+  let actual=read();
+  if(actual.chronology!==order.chronology || order.metric==='off') {
+    if(actual.metric!=='off') {
+      if(wide) await click(toggle);
+      else await select('#ss-sort-metric','off');
+    }
+    if(read().chronology!==order.chronology) await select('#ss-sort-chronology',order.chronology);
+  }
+  if(order.metric!=='off') {
+    if(wide&&read().metric==='off') await click(toggle);
+    if(read().metric!==order.metric) await select('#ss-sort-metric',order.metric);
+    fields.push('direction');
+    if(read().direction!==order.direction) await select('#ss-sort-direction',order.direction);
+    if(group!=='battles'&&order.metric!=='battles'&&order.metric!=='win_rate') {
+      fields.push('statistic');
+      if(read().statistic!==order.statistic) await select('#ss-sort-statistic',order.statistic);
+    }
+  }
+  await idle();
+  actual=read();
+  for(const field of fields) assert.equal(actual?.[field],order[field],`Python did not accept ${field}`);
+}
+
 function requested(values, option, defaults, cast) {
   if (!values[option]) return defaults;
   return [...new Set(values[option].split(',').map(value=>cast ? Number(value) : value.trim()))];
@@ -210,27 +236,8 @@ function session(driver, backend, inventory, out, hostSize, compare, screenshotO
     return model?.scopes[task.scope]?.ordering[task.group];
   }
   async function applyOrder(task,order) {
-    const toggle='#ss-sort-off';
-    const wide=await driver.evaluate(selector=>getComputedStyle(document.querySelector(selector)).display!=='none',toggle);
-    let actual=orderFor(task);
-    if(actual.chronology!==order.chronology || order.metric==='off') {
-      if(actual.metric!=='off') {
-        if(wide) await click(toggle);
-        else await select('#ss-sort-metric','off');
-      }
-      if(orderFor(task).chronology!==order.chronology) await select('#ss-sort-chronology',order.chronology);
-    }
-    if(order.metric!=='off') {
-      if(wide&&orderFor(task).metric==='off') await click(toggle);
-      if(orderFor(task).metric!==order.metric) await select('#ss-sort-metric',order.metric);
-      if(orderFor(task).direction!==order.direction) await select('#ss-sort-direction',order.direction);
-      if(orderFor(task).statistic!==order.statistic&&task.group!=='battles') await select('#ss-sort-statistic',order.statistic);
-    }
-    await idle();
-    actual=orderFor(task);
-    for(const field of actionFields) if(order.metric!=='off'||field==='metric'||field==='chronology'){
-      assert.equal(actual?.[field],order[field],`Python did not accept ${field}`);
-    }
+    const wide=await driver.evaluate(()=>getComputedStyle(document.getElementById('ss-sort-off')).display!=='none');
+    await applySortOrder(task.group,order,{wide,read:()=>orderFor(task),click,select,idle});
   }
   async function snapshot(relative) {
     const key=relative+(screenshotOptions.type==='jpeg'?'.jpg':'.png');
@@ -610,4 +617,4 @@ async function main() {
 
 if(require.main===module) main().catch(error=>{console.error(error.message);process.exitCode=1;});
 
-module.exports={runCase};
+module.exports={applySortOrder,runCase};

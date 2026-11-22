@@ -430,7 +430,7 @@ module.exports=async function ({browser,nativeHost,check}) {
             await page.locator('#ss-scroll').evaluate(scroll=>{scroll.scrollTop=0;});
             await frames(page);
             const name='session-stats-'+language+'-'+group+'-'+mode.name+'.jpg';
-            const data=await page.locator('#grz-session-stats').screenshot({path:path.join(directory,name),type:'jpeg',quality:70,animations:'disabled'});
+            const data=await page.locator('#grz-session-stats').screenshot({path:path.join(directory,name),type:'jpeg',quality:64,animations:'disabled'});
             screenshots.push({name,language,group,mode:mode.name,fixture:'ordinary',width:mode.width,scale:mode.scale,mime_type:'image/jpeg',bytes:data.length,sha256:sha(data),data:data.toString('base64')});
           }
         }

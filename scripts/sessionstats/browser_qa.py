@@ -177,7 +177,7 @@ def merge_report_command(profile, report_dir, expected_shards, parts, target_sha
     version = (ROOT / 'mods/sessionstats/VERSION').read_text(encoding='ascii').strip()
     command = ['node', 'scripts/sessionstats/local-e2e/merge-report.cjs', '--out', str(report_dir),
                '--expected-shards', str(expected_shards), '--expected-version', version,
-               '--expected-suite', suite, '--expected-capture', capture]
+               '--expected-suite', suite, '--expected-capture', capture, '--coverage', profile]
     if target_sha:
         command += ['--expected-commit', target_sha]
     for name, result in (upstream or {}).items():

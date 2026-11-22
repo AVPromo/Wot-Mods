@@ -34,7 +34,7 @@ function assertAccountWindowSource(source=shipped()) {
   const names=['unwrap','windowDefaults','copyWindowSettings','mergeWindowSettings','showWindowSettings','resetWindowSettings',
     'retireWindowPending','cancelWindowCommit','cancelUITimer','windowSaveFailed','commitWindowSettings','scheduleWindowCommit',
     'previewWindowSettings','applyWindowSettings','clearBattleTarget','windowSizeBounds','resizePanelDimensions','queueResize',
-    'scopeName','currentScope','consumeBattleReturn','clearOrderIntent','update'];
+    'scopeName','currentScope','consumeBattleReturn','clearOrderIntent','hasOlderHistoryReply','update'];
   vm.runInContext(names.map(name=>sourceFunction(source,name)).join('\n'),context);
   const consume=context.consumeBattleReturn;let returnChecks=0;
   context.consumeBattleReturn=function(scope){

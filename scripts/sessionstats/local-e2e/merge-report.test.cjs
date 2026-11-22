@@ -60,12 +60,13 @@ const manifest = {
 };
 
 async function merge(t, {state={}, rows=[scenario,interaction], expected=1, missing=false,
-  rawManifest, rawLedger, images={}, additional=[], identity={}, upstream={}, env={}}={}) {
+  rawManifest, rawLedger, images={}, additional=[], identity={}, coverage, upstream={}, env={}}={}) {
   const directory = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'sessionstats-merge-'));
   t.after(async()=>fs.rm(directory,{recursive:true,force:true}));
   const output = path.join(directory,'report');
   const args = [path.join(__dirname,'merge-report.cjs'),'--out',output,'--expected-shards',String(expected)];
   for(const [key,value] of Object.entries(identity)) args.push('--expected-'+key,value);
+  if(coverage!==undefined) args.push('--coverage',coverage);
   for(const [key,value] of Object.entries(upstream)) args.push('--'+key+'-result',value);
   const inputs=missing ? [] : [{state,rows,rawManifest,rawLedger,images},...additional];
   for(const [index,input] of inputs.entries()) {
@@ -117,22 +118,34 @@ test('reports a failed detailed Chromium job even when every rendered case passe
   assert.match(html,/<li class="failed">Detailed Chromium contracts · Failed<\/li>/);
 });
 
-test('reports other upstream failures and accepts a planned smoke skip',async t=>{
+test('reports other upstream failures and accepts only a skip in the requested smoke coverage',async t=>{
   for(const [suite,upstream,jobStatus,exit] of [
     ['full',{render:'failure',contracts:'success',download:'success'},'Chromium render shards · Failed',1],
     ['full',{render:'success',contracts:'success',download:'failure'},'Shard download · Failed',1],
     ['full',{render:'success',contracts:'cancelled',download:'success'},'Detailed Chromium contracts · Cancelled',1],
     ['full',{render:'success',contracts:'skipped',download:'success'},'Detailed Chromium contracts · Skipped',1],
-    ['smoke',{render:'success',contracts:'skipped',download:'success'},'Detailed Chromium contracts · Skipped for smoke',0],
+    ['build',{render:'success',contracts:'skipped',download:'success'},'Detailed Chromium contracts · Skipped for smoke',0],
   ]) {
     await t.test(jobStatus,async check=>{
-      const {result,summary,html}=await merge(check,{upstream,state:{suite}});
+      const coverage=suite==='build'?'smoke':'full';
+      const {result,summary,data,html}=await merge(check,{upstream,coverage,state:{suite}});
       assert.equal(result.status,exit);
+      assert.equal(summary.suite,suite);
+      assert.equal(summary.coverage,coverage);
+      assert.equal(data.summary.coverage,coverage);
       assert.deepEqual(summary.upstream,upstream);
       assert.ok(html.includes(jobStatus));
       assert.match(html,exit?/Run failed/:/Run passed/);
     });
   }
+});
+
+test('a shard cannot claim smoke coverage and hide a skipped required job',async t=>{
+  const upstream={render:'success',contracts:'skipped',download:'success'};
+  const {result,summary,html}=await merge(t,{upstream,coverage:'full',state:{suite:'build',coverage:'smoke'}});
+  assert.equal(result.status,1);
+  assert.equal(summary.coverage,'full');
+  assert.match(html,/<li class="failed">Detailed Chromium contracts · Skipped<\/li>/);
 });
 
 test('a manual report uses rendered cases and ignores purported job outcomes in the shard',async t=>{

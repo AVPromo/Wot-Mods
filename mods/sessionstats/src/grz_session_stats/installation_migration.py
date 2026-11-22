@@ -10,7 +10,7 @@ import os
 import re
 
 from .capture_order import compare_capture_order, valid_capture_order
-from .core import StatsService, _merge_known, _text
+from .core import StatsService, _merge_known, _metadata_gaps, _repair_result_metadata, _restrict_unverified_facts, _text
 from .intake import Intake
 from .loading import items
 from .localization import message
@@ -55,19 +55,25 @@ def _merged_battle(primary, legacy):
     primary_ordered, legacy_ordered = valid_capture_order(primary_order), valid_capture_order(legacy_order)
     if primary_ordered and legacy_ordered:
         use_legacy = compare_capture_order(primary_order, legacy_order, None) == -1
-    elif primary_ordered or legacy_ordered:
-        use_legacy = legacy_ordered
     else:
-        use_legacy = (legacy.get('_updated_at', 0), legacy.get('revision', 0)) > (
-            primary.get('_updated_at', 0), primary.get('revision', 0))
+        # Local revision counters and wall clocks do not order results across
+        # installations. An actual result can replace a recorded beginning.
+        use_legacy = not primary.get('_result_seen') and legacy.get('_result_seen')
     newer, older = (legacy, primary) if use_legacy else (primary, legacy)
     other = dict(older)
     for field in ('_capture_order', '_launch_id', '_manual_id', 'revision', '_updated_at', 'warnings'):
         other.pop(field, None)
+    _, _, arena_type_id = _metadata_gaps(newer)
+    _restrict_unverified_facts(newer, other, arena_type_id)
     merged = _merge_known(newer, other)
+    _repair_result_metadata(newer, other, merged, arena_type_id)
+    # Observation of a beginning can prove its membership even when another
+    # ledger holds the more authoritative result facts.
+    for field in ('_launch_id', '_manual_id'):
+        merged[field] = primary.get(field) or legacy.get(field)
     # An older bonus-aware reading stays authoritative for the applied XP.
-    if older.get('xp_bonus_applied') and not newer.get('xp_bonus_applied') and older.get('xp_received') is not None:
-        merged['xp_received'] = older['xp_received']
+    if other.get('xp_bonus_applied') and not newer.get('xp_bonus_applied') and other.get('xp_received') is not None:
+        merged['xp_received'] = other['xp_received']
     merged['_result_seen'] = bool(primary.get('_result_seen') or legacy.get('_result_seen'))
     merged['_updated_at'] = max(primary.get('_updated_at', 0), legacy.get('_updated_at', 0))
     merged['revision'] = max(primary.get('revision', 0), legacy.get('revision', 0))
@@ -219,11 +225,11 @@ class InstallationHistory(StatsService):
                 # alias. Retry from that generation instead of replacing it.
                 yield None
 
-    def _initialize_steps(self):
+    def _initialize_generation_steps(self):
         if self._alias_key is not None:
             for step in self._adopt_alias():
                 yield step
-        for step in super(InstallationHistory, self)._initialize_steps():
+        for step in super(InstallationHistory, self)._initialize_generation_steps():
             yield step
 
 
