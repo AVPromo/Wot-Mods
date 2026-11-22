@@ -293,6 +293,8 @@ def normalize_result(results, context=None, random_bonus_type=1,
         'warnings': warnings, 'complete': False, 'reconcile': True,
         'xp_bonus_applied': False,
     }
+    if arena_type_id is not None:
+        result['_arena_type_id'] = arena_type_id
     from .battle_details import result_details
     details = result_details(avatar, data, context.get('active_crucible'), mission_resolver)
     if details:
@@ -308,6 +310,8 @@ def normalize_result(results, context=None, random_bonus_type=1,
         if arena_start(arena_id) is None:
             fields.append('started_at')
         result['_deferred_context'] = {'fields': fields, 'duration': duration}
+        if arena_type_id is not None:
+            result['_deferred_context']['arena_type_id'] = arena_type_id
     required = ('damage', 'frags', 'spots', 'defense', 'xp_base', 'xp_received', 'free_xp')
     result['complete'] = bool(outcome and all(result[key] is not None for key in required)
                               and all(value['net'] is not None for value in result['currencies'].values()))

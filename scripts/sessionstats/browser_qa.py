@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run CI browser checks with pinned Chromium, fonts and OS dependencies."""
+"""Run CI browser checks with pinned Chromium and isolated dependencies."""
 import argparse
 import json
 import os
@@ -92,8 +92,8 @@ def docker_command(command, *, runtime, workspace, temporary, name, offline=Fals
     return args + [IMAGE] + list(command)
 
 
-def execute(command, timeout):
-    subprocess.run(command, check=True, timeout=timeout)
+def execute(command, timeout, **options):
+    subprocess.run(command, check=True, timeout=timeout, **options)
 
 
 def container(command, *, runtime, workspace, temporary, timeout, offline=False):
@@ -156,10 +156,10 @@ for (const name of %s) {
 """ % json.dumps(UI_TESTS)
 
 
-def e2e_command(profile, report_dir, shard, target_sha=None):
+def e2e_command(profile, report_dir, shard, target_sha=None, *, python='/host-python/bin/python3'):
     suite, capture = E2E_MODES[profile]
     command = ['node', 'scripts/sessionstats/local-e2e/run.cjs', '--suite', suite,
-               '--engine', 'chromium', '--python', '/host-python/bin/python3',
+               '--engine', 'chromium', '--python', python,
                '--capture', capture, '--out', str(report_dir)]
     if suite == 'full':
         command += ['--image-format', 'jpeg', '--jpeg-quality', '48']
@@ -209,11 +209,51 @@ def target_commit(explicit, *, render_matrix):
     return None
 
 
+def windows_smoke(report_dir, target_sha):
+    """Run the normal build check using Windows CPython and Chromium directly."""
+    npm = shutil.which('npm.cmd')
+    if npm is None or shutil.which('node.exe') is None:
+        raise RuntimeError('Windows browser smoke requires Node.js 22 or later with npm')
+    # Forward OS process and network settings. The synthetic test does not
+    # need the runner's GitHub credentials, workflow commands or user modules.
+    inherited = {'path', 'pathext', 'systemroot', 'windir', 'comspec', 'temp', 'tmp',
+                 'programfiles', 'programfiles(x86)', 'programdata', 'userprofile',
+                 'localappdata', 'appdata', 'homedrive', 'homepath', 'http_proxy',
+                 'https_proxy', 'no_proxy'}
+    environment = {key: value for key, value in os.environ.items() if key.lower() in inherited}
+    directory = os.environ.get('RUNNER_TEMP') or None
+    with tempfile.TemporaryDirectory(prefix='sessionstats-browser-', dir=directory) as directory:
+        temporary = Path(directory).resolve()
+        tools = temporary / 'tools'
+        tools.mkdir()
+        modules = tools / 'node_modules'
+        dependencies = temporary / 'python'
+        environment.update({'CI': '1', 'GITHUB_ACTIONS': 'true', 'NODE_PATH': str(modules),
+                            'PLAYWRIGHT_BROWSERS_PATH': str(temporary / 'browsers'),
+                            'PYTHONPATH': str(dependencies), 'PYTHONNOUSERSITE': '1',
+                            'PYTHONDONTWRITEBYTECODE': '1', 'npm_config_strict_ssl': 'true',
+                            'npm_config_userconfig': str(temporary / 'npmrc'),
+                            'npm_config_cache': str(temporary / 'npm-cache')})
+        options = {'cwd': ROOT, 'env': environment}
+        execute([sys.executable, '-I', '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check', '--no-cache-dir',
+                 '--target', str(dependencies), '-r', str(ROOT / 'scripts/sessionstats/local-e2e/requirements.txt')],
+                PREPARE_TIMEOUT, **options)
+        execute([npm, 'install', '--prefix', str(tools), '--no-audit', '--no-fund', '--ignore-scripts',
+                 '--save-exact', 'playwright@' + PLAYWRIGHT_VERSION], PREPARE_TIMEOUT, **options)
+        execute(['node', str(modules / 'playwright/cli.js'), 'install', '--only-shell', 'chromium'],
+                PULL_TIMEOUT, **options)
+        execute(e2e_command('build', report_dir or temporary / 'report', None, target_sha, python=sys.executable),
+                TEST_TIMEOUT, **options)
+
+
 def run(prepare=False, *, e2e=None, report_dir=None, shard=None, target_sha=None):
     if report_dir is not None:
         report_dir = report_dir.resolve()
         if ROOT not in report_dir.parents:
             raise RuntimeError('The CI report directory must be inside the workspace')
+    if sys.platform == 'win32' and e2e == 'build':
+        windows_smoke(report_dir, target_sha)
+        return
     if not shutil.which('docker'):
         raise RuntimeError('Docker is required for the pinned browser QA runtime')
     runtime = python_runtime()

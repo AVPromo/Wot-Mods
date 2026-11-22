@@ -61,6 +61,7 @@ class PrBuildScopingTests(unittest.TestCase):
                      'mods/sessionstats/tools/build.py', 'scripts/sessionstats/python27.sh',
                      'scripts/sessionstats/source_state.py',
                      'tests/test_sessionstats_pipeline.py',
+                     '.github/actions/python27-windows/action.yml',
                      '.github/workflows/sessionstats-matrix-command.yml',
                      '.github/workflows/sessionstats-ci.yml'):
             with self.subTest(path=path):

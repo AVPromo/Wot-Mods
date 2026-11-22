@@ -70,7 +70,7 @@ Use `--source` to point to `mods/sessionstats` in the selected checkout. The run
 
 ## GitHub Actions
 
-The regular build runs a short Chromium suite. To start **Session Stats Chromium matrix**, post a new command comment on an open pull request from a branch in this repository. `/sessionstats-matrix` runs every sorting option in every configured date range. `/sessionstats-matrix smoke` checks reporting with a small sample. `/sessionstats-matrix full` checks every sorting option in the primary date ranges. The run appears in Actions as **Session Stats matrix · PR #…**.
+The regular build runs the short Chromium suite on a native Windows runner. It installs the pinned Playwright browser and Python time zone data in a temporary directory. To start **Session Stats Chromium matrix**, post a new command comment on an open pull request from a branch in this repository. `/sessionstats-matrix` runs every sorting option in every configured date range. `/sessionstats-matrix smoke` checks reporting with a small sample. `/sessionstats-matrix full` checks every sorting option in the primary date ranges. The on-demand matrix uses the pinned Linux browser container and appears in Actions as **Session Stats matrix · PR #…**.
 
 Every CI run uses synthetic data and test artwork. The merge job publishes `index.html`, `catalog.js`, and the corresponding screenshots, including any available results from incomplete runs. Extract the artifact and open `index.html` to see the tested commit, case results, and CI job outcomes supplied by the workflow. A failed detailed Chromium check fails the run even when all rendering cases pass. The full CI matrix saves the final phase of each case. Local runs save all four phases by default.
 

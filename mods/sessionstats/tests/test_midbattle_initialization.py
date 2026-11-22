@@ -9,6 +9,7 @@ import unittest
 import test_runtime as fixtures
 from test_normalize import ARENA_ID, START, raw_result
 from grz_session_stats import runtime
+from grz_session_stats.capture_order import compare_capture_order
 
 
 class MidbattleInitializationTests(unittest.TestCase):
@@ -44,8 +45,11 @@ class MidbattleInitializationTests(unittest.TestCase):
         self.api.events.onAvatarReady()
         self.api.events.onBattleResultsReceived(True, raw_result(dbid=self.api.dbid))
         self.garage()
-        self.assertEqual(service._state['battles'][ARENA_ID], record)
-        self.assertEqual(service._state['battles'][ARENA_ID]['started_at'], START)
+        repeated = dict(service._state['battles'][ARENA_ID])
+        self.assertEqual(compare_capture_order(repeated.pop('_capture_order'), record.pop('_capture_order'),
+                                               self.mod._combat_intake.clock_domain), 1)
+        self.assertEqual(repeated, record)
+        self.assertEqual(repeated['started_at'], START)
 
     def test_mod_starts_during_an_ongoing_battle(self):
         self.mod.stop()

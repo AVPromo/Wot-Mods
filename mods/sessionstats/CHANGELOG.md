@@ -3,7 +3,7 @@
 ## 0.9.37 - 2026-11-22
 
 - Protect newer battle facts when another client publishes an older result, and retain installation provenance while its source is being resolved.
-- Retry interrupted garage writes and let cached results fill missing fields without replacing confirmed battle facts.
+- Retry interrupted garage writes, fill missing fields from cached results, and restore vehicle and map metadata when their native resolvers recover.
 - Resolve Windows directory aliases to the same installation history.
 - Restore resize controls after interrupted native gestures and release stale window anchors.
 - Return to the exact map or vehicle history row when newer results move it to another page.

@@ -48,8 +48,9 @@ def _boot_clock():
             return domain, tick
         with open('/proc/sys/kernel/random/boot_id', 'rb') as handle:
             domain = text_type(uuid.UUID(handle.read(40).decode('ascii').strip()).hex)
-        if hasattr(time, 'monotonic'):
-            return domain, lambda: int(time.monotonic() * 1000000000)
+        monotonic = getattr(time, 'monotonic', None)
+        if monotonic is not None:
+            return domain, lambda: int(monotonic() * 1000000000)
         # Linux integration runs the same storage path on CPython 2.7.
         import ctypes
 

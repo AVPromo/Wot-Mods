@@ -4,6 +4,7 @@ from __future__ import unicode_literals
 
 from .battle_details import clean_details, merge_details
 from .capture_order import compare_capture_order, valid_capture_order
+from .language_defaults import LEGACY_POLISH
 from .localization import message
 
 import bisect
@@ -283,6 +284,46 @@ def _merge_known(existing, incoming, revise=False):
     return merged
 
 
+def _generated_names(kind, identifier):
+    generic = 'unknown.' + kind
+    numbered = generic + '_id'
+    names = (message(generic), LEGACY_POLISH[generic])
+    if identifier is not None:
+        names += (message(numbered).format(identifier), LEGACY_POLISH[numbered].format(identifier))
+    return names
+
+
+def _repair_result_metadata(old, incoming, merged, arena_type_id):
+    """Promote generated placeholders without revising confirmed results."""
+    repaired = []
+    vehicle_id = merged.get('vehicle_id')
+    name = incoming.get('vehicle_name')
+    if (vehicle_id is not None and vehicle_id == incoming.get('vehicle_id') and
+            name and name != old.get('vehicle_name')):
+        names = _generated_names('vehicle', vehicle_id)
+        if old.get('vehicle_name') in names and name not in names:
+            merged['vehicle_name'] = name
+            repaired.append('normalize.vehicle')
+
+    old_map, new_map = old.get('map_id'), incoming.get('map_id')
+    numbered_map = 'arena:{0}'.format(arena_type_id) if arena_type_id is not None else None
+    if numbered_map is not None and old_map in ('unknown', numbered_map):
+        if new_map and new_map != 'unknown' and not new_map.startswith('arena:'):
+            merged['map_id'] = new_map
+    matching_map = (not old_map or old_map == numbered_map or not old_map.startswith('arena:'))
+    name = incoming.get('map_name')
+    if (matching_map and name and name != old.get('map_name') and
+            (not old_map or new_map == old_map or merged.get('map_id') != old_map)):
+        names = _generated_names('map', arena_type_id)
+        if old.get('map_name') in names and name not in names:
+            merged['map_name'] = name
+            repaired.append('normalize.map')
+
+    if repaired and 'warnings' in merged:
+        resolved = set(value for key in repaired for value in (message(key), LEGACY_POLISH[key]))
+        merged['warnings'] = [warning for warning in merged['warnings'] if warning not in resolved]
+
+
 class StatsService(object):
     def __init__(self, data_dir, account_key, launch_id, expected_table, now=None,
                  deferred=False, started_at=None, timeline_enabled=False):
@@ -506,11 +547,15 @@ class StatsService(object):
             result['_capture_order'] = order
         if passive:
             result['_passive_capture'] = True
+        if 'arena_type_id' in context:
+            result['_arena_type_id'] = context['arena_type_id']
         return result
 
     @staticmethod
     def _capture_context(record):
         context = copy.deepcopy(record.get('_deferred_context') or {})
+        if record.get('_arena_type_id') is not None:
+            context['arena_type_id'] = record['_arena_type_id']
         if record.get('_deferred_candidates'):
             context['candidates'] = [{'record': _clean_record(candidate),
                                       'context': copy.deepcopy(candidate.get('_deferred_context', {}))}
@@ -1142,6 +1187,8 @@ class StatsService(object):
         if old.get('xp_bonus_applied') and not incoming.get('xp_bonus_applied'):
             incoming.pop('xp_received', None)
         merged = _merge_known(old, incoming, revise)
+        if is_result and not revise and old:
+            _repair_result_metadata(old, incoming, merged, record.get('_arena_type_id'))
         # The native XP controller is specifically re-read to pick up a
         # multiplier applied after the original battle-result delivery.
         xp = incoming.get('xp_received')

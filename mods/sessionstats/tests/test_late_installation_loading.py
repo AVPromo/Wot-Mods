@@ -18,6 +18,7 @@ from test_config_path import changed
 from test_normalize import normalize_result, raw_result, START, ARENA_ID
 from test_runtime import FakeAPI, FakeWindow, Obj, wait_for_combat_capture
 from grz_session_stats import capture_order, config_path, runtime
+from grz_session_stats.localization import message
 from grz_session_stats.sessions import InstallationSession
 
 
@@ -406,6 +407,54 @@ class LateInstallationLoadingTests(unittest.TestCase):
         self.assertEqual([row['damage'] for row in self._recorded_battle_pair()], [2777, 2777])
         self.assertEqual([row['xp_received'] for row in self._recorded_battle_pair()], [4550, 4550])
         self.assertEqual([service.store.sequence for service in services], [sequence + 1 for sequence in saved])
+
+    def test_passive_reread_repairs_saved_map_and_vehicle_placeholders_only(self):
+        self.discover()
+        self.finish()
+        self.clock.value = START + 600
+        revised = raw_result()
+        revised['personal'][1]['damageDealt'] = 2777
+
+        def unavailable(unused):
+            raise LookupError('Synthetic resolver initially unavailable')
+
+        self.api.vehicle_info = self.api.map_info = unavailable
+        self.mod._on_results(True, revised)
+        for row in self._recorded_battle_pair():
+            self.assertEqual((row['vehicle_name'], row['map_id'], row['map_name']),
+                             ('Vehicle 1', 'arena:17', 'Map 17'))
+            self.assertNotIn('_arena_type_id', row)
+            self.assertIn(message('normalize.vehicle'), row['warnings'])
+            self.assertIn(message('normalize.map'), row['warnings'])
+
+        services = (self.mod.active_service, self.mod._instance_session.service)
+        self.api.posts[ARENA_ID] = Obj(results=raw_result(), reusable=None)  # Stores only 2100 damage.
+        self.api.vehicle_info = lambda unused: {'name': 'Confirmed Vehicle'}
+        self.api.map_info = lambda unused: {'id': 'resolved-geometry'}  # Native label still missing.
+        self.mod._refresh_posted()
+        for row in self._recorded_battle_pair():
+            self.assertEqual((row['vehicle_name'], row['map_id'], row['map_name'], row['damage']),
+                             ('Confirmed Vehicle', 'resolved-geometry', 'Map 17', 2777))
+            self.assertIn(message('normalize.map'), row['warnings'])
+        for service in services:
+            self.assertEqual([item['id'] for item in service.snapshot()['scopes']['manual']['maps']],
+                             ['resolved-geometry'])
+
+        self.api.map_info = lambda unused: {'id': 'resolved-geometry', 'name': 'Confirmed Map'}
+        self.mod._refresh_posted()
+        for row in self._recorded_battle_pair():
+            self.assertEqual(row['map_name'], 'Confirmed Map')
+            self.assertNotIn(message('normalize.vehicle'), row['warnings'])
+            self.assertNotIn(message('normalize.map'), row['warnings'])
+
+        before = [service.store.sequence for service in services]
+        self.api.vehicle_info = lambda unused: {'name': 'Other Vehicle'}
+        self.api.map_info = lambda unused: {'id': 'other-geometry', 'name': 'Other Map'}
+        self.mod._refresh_posted()
+        for row in self._recorded_battle_pair():
+            self.assertEqual((row['vehicle_name'], row['map_id'], row['map_name'], row['damage']),
+                             ('Confirmed Vehicle', 'resolved-geometry', 'Confirmed Map', 2777))
+        self.assertEqual([service.store.sequence for service in services], before)
 
     def restart(self):
         wait_for_combat_capture(self.mod)

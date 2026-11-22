@@ -1,6 +1,7 @@
 """Exercise the isolated browser bootstrap without Docker or network access."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -317,6 +318,54 @@ class BrowserContainerTests(unittest.TestCase):
                 patch.object(qa.subprocess, 'run', return_value=answer):
             with self.assertRaises(RuntimeError):
                 qa.python_runtime()
+
+
+class WindowsBrowserSmokeTests(unittest.TestCase):
+    def test_native_windows_build_uses_pinned_tools_and_synthetic_cases(self):
+        with tempfile.TemporaryDirectory() as runner_temp:
+            report = ROOT / 'sessionstats-browser-report'
+            sha = 'a' * 40
+            environment = {'RUNNER_TEMP': runner_temp, 'SystemRoot': 'example-windows-root',
+                           'GITHUB_TOKEN': 'synthetic-sensitive', 'GITHUB_ENV': 'synthetic-workflow-command',
+                           'NODE_PATH': 'synthetic-user-module', 'PYTHONPATH': 'synthetic-user-module'}
+            commands = []
+
+            def execute(command, timeout, **options):
+                commands.append((command, timeout, options))
+
+            paths = {'npm.cmd': 'example-npm.cmd', 'node.exe': 'example-node.exe'}
+            with patch.dict(os.environ, environment, clear=True), patch.object(qa.sys, 'platform', 'win32'), \
+                    patch.object(qa.shutil, 'which', side_effect=paths.get), patch.object(qa, 'execute', execute):
+                qa.run(e2e='build', report_dir=report, target_sha=sha)
+
+            self.assertEqual(len(commands), 4)
+            self.assertEqual(commands[0][0][:6], [sys.executable, '-I', '-m', 'pip', '--isolated', 'install'])
+            self.assertEqual(commands[0][0][-2:], ['-r', str(ROOT/'scripts/sessionstats/local-e2e/requirements.txt')])
+            self.assertEqual(commands[1][0][0], paths['npm.cmd'])
+            self.assertIn('--ignore-scripts', commands[1][0])
+            self.assertEqual(commands[1][0][-2:], ['--save-exact', 'playwright@' + qa.PLAYWRIGHT_VERSION])
+            self.assertEqual(commands[2][0][-3:], ['install', '--only-shell', 'chromium'])
+            self.assertEqual(commands[3][0], qa.e2e_command('build', report.resolve(), None, sha, python=sys.executable))
+            self.assertNotIn('--profile', commands[3][0])
+            self.assertNotIn('--game-client', commands[3][0])
+            for command, _, options in commands:
+                self.assertNotEqual(command[0], 'docker')
+                self.assertEqual(options['cwd'], ROOT)
+                child_env = options['env']
+                self.assertEqual(child_env['GITHUB_ACTIONS'], 'true')
+                self.assertEqual(next(value for key, value in child_env.items() if key.lower() == 'systemroot'),
+                                 environment['SystemRoot'])
+                self.assertNotIn('GITHUB_TOKEN', child_env)
+                self.assertNotIn('GITHUB_ENV', child_env)
+                for key in ('NODE_PATH', 'PYTHONPATH', 'PLAYWRIGHT_BROWSERS_PATH'):
+                    self.assertIn(Path(runner_temp).resolve(), Path(child_env[key]).parents)
+            self.assertEqual(list(Path(runner_temp).iterdir()), [])
+
+    def test_native_windows_reports_missing_node_or_npm(self):
+        with patch.object(qa.shutil, 'which', return_value=None), patch.object(qa, 'execute') as execute:
+            with self.assertRaisesRegex(RuntimeError, 'requires Node.js 22 or later with npm'):
+                qa.windows_smoke(None, None)
+            execute.assert_not_called()
 
 
 @unittest.skipUnless(shutil.which('node'), 'Node is required for the synthetic suite-runner probe')
