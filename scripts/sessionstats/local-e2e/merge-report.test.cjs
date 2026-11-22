@@ -106,6 +106,18 @@ test('succeeds only after matching one scenario and one interaction to the manif
   assert.equal(summary.interactions,1);
 });
 
+test('includes battle WN8 cases and their images in the merged catalogue',async t=>{
+  const row=captured({key:'625x730/en/history/tiers/battle_wn8-min-desc-tier_desc'},[3],'jpg');
+  const image=row.shots[0].image;
+  const {result,summary,data}=await merge(t,{
+    state:{capture:'final',interactions:0},rows:[row],images:{[image]:blueJpeg}
+  });
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(summary.omittedRows,0);
+  assert.equal(data.rows[0].key,row.key);
+  assert.deepEqual(data.rows[0].frames,[{file:'3.jpg'}]);
+});
+
 test('reports a failed detailed Chromium job even when every rendered case passed',async t=>{
   const upstream={render:'success',contracts:'failure',download:'success'};
   const {result,summary,data,html}=await merge(t,{upstream,state:{upstream:{...upstream,contracts:'success'}}});

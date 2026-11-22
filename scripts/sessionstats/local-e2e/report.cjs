@@ -35,7 +35,7 @@ const names = {
 const languages = /^(en|pl|ru|fr|de|es|uk)$/;
 const dimensions = /^([0-9]{3,4})x([0-9]{3,4})$/;
 const numberedRange = /^point-[0-9]{2}-[0-9]{2}$/;
-const variants = /^([a-z_]+)-(min|avg|max|sum)-(asc|desc)-([a-z_]+)$/;
+const variants = /^([a-z0-9_]+)-(min|avg|max|sum)-(asc|desc)-([a-z_]+)$/;
 const owns = (object, key) => Object.hasOwn(object, key);
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const safeVersion = value => typeof value === 'string' && /^[0-9]+(?:\.[0-9]+){1,5}(?:[-+][a-zA-Z0-9.-]{1,24})?$/.test(value)
