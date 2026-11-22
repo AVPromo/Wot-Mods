@@ -9,6 +9,7 @@ const {parseArgs} = require('node:util');
 const {setTimeout: delay} = require('node:timers/promises');
 const {startBackend,serve,openChromium} = require('./host.cjs');
 const {writeReport} = require('./report.cjs');
+const {viewportForPanel} = require('./screenshot.cjs');
 
 const checkoutSource = path.resolve(__dirname, '../../../mods/sessionstats');
 const sourceDefault = existsSync(path.join(checkoutSource,'VERSION')) ? checkoutSource :
@@ -374,7 +375,7 @@ function cli() {
     ranges:{type:'string'},languages:{type:'string'},'all-ranges':{type:'boolean'}, 'matrix-only':{type:'boolean'},
     'player-visible':{type:'boolean'},limit:{type:'string'},profile:{type:'string'},'game-client':{type:'string'},
     capture:{type:'string',default:'all'},'image-format':{type:'string',default:'png'},
-    'jpeg-quality':{type:'string'},shard:{type:'string'}};
+    'jpeg-quality':{type:'string'},shard:{type:'string'},commit:{type:'string'}};
   return parseArgs({options}).values;
 }
 
@@ -386,9 +387,11 @@ async function main() {
     '  --all-ranges --matrix-only --limit 20 --baseline folder --threshold 0.002\n' +
     '  --profile anonymous-profile.json --game-client path-to-WoT (local only)\n' +
     '  --shard 1/16 --capture all|final|failures --image-format png|jpeg [--jpeg-quality 82]\n' +
+    '  --commit SHA records the checked-out CI commit in the report\n' +
     '  --player-visible allows a Gameface Player desktop window if it cannot run hidden');return;}
   if(!['gameface','chromium'].includes(values.engine)||!['full','smoke','build'].includes(values.suite)) throw new Error('Unknown engine or suite');
   assert(['all','final','failures'].includes(values.capture),'Invalid screenshot capture mode');
+  assert(values.commit===undefined||/^[a-f0-9]{40}$/.test(values.commit),'Invalid matrix commit SHA');
   assert(['png','jpeg'].includes(values['image-format']),'Invalid screenshot format');
   const imageFormat=values['image-format'];
   const jpegQuality=Number(values['jpeg-quality']??82);
@@ -426,7 +429,7 @@ async function main() {
     await fs.mkdir(path.dirname(out),{recursive:true});
     await fs.mkdir(out);
     const ledger=await fs.open(path.join(out,'results.ndjson'),'a');
-    const state={version:inventory.version,engine:values.engine,renderer:null,suite:values.suite,planned:total,
+    const state={version:inventory.version,commit:values.commit,engine:values.engine,renderer:null,suite:values.suite,planned:total,
       fixture:inventory.fixture||'synthetic',assets:values['game-client']?'local-game':'test-art',
       capture:values.capture,shard:values.shard||null,
       completed:0,failed:0,interactions:0,interactionErrors:0,visualFailures:0,missingBaselines:0,finished:false};
@@ -440,7 +443,7 @@ async function main() {
       for(const profile of [...new Set(tasks.map(task=>`${task.width}x${task.height}`))]) {
         if(state.completed>=total) break;
         const [width,height]=profile.split('x').map(Number);
-        const hostWidth=width+20,hostHeight=height+20;
+        const {width:hostWidth,height:hostHeight}=viewportForPanel(width,height);
         const surface={url:web.url,width:hostWidth,height:hostHeight,useWarhelios:!!values['game-client']};
         const driver=await (chromium?chromium.open(surface):native.launchGameface({
           ...surface,executable:path.resolve(values.player),allowVisible:!!values['player-visible']}));

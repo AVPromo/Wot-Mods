@@ -305,6 +305,8 @@ class StatsService(object):
         self._page_requests = {}
         self._empty_view_revision = uuid.uuid4().hex
         self._orders = {}
+        self._order_requests = {}
+        self._order_epochs = {}
         self._map_pages = {}
         self._vehicle_pages = {}
         self._history_request = {}
@@ -615,7 +617,7 @@ class StatsService(object):
             return self._indexes[scope]
         return None
 
-    def set_page(self, scope, group, page, period_id=None, request_id=None):
+    def set_page(self, scope, group, page, period_id=None, request_id=None, anchor_id=None):
         if not self.ready or self._closed:
             return False
         if group not in ('battles', 'vehicles', 'maps', 'tiers'):
@@ -632,6 +634,15 @@ class StatsService(object):
             if (not 1 <= len(request_id) <= 64 or any(char not in
                     'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-' for char in request_id)):
                 return False
+        if anchor_id is not None:
+            if request_id is None or group == 'battles' or not isinstance(anchor_id, (text_type, bytes)):
+                return False
+            anchor_id = _text(anchor_id)
+            if not 1 <= len(anchor_id) <= 256:
+                return False
+            current_page = index.group_page(group, anchor_id, self._orders.get(scope, {}).get(group))
+            if current_page is not None:
+                page = current_page
         self._pages.setdefault(scope, {})[group] = page
         requests = self._page_requests.setdefault(scope, {})
         if request_id is None:
@@ -642,7 +653,7 @@ class StatsService(object):
             self._battle_focus.pop(scope, None)
         return True
 
-    def set_order(self, scope, group, options, period_id):
+    def set_order(self, scope, group, options, period_id, request_id=None):
         from .projection import valid_order
         if (not valid_order(options, group) or not self.ready or self._closed or
                 group not in ('battles', 'vehicles', 'maps', 'tiers')):
@@ -650,6 +661,13 @@ class StatsService(object):
         index = self._view_index(scope)
         if index is None or period_id != index.identifier:
             return False
+        if request_id is not None:
+            if not isinstance(request_id, (text_type, bytes)):
+                return False
+            request_id = _text(request_id)
+            if (not 1 <= len(request_id) <= 64 or any(char not in
+                    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-' for char in request_id)):
+                return False
         previous = self._orders.get(scope, {}).get(group, {})
         ascending = lambda order: order.get('chronology') in ('oldest', 'last_asc')
         if group in ('vehicles', 'maps') and ascending(previous) != ascending(options):
@@ -661,6 +679,12 @@ class StatsService(object):
             if history and history['kind'] == group:
                 self._history_request.pop(scope, None)
         self._orders.setdefault(scope, {})[group] = dict(options)
+        requests = self._order_requests.setdefault(scope, {})
+        if request_id is None:
+            if requests.pop(group, None) is not None:
+                self._order_epochs[scope] = uuid.uuid4().hex
+        else:
+            requests[group] = {'period_id': period_id, 'request_id': request_id}
         self._pages.setdefault(scope, {})[group] = 0
         self._page_requests.get(scope, {}).pop(group, None)
         if group == 'battles':
@@ -731,6 +755,7 @@ class StatsService(object):
         vehicles = self._vehicle_pages.get(name, {})
         vehicle_pages = vehicles.get('pages') if vehicles.get('period_id') == index.identifier else None
         scope = index.snapshot(label, started_at, self._pages.get(name), orders, map_pages, vehicle_pages)
+        scope['order_epoch'] = self._order_epochs.get(name, self._empty_view_revision)
         history = self._history_request.get(name)
         if history and history['period_id'] == index.identifier:
             battle_list = index._group_battles(history['kind'], history['id'], history['page'],
@@ -740,6 +765,9 @@ class StatsService(object):
         for group, request in self._page_requests.get(name, {}).items():
             if request['period_id'] == index.identifier:
                 scope['pagination'][group]['request_id'] = request['request_id']
+        for group, request in self._order_requests.get(name, {}).items():
+            if request['period_id'] == index.identifier:
+                scope['pagination'][group]['order_request_id'] = request['request_id']
         if (focus and focus['period_id'] == index.identifier and
                 any(row['id'] == focus['id'] for row in scope['battles'])):
             scope['battle_focus'] = dict((key, focus[key]) for key in ('id', 'request_id'))
@@ -1109,6 +1137,8 @@ class StatsService(object):
         self._indexes['manual'] = ScopeIndex(new_id, self.expected_table)
         self._pages.pop('manual', None)
         self._page_requests.pop('manual', None)
+        self._order_requests.pop('manual', None)
+        self._order_epochs.pop('manual', None)
         self._map_pages.pop('manual', None)
         self._vehicle_pages.pop('manual', None)
         self._history_request.pop('manual', None)
@@ -1177,6 +1207,8 @@ class StatsService(object):
             self._timeline_error = None
             self._pages.pop('timeline', None)
             self._page_requests.pop('timeline', None)
+            self._order_requests.pop('timeline', None)
+            self._order_epochs.pop('timeline', None)
             self._map_pages.pop('timeline', None)
             self._vehicle_pages.pop('timeline', None)
             self._history_request.pop('timeline', None)

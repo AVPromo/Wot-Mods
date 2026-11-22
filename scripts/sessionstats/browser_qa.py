@@ -19,6 +19,8 @@ IMAGE = ('mcr.microsoft.com/playwright:v1.62.1-noble@sha256:'
          'dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e')
 UI_TESTS = ('ui_contract', 'ui-wheel', 'ui-footer', 'ui-footer-activity',
             'ui-footer-compat', 'ui-appearance')
+E2E_MODES = {'build': ('build', 'failures'), 'smoke': ('build', 'all'),
+             'full': ('full', 'final'), 'exhaustive': ('full', 'final')}
 PULL_TIMEOUT = 600
 PREPARE_TIMEOUT = 300
 TEST_TIMEOUT = 900
@@ -154,9 +156,8 @@ for (const name of %s) {
 """ % json.dumps(UI_TESTS)
 
 
-def e2e_command(profile, report_dir, shard):
-    suite = 'full' if profile in ('full', 'exhaustive') else 'build'
-    capture = {'build': 'failures', 'smoke': 'all', 'full': 'final', 'exhaustive': 'final'}[profile]
+def e2e_command(profile, report_dir, shard, target_sha=None):
+    suite, capture = E2E_MODES[profile]
     command = ['node', 'scripts/sessionstats/local-e2e/run.cjs', '--suite', suite,
                '--engine', 'chromium', '--python', '/host-python/bin/python3',
                '--capture', capture, '--out', str(report_dir)]
@@ -166,10 +167,29 @@ def e2e_command(profile, report_dir, shard):
         command += ['--all-ranges']
     if shard or profile == 'smoke':
         command += ['--shard', shard or '1/1']
+    if target_sha:
+        command += ['--commit', target_sha]
     return command
 
 
-def run(prepare=False, *, e2e=None, report_dir=None, shard=None):
+def merge_report_command(profile, report_dir, expected_shards, parts, target_sha=None):
+    suite, capture = E2E_MODES[profile]
+    version = (ROOT / 'mods/sessionstats/VERSION').read_text(encoding='ascii').strip()
+    command = ['node', 'scripts/sessionstats/local-e2e/merge-report.cjs', '--out', str(report_dir),
+               '--expected-shards', str(expected_shards), '--expected-version', version,
+               '--expected-suite', suite, '--expected-capture', capture]
+    if target_sha:
+        command += ['--expected-commit', target_sha]
+    return command + ['--', *parts]
+
+
+def verify_target_checkout(sha):
+    actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True, timeout=10).strip()
+    if actual != sha:
+        raise RuntimeError('The checked-out commit does not match the planned matrix commit')
+
+
+def run(prepare=False, *, e2e=None, report_dir=None, shard=None, target_sha=None):
     if report_dir is not None:
         report_dir = report_dir.resolve()
         if ROOT not in report_dir.parents:
@@ -190,7 +210,7 @@ def run(prepare=False, *, e2e=None, report_dir=None, shard=None):
         container(['node', '-e', smoke_script(runtime)], timeout=PREPARE_TIMEOUT, **options)
         if e2e:
             timeout = MATRIX_TIMEOUT if e2e in ('full', 'exhaustive') else TEST_TIMEOUT
-            container(e2e_command(e2e, report_dir or temporary / 'report', shard),
+            container(e2e_command(e2e, report_dir or temporary / 'report', shard, target_sha),
                       timeout=timeout, offline=True, **options)
         elif not prepare:
             container(['node', '-e', test_script()], timeout=TEST_TIMEOUT, **options)
@@ -200,17 +220,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--prepare', action='store_true', help='Install and smoke-test the runtime only')
-    modes.add_argument('--e2e', choices=('build', 'smoke', 'full', 'exhaustive'),
+    modes.add_argument('--e2e', choices=E2E_MODES,
                        help='Render a short CI check or an on-demand matrix')
+    modes.add_argument('--merge-report', choices=E2E_MODES, help='Assemble the downloaded matrix parts')
     parser.add_argument('--report-dir', type=Path, help='Keep the report under this workspace path')
     parser.add_argument('--shard', help='Render the given full-matrix shard (N/M)')
+    parser.add_argument('--expected-shards', type=int, help='Number of shards from the CI plan')
+    parser.add_argument('--target-sha', help='Commit from the CI plan')
+    parser.add_argument('parts', nargs='*', help='Shard directories to merge')
     args = parser.parse_args()
-    if args.report_dir is not None and not args.e2e:
-        parser.error('--report-dir requires --e2e')
+    if args.report_dir is not None and not (args.e2e or args.merge_report):
+        parser.error('--report-dir requires --e2e or --merge-report')
     if args.shard and args.e2e not in ('full', 'exhaustive'):
         parser.error('--shard requires --e2e full or --e2e exhaustive')
+    if args.target_sha is not None and (not (args.e2e or args.merge_report) or
+                                        not re.fullmatch(r'[0-9a-f]{40}', args.target_sha)):
+        parser.error('--target-sha requires a 40-character commit SHA with --e2e or --merge-report')
+    if args.merge_report:
+        if not args.report_dir or not args.expected_shards or args.expected_shards < 1:
+            parser.error('--merge-report requires --report-dir and a positive --expected-shards')
+    elif args.expected_shards is not None or args.parts:
+        parser.error('--expected-shards and shard directories require --merge-report')
     try:
-        run(prepare=args.prepare, e2e=args.e2e, report_dir=args.report_dir, shard=args.shard)
+        if args.target_sha:
+            verify_target_checkout(args.target_sha)
+        if args.merge_report:
+            command = merge_report_command(args.merge_report, args.report_dir, args.expected_shards, args.parts,
+                                           target_sha=args.target_sha)
+            return subprocess.run(command, cwd=ROOT, check=False).returncode
+        run(prepare=args.prepare, e2e=args.e2e, report_dir=args.report_dir, shard=args.shard, target_sha=args.target_sha)
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print('Browser QA failed: ' + str(error), file=sys.stderr)
         return 1

@@ -400,7 +400,8 @@ class Backend:
     @staticmethod
     def _navigation(service, scope, kind, group, period, action):
         if kind == 'sort':
-            return service.set_order(scope, group, {key: action.get(key) for key in ORDER_FIELDS}, period)
+            return service.set_order(scope, group, {key: action.get(key) for key in ORDER_FIELDS},
+                                     period, action.get('request_id'))
         if kind == 'battle_select':
             return service.select_battle(scope, action.get('id'), period, action.get('request_id'))
         raw_page = action.get('page')
@@ -412,7 +413,7 @@ class Backend:
             return service.set_map_battles(scope, action.get('map_id'), page, period, chronology)
         if kind == 'vehicle_battles':
             return service.set_vehicle_battles(scope, action.get('vehicle_id'), page, period, chronology)
-        return service.set_page(scope, group, page, period, action.get('request_id'))
+        return service.set_page(scope, group, page, period, action.get('request_id'), action.get('anchor_id'))
 
 
 def main():

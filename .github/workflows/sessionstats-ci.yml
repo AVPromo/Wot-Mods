@@ -72,6 +72,11 @@ jobs:
       - name: Test Chromium report assembly
         if: steps.source.outputs.enabled == 'true'
         run: node --test scripts/sessionstats/local-e2e/merge-report.test.cjs scripts/sessionstats/local-e2e/report.test.cjs
+      - name: Test Session Stats navigation acknowledgements
+        if: steps.source.outputs.enabled == 'true'
+        run: |
+          node mods/sessionstats/tests/ui-filter-ux.cjs
+          node mods/sessionstats/tests/ui-bidirectional-pages.cjs
       - name: Restore or compile verified CPython 2.7.18
         if: steps.source.outputs.enabled == 'true'
         uses: ./.github/actions/python27

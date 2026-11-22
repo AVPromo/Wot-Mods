@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 import time
 import uuid
@@ -41,6 +42,21 @@ def _validated_text(value, pattern):
     return value if isinstance(value, text_type) and pattern.match(value) else None
 
 
+def _receipt_directory(data_dir):
+    if os.name != 'nt':
+        return os.path.join(data_dir, 'combat-intake')
+    if isinstance(data_dir, bytes) and not isinstance(data_dir, text_type):
+        data_dir = data_dir.decode(sys.getfilesystemencoding() or 'utf-8')
+    # CPython 2.7 uses wide Windows file APIs for Unicode paths. The extended
+    # spelling reaches the same directory when receipt names exceed MAX_PATH.
+    directory = os.path.abspath(os.path.join(data_dir, 'combat-intake'))
+    if directory.startswith(('\\\\?\\', '\\\\.\\')):
+        return directory
+    if directory.startswith('\\\\'):
+        return '\\\\?\\UNC\\' + directory[2:]
+    return '\\\\?\\' + directory
+
+
 class CombatIntake(object):
     """FIFO writer and garage-only reader for normalized, account-local data.
 
@@ -50,7 +66,7 @@ class CombatIntake(object):
     """
 
     def __init__(self, data_dir):
-        self._directory = os.path.join(data_dir, 'combat-intake')
+        self._directory = _receipt_directory(data_dir)
         self._storage = GenerationStore(self._directory)
         self._condition = threading.Condition()
         self._queue = deque()
@@ -210,6 +226,7 @@ class CombatIntake(object):
                         not isinstance(envelope.get('payload'), dict)):
                     raise ValueError('Invalid combat receipt.')
                 kind, payload = envelope['kind'], envelope['payload']
+                accepted = accept is None or accept(receipt, kind, payload)
             except (IOError, OSError) as error:
                 if error.errno != errno.ENOENT:
                     self._mark_failed()
@@ -219,7 +236,7 @@ class CombatIntake(object):
             except (ValueError, TypeError, UnicodeError, RuntimeError):
                 self._mark_failed()
             else:
-                if accept is None or accept(receipt, kind, payload):
+                if accepted:
                     result.append((receipt, kind, payload))
         return result
 
@@ -230,19 +247,25 @@ class CombatIntake(object):
         if launch_id is None or installation_key is None:
             return False
         path = os.path.join(self._directory, launch_id + '.installation')
-        current = self.bound_installation(launch_id)
-        if current is not None:
-            return current == installation_key
         try:
+            current = self.bound_installation(launch_id)
+            if current is not None:
+                return current == installation_key
             _ensure_directory(self._directory)
             self._publish(path, installation_key.encode('ascii'))
         except (IOError, OSError):
-            if self.bound_installation(launch_id) != installation_key:
-                self._mark_failed()
-                return False
+            # Another process can publish the same immutable marker first.
+            try:
+                if self.bound_installation(launch_id) == installation_key:
+                    return True
+            except (IOError, OSError):
+                pass
+            self._mark_failed()
+            return False
         return True
 
     def bound_installation(self, launch_id):
+        """Return a verified binding or None when there is no marker."""
         launch_id = _validated_text(launch_id, _LAUNCH)
         if launch_id is None:
             return None
@@ -251,11 +274,13 @@ class CombatIntake(object):
             with open(path, 'rb') as handle:
                 installation = _validated_text(handle.read(78), _INSTALLATION)
         except (IOError, OSError) as error:
-            if error.errno != errno.ENOENT:
-                self._mark_failed()
-            return None
+            if error.errno == errno.ENOENT:
+                return None
+            self._mark_failed()
+            raise
         if installation is None:
             self._mark_failed()
+            raise IOError(errno.EINVAL, 'Invalid combat installation marker.')
         return installation
 
     def ack(self, receipt):

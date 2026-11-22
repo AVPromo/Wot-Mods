@@ -1,5 +1,14 @@
 # Session Stats changelog
 
+## 0.9.35 - 2026-11-22
+
+- Preserve battle receipts when reading their installation binding must be retried or the Windows profile path is long.
+- Keep deferred diagnostics through client shutdown and avoid looking up source files to format exceptions during battle.
+- Preserve newer scroll input when results refresh and restore the exact source when returning from a selected battle.
+- Confirm only the latest matching sort request, even when its options match an earlier snapshot.
+- Keep valid Chromium results available when a shard is malformed, reject stale matrices and detect missing or invalid screenshots.
+- Keep Automatic selected after resetting the standalone preview and report the default demo's correct battle count.
+
 ## 0.9.34 - 2026-11-21
 
 - Preserve asynchronously captured battles when an earlier receipt is temporarily unreadable.

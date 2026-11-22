@@ -507,6 +507,14 @@ class ScopeIndex(object):
             position = next(index for index, key in enumerate(ordered) if key[1] == identifier)
         return position // PAGE_SIZE
 
+    def group_page(self, kind, identifier, options=None):
+        if identifier not in self.groups[kind]:
+            return None
+        if not valid_order(options, kind):
+            options = TIER_ORDER if kind == 'tiers' else DEFAULT_ORDER
+        return next(position // PAGE_SIZE for position, group in enumerate(self._ordered(kind, options))
+                    if group.identifier == identifier)
+
     def map_battles(self, identifier, page, options=None):
         return self._group_battles('maps', identifier, page, options)
 

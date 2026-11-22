@@ -30,7 +30,7 @@ def preview_snapshot(service, version, manual):
         token = manual if name == 'manual' else 'launch'
         # The fixture state is fixed. Do not publish the temporary ledger's
         # random manual period and index generation identifiers.
-        scope['period_id'] = scope['data_revision'] = 'preview-' + token
+        scope['period_id'] = scope['data_revision'] = scope['order_epoch'] = 'preview-' + token
         for battle in scope['battles']:
             battle['vehicle_id'] = service.result_context(battle['id']).get('vehicle_id')
     return snapshot
@@ -164,7 +164,7 @@ html { overflow:auto; }
     files['footer-icon.html'] = footer_html
     summary = normal['scopes']['launch']['summary']
     return files, {'launch_battles':summary['battles'], 'wn8':summary['wn8'],
-                   'manual_battles':reset['scopes']['manual']['summary']['battles']}
+                   'manual_battles':normal['scopes']['manual']['summary']['battles']}
 
 
 def main():

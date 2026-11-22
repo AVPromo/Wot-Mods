@@ -118,6 +118,11 @@ async function details(ctx, task, group) {
     'Less collapses the details again');
 }
 
+function interactionResize(width, height) {
+  if (width <= 365 && height <= 730) return null;
+  return {width: height > 730 ? width : Math.max(365, width - 120), height: 730, simulatedHostResize:true};
+}
+
 async function selectedBattle(ctx, task) {
   await ctx.setup({...task, range:'since-sunday', group:'vehicles'});
   const id = await ctx.driver.evaluate(selector => document.querySelector(selector)?.getAttribute('data-battle-id'), source);
@@ -134,14 +139,11 @@ async function selectedBattle(ctx, task) {
   const wait = ctx.until || (async (predicate, message) => ctx.check(await predicate(), message));
   await wait(visibleSelection, 'The link must select the matching battle and reveal the Back control');
   await ctx.snapshot('battle-selected');
-  let resized = null;
-  if (ctx.resize && (task.width > 365 || task.height > 730)) {
-    const width = task.height > 730 ? task.width : Math.max(365, task.width - 120);
-    const height = task.height > 730 ? 730 : task.height;
-    await ctx.resize(width, height);
+  const resized = ctx.resize ? interactionResize(task.width, task.height) : null;
+  if (resized) {
+    await ctx.resize(resized.width, resized.height);
     await wait(visibleSelection, 'The selected battle must stay visible after a simulated host resize');
     await ctx.snapshot('battle-resized');
-    resized = {width, height, simulatedHostResize:true};
   }
   const more = '.ss-battle-target .ss-more-button';
   await ctx.click(more);
@@ -174,4 +176,4 @@ async function runInteractions(ctx, task) {
   return {cases:['sort-menu', 'custom-calendar', 'vehicle-details', 'map-details', 'battle-details', 'selected-battle-and-back'], resize};
 }
 
-module.exports = {runInteractions};
+module.exports = {interactionResize, runInteractions};

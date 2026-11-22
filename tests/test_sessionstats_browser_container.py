@@ -190,6 +190,33 @@ class BrowserContainerTests(unittest.TestCase):
                 if profile != 'smoke':
                     self.assertEqual(command[command.index('--jpeg-quality') + 1], '48')
 
+    def test_merge_uses_checked_out_version_and_same_render_policy_as_the_plan(self):
+        version = self.workspace/'mods/sessionstats/VERSION'
+        version.parent.mkdir(parents=True)
+        version.write_text('9.8.7\n', encoding='ascii')
+        for profile, count in (('smoke', 1), ('full', 16), ('exhaustive', 64)):
+            with self.subTest(profile=profile), patch.object(qa, 'ROOT', self.workspace):
+                report = self.workspace/'report'
+                parts = [str(self.workspace/'artifact with spaces')]
+                sha = 'a' * 40
+                render = qa.e2e_command(profile, report, None, target_sha=sha)
+                merge = qa.merge_report_command(profile, report, count, parts, target_sha=sha)
+                self.assertEqual(merge[merge.index('--expected-version') + 1], '9.8.7')
+                self.assertEqual(merge[merge.index('--expected-shards') + 1], str(count))
+                self.assertEqual(render[render.index('--commit') + 1], sha)
+                self.assertEqual(merge[merge.index('--expected-commit') + 1], sha)
+                for key in ('suite', 'capture'):
+                    self.assertEqual(merge[merge.index('--expected-' + key) + 1],
+                                     render[render.index('--' + key) + 1])
+                self.assertEqual(merge[-2:], ['--', *parts])
+
+    def test_matrix_rejects_a_checkout_that_differs_from_the_planned_commit(self):
+        sha = 'a' * 40
+        with patch.object(qa.subprocess, 'check_output', return_value=sha + '\n'):
+            qa.verify_target_checkout(sha)
+            with self.assertRaisesRegex(RuntimeError, 'does not match the planned matrix commit'):
+                qa.verify_target_checkout('b' * 40)
+
     def test_ci_report_cannot_target_a_private_path_outside_the_workspace(self):
         with patch.object(qa, 'ROOT', self.workspace):
             calls, error = self.invoke(e2e='full', report_dir=self.directory / 'private')

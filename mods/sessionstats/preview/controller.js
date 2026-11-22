@@ -5,12 +5,14 @@
     var current = fixture.normal;
     var currentName = 'normal';
     var language = current.localization && current.localization.language || 'en';
+    var selectedLanguage = current.localization && current.localization.selected || language;
     var historyRequests = Object.create(null);
     var pageSize = 10;
     function copy(snapshot) { return JSON.parse(JSON.stringify(snapshot)); }
     function localized(name) {
         var variants = window.GRZ_DEMO_LOCALIZED;
         var snapshot = copy(variants && variants[language] && variants[language][name] || fixture[name]);
+        if (snapshot.localization) { snapshot.localization.selected = selectedLanguage; }
         Object.keys(historyRequests).forEach(function (key) { applyHistory(snapshot, historyRequests[key]); });
         return snapshot;
     }
@@ -46,9 +48,9 @@
             var code = args.language === 'auto' ? 'en' : args.language;
             var catalog = window.GRZ_DEMO_LANGUAGES && window.GRZ_DEMO_LANGUAGES.languages[code];
             if (catalog) {
-                language = code; current = localized(currentName);
+                language = code; selectedLanguage = args.language; current = localized(currentName);
                 current.localization = current.localization || {};
-                current.localization.language = code; current.localization.selected = args.language; current.localization.messages = catalog;
+                current.localization.language = code; current.localization.selected = selectedLanguage; current.localization.messages = catalog;
                 window.GRZSessionStats.update(current);
             }
         }

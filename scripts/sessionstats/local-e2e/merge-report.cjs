@@ -7,15 +7,25 @@ const {createReadStream}=require('node:fs');
 const {createInterface}=require('node:readline');
 const {parseArgs}=require('node:util');
 const {publicCase,writeReport}=require('./report.cjs');
+const {validScreenshot,viewportForPanel}=require('./screenshot.cjs');
 
 const resultCounters=['completed','failed','interactions','interactionErrors','visualFailures','missingBaselines'];
+const provenance={engine:'chromium',fixture:'synthetic',assets:'test-art'};
+const identityFields={
+  version:value=>typeof value==='string'&&value.length<=64&&/^\d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/i.test(value),
+  suite:value=>['build','smoke','full'].includes(value),
+  capture:value=>['all','final','failures'].includes(value),
+  commit:value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value),
+};
 const imagePath=/^(?:[a-z0-9_-]+\/)*[a-z0-9_-]+\.(?:png|jpe?g)$/i;
-const caseKey=/^[a-z0-9_-]+(?:\/[a-z0-9_-]+)+$/i;
 
-async function transfer(directory,out,relative) {
+async function transfer(directory,out,relative,viewport) {
   assert(imagePath.test(relative),'Unexpected screenshot filename in shard');
   const source=await fs.realpath(path.join(directory,relative));
-  assert(source.startsWith(directory+path.sep)&&(await fs.stat(source)).isFile(),'Screenshot is outside its shard');
+  assert(source.startsWith(directory+path.sep),'Screenshot is outside its shard');
+  const file=await fs.stat(source);
+  assert(file.isFile()&&file.size<=12*1024*1024,'Invalid screenshot file');
+  assert(validScreenshot(await fs.readFile(source),relative,viewport),'Invalid screenshot image or viewport');
   const target=path.join(out,relative);
   await fs.mkdir(path.dirname(target),{recursive:true});
   try {await fs.link(source,target);}
@@ -27,9 +37,10 @@ async function transfer(directory,out,relative) {
   return target;
 }
 
-async function merge({out,input,expected}) {
+async function merge({out,input,expected,expectedIdentity}) {
   const files=[];
   const seen=new Set();
+  const identityKeys=Object.keys(identityFields);
   let metadata, invalidManifest=false;
   for(const sourcePath of input) {
     let directory, state;
@@ -43,34 +54,42 @@ async function merge({out,input,expected}) {
     }
     // A damaged manifest never authorizes reading or copying that shard's
     // data. A manifest declaring private inputs rejects the whole upload.
-    const required={engine:'chromium',fixture:'synthetic',assets:'test-art'};
-    assert(!state||!Object.keys(required).some(key=>typeof state[key]==='string'&&state[key]&&state[key]!==required[key]),
+    assert(!state||!Object.keys(provenance).some(key=>typeof state[key]==='string'&&state[key]&&state[key]!==provenance[key]),
       'Only synthetic Chromium shards are accepted in an uploadable report');
-    const shard=state&&/^(\d+)\/(\d+)$/.exec(state.shard||'');
+    const shard=typeof state?.shard==='string'&&/^(\d+)\/(\d+)$/.exec(state.shard);
     const number=shard ? Number(shard[1]) : 0;
-    if(!shard||number<1||number>expected||Number(shard[2])!==expected||seen.has(number)||
-        !Object.keys(required).every(key=>state[key]===required[key])||
-        typeof state.version!=='string'||state.version.length>64||
-        !/^\d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/i.test(state.version)||
-        !['build','smoke','full'].includes(state.suite)||!['all','final','failures'].includes(state.capture)||
+    if(!shard||number<1||number>expected||Number(shard[2])!==expected||
+        !Object.keys(provenance).every(key=>state[key]===provenance[key])||
+        !identityKeys.every(key=>(key==='commit'&&state[key]===undefined)||identityFields[key](state[key]))||
         !['planned',...resultCounters].every(key=>Number.isSafeInteger(state[key])&&state[key]>=0)) {
       invalidManifest=true;
       console.error('A shard manifest has invalid or duplicate metadata');
       continue;
     }
-    const identity=JSON.stringify([state.suite,state.version,state.engine,state.capture]);
+    if(Object.entries(expectedIdentity).some(([key,value])=>state[key]!==value)) {
+      invalidManifest=true;
+      console.error('A shard manifest does not match the requested version, suite, capture mode or commit');
+      continue;
+    }
+    if(seen.has(number)) {
+      invalidManifest=true;
+      console.error('A shard manifest has invalid or duplicate metadata');
+      continue;
+    }
+    const identity=JSON.stringify(identityKeys.map(key=>state[key]));
     if(metadata===undefined) metadata=identity;
     if(metadata!==identity) {
       invalidManifest=true;
-      console.error('A shard manifest has a different suite or version');
+      console.error('A shard manifest has a different version, suite, capture mode or commit');
       continue;
     }
     seen.add(number);
     files.push({directory,state,number});
   }
   const first=files[0]?.state;
-  const summary={version:first?.version||'unknown',engine:'chromium',renderer:first?.renderer||null,
-    suite:first?.suite||'full',fixture:'synthetic',assets:'test-art',capture:first?.capture||null,
+  const summary={version:expectedIdentity.version??first?.version??'unknown',engine:'chromium',renderer:first?.renderer||null,
+    suite:expectedIdentity.suite??first?.suite??'full',fixture:'synthetic',assets:'test-art',
+    capture:expectedIdentity.capture??first?.capture??null,commit:expectedIdentity.commit??first?.commit,
     expectedShards:expected,shards:files.length,omittedRows:0,
     finished:!invalidManifest&&files.length===expected&&files.every(({state})=>state.finished===true)};
   summary.planned=files.reduce((sum,file)=>sum+file.state.planned,0);
@@ -90,13 +109,14 @@ async function merge({out,input,expected}) {
           const copied=[];
           try {
             item=JSON.parse(line);
-            row=publicCase(item);
-            assert(row&&caseKey.test(row.key)&&!keys.has(row.key),'Invalid or duplicate case in shard');
+            row=publicCase(item,{capture:state.capture});
+            assert(row&&!keys.has(row.key),'Invalid or duplicate case in shard');
+            const viewport=viewportForPanel(row.width,row.height);
             for(const frame of row.frames) {
               const image=row.key+'/'+frame.file;
-              copied.push(await transfer(directory,out,image));
-              if(frame.reference) copied.push(await transfer(directory,out,'baseline/'+image));
-              if(frame.diff) copied.push(await transfer(directory,out,'differences/'+image));
+              copied.push(await transfer(directory,out,image,viewport));
+              if(frame.reference) copied.push(await transfer(directory,out,'baseline/'+image,viewport));
+              if(frame.diff) copied.push(await transfer(directory,out,'differences/'+image,viewport));
             }
           } catch {
             summary.finished=false;
@@ -141,8 +161,15 @@ async function merge({out,input,expected}) {
 }
 
 const {values,positionals}=parseArgs({allowPositionals:true,
-  options:{out:{type:'string'},'expected-shards':{type:'string'}}});
+  options:{out:{type:'string'},'expected-shards':{type:'string'},'expected-version':{type:'string'},
+    'expected-suite':{type:'string'},'expected-capture':{type:'string'},'expected-commit':{type:'string'}}});
 const expected=Number(values['expected-shards']||positionals.length);
-assert(values.out&&Number.isInteger(expected)&&expected>=1,'Use --out DIRECTORY [--expected-shards N] [shard directories]');
-merge({out:path.resolve(values.out),expected,input:positionals})
+const expectedIdentity=Object.fromEntries(Object.keys(identityFields)
+  .filter(key=>values['expected-'+key]!==undefined).map(key=>[key,values['expected-'+key]]));
+assert(values.out&&Number.isSafeInteger(expected)&&expected>=1,
+  'Use --out DIRECTORY [--expected-shards N] [--expected-version VERSION] '+
+  '[--expected-suite SUITE] [--expected-capture CAPTURE] [--expected-commit SHA] [shard directories]');
+assert(Object.entries(expectedIdentity).every(([key,value])=>identityFields[key](value)),
+  'Invalid expected version, suite, capture mode or commit');
+merge({out:path.resolve(values.out),expected,expectedIdentity,input:positionals})
   .catch(error=>{console.error(error.message);process.exitCode=1;});

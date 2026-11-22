@@ -85,6 +85,15 @@ module.exports=async({browser,nativeHost,check})=>{
     await vehicleResult.click();
     check('Show battle in the standalone vehicle history selects the matching synthetic result',
       await selected.getAttribute('data-group-id')===vehicleArena);
+    const language=preview.locator('#ss-language');
+    await language.locator('.ss-select-trigger').click();
+    await language.locator('[data-value="auto"]').click();
+    await preview.locator('#demo-restart').click();await frames(preview);
+    await language.locator('.ss-select-trigger').click();
+    check('Restoring the standalone example keeps Automatic selected with English preview text',
+      await language.locator('[data-value="auto"]').getAttribute('aria-selected')==='true'&&
+      await preview.locator('html').getAttribute('lang')==='en'&&
+      await preview.locator('#demo-restart').textContent()==='Restore example');
   }finally{await preview.close();}
   const legacy=await browser.newPage(),legacyErrors=[];legacy.on('pageerror',error=>legacyErrors.push(String(error)));
   try{

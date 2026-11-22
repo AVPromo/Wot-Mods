@@ -59,6 +59,7 @@ jobs:
           COVERAGE: ${{ needs.configuration.outputs.coverage }}
           SHARD_COUNT: ${{ needs.configuration.outputs.shard_count }}
           SHARD: ${{ matrix.shard }}
+          TARGET_SHA: ${{ needs.configuration.outputs.target_sha }}
         run: |
           set -euo pipefail
           args=()
@@ -66,7 +67,7 @@ jobs:
             args+=(--shard "$SHARD/$SHARD_COUNT")
           fi
           python3 -I scripts/sessionstats/browser_qa.py --e2e "$COVERAGE" \
-            --report-dir "sessionstats-report-part" "${args[@]}"
+            --target-sha "$TARGET_SHA" --report-dir "sessionstats-report-part" "${args[@]}"
       - name: Upload intermediate results for the report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -103,7 +104,9 @@ jobs:
           path: sessionstats-matrix-parts
       - name: Assemble offline HTML and screenshots
         env:
+          COVERAGE: ${{ needs.configuration.outputs.coverage }}
           SHARD_COUNT: ${{ needs.configuration.outputs.shard_count }}
+          TARGET_SHA: ${{ needs.configuration.outputs.target_sha }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -115,8 +118,9 @@ jobs:
               parts+=("$part")
             fi
           done
-          node scripts/sessionstats/local-e2e/merge-report.cjs --out sessionstats-matrix-html \
-            --expected-shards "$SHARD_COUNT" "${parts[@]}"
+          python3 -I scripts/sessionstats/browser_qa.py --merge-report "$COVERAGE" \
+            --target-sha "$TARGET_SHA" --report-dir sessionstats-matrix-html \
+            --expected-shards "$SHARD_COUNT" -- "${parts[@]}"
       - name: Upload the browsable Session Stats matrix
         id: matrix
         if: ${{ !cancelled() }}

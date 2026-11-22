@@ -31,7 +31,7 @@ class BuildContracts(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('sessionstats_preview', self.build.ROOT/'tools/make_preview.py')
         preview = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(preview)
-        files, _ = preview.preview_files('9.8.7')
+        files, summary = preview.preview_files('9.8.7')
         self.assertEqual(files, preview.preview_files('9.8.7')[0])
         self.assertIn('"version":"9.8.7"', files['PREVIEW.html'])
         fixtures = json.loads(files['demo_snapshot.json'])
@@ -39,6 +39,8 @@ class BuildContracts(unittest.TestCase):
         normal, reset = (fixtures[name]['scopes'] for name in ('normal', 'reset'))
         self.assertEqual(normal['launch']['period_id'], reset['launch']['period_id'])
         self.assertNotEqual(normal['manual']['period_id'], reset['manual']['period_id'])
+        self.assertEqual(summary['manual_battles'], normal['manual']['summary']['battles'])
+        self.assertNotEqual(summary['manual_battles'], reset['manual']['summary']['battles'])
         self.assertTrue(all(row['vehicle_id'] for row in normal['launch']['battles']))
 
     def test_active_guides_use_requested_package_and_client_versions(self):

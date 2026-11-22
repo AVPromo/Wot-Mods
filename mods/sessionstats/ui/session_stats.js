@@ -16,6 +16,7 @@
         targetFocusTransfer: false, targetResizePress: false, targetTab: null,
         targetTimer: null, targetSequence: 0, feed: null, renderedFeed: null,
         feedSequence: 0, feedForceStart: null, pageJump: null, pageJumpTimer: null, filterShift: 0, orderIntent: null,
+        orderClient: null, orderSequence: 0,
         openBattles: {}, resize: null, logicalSize: null,
         cardFlowToken: 0, cardFlowQueued: false, cardFlowAttempts: 0, cardFlowTimer: null,
         windowPrefs: null, windowSaved: null, windowPending: null, windowChanges: {}, windowStatusBeforeError: null,
@@ -1527,6 +1528,33 @@
         state.orderIntent = null;
         if (intent) { cancelUITimer(intent.timer); }
     }
+    function orderRequestId() {
+        if (!state.orderClient) {
+            state.orderClient = 'sort-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + '-';
+        }
+        return state.orderClient + (++state.orderSequence);
+    }
+    function orderReplySequence(meta) {
+        var id = meta && meta.order_request_id;
+        return typeof id === 'string' && id.indexOf(state.orderClient) === 0 ?
+            Number(id.slice(state.orderClient.length)) : null;
+    }
+    function hasOlderOrderReply(snapshot) {
+        if (!state.orderClient || !state.payload || state.payload.account_key !== snapshot.account_key) { return false; }
+        var displayed = state.payload.scopes;
+        return Object.keys(displayed).some(function (name) {
+            var prior = displayed[name], next = snapshot.scopes[name];
+            // A new projection owner can legitimately have no known requests.
+            if (!prior || !next || !prior.order_epoch || prior.order_epoch !== next.order_epoch ||
+                    prior.period_id !== next.period_id || !prior.pagination || !next.pagination ||
+                    next.loading || next.load_error) { return false; }
+            return Object.keys(prior.pagination).some(function (group) {
+                if (!next.pagination[group]) { return false; }
+                var latest = orderReplySequence(prior.pagination[group]), received = orderReplySequence(next.pagination[group]);
+                return latest !== null && (received === null || received < latest);
+            });
+        });
+    }
     function changeOrder(field, value) {
         if (state.destroyed || !state.payload || !state.payload.scopes) { return; }
         var scope = currentScope(), current = getOrder(scope);
@@ -1547,7 +1575,8 @@
         if (state.nativeSession && scope.pagination) {
             clearOrderIntent();
             state.actionError = null;
-            var intent = {context:viewContext(), group:state.group, options:options, timer:null};
+            var intent = {context:viewContext(), group:state.group, options:options, id:orderRequestId(),
+                epoch:scope.order_epoch, timer:null};
             state.orderIntent = intent;
             intent.timer = window.setTimeout(function () {
                 if (state.orderIntent !== intent) { return; }
@@ -1558,7 +1587,7 @@
             }, 10000);
             renderSelects(scope);
             options.scope = scopeName(); options.group = state.group;
-            options.period_id = scope.period_id; options.account_key = state.payload.account_key;
+            options.period_id = scope.period_id; options.account_key = state.payload.account_key; options.request_id = intent.id;
             if (!invoke('sort',options) && state.orderIntent === intent) { clearOrderIntent(); renderSelects(scope); }
         } else {
             if (options.metric !== 'off') { rememberedMetric(scope, options.metric); }
@@ -2958,7 +2987,7 @@
         ['key', 'collectionKey', 'contextKey', 'revision', 'context', 'group', 'start', 'last', 'current', 'pages', 'total', 'size', 'version'].forEach(function (key) { copy[key] = feed[key]; });
         Object.keys(feed.cache).forEach(function (key) { cache[key] = feed.cache[key].slice(0); signatures[key] = feed.signatures[key]; });
         copy.cache = cache; copy.signatures = signatures; copy.pending = null; copy.error = null;
-        copy.navigationPage = null; copy.navigationDeadline = null; copy.topRequested = false; copy.prependAnchor = null;
+        copy.navigationPage = null; copy.navigationDeadline = null; copy.topRequested = false; copy.prependAnchor = null; copy.refreshInput = null;
         return copy;
     }
     function summaryOriginCell(source) {
@@ -2997,14 +3026,21 @@
         var meta = scope.pagination && scope.pagination[state.group];
         origin.feed = copyBattleOriginFeed(feed); origin.page = feed ? feed.current : meta ? meta.page : 0;
         var viewport = nodes.scroll.getBoundingClientRect(), edge = viewport.top + pinnedFilterHeight(), scale = state.nativeScale || 1;
+        var visiblePages = [];
         (state.groupCards || []).forEach(function (card) {
             var box = origin.anchors.length < 3 ? card.getBoundingClientRect() : null, section = card.parentNode;
             if (box && box.height > 0 && box.bottom > edge && box.top < viewport.bottom) {
-                while (section && section !== nodes.groups && !section.hasAttribute('data-page-index')) { section = section.parentNode; }
                 origin.anchors.push({id:card.getAttribute('data-group-id'), offset:(box.top - viewport.top) / scale});
+                while (section && section !== nodes.groups && !section.hasAttribute('data-page-index')) { section = section.parentNode; }
                 if (origin.anchors.length === 1 && section && section !== nodes.groups) { origin.page = Number(section.getAttribute('data-page-index')); }
             }
         });
+        if (feed) {
+            (state.cardPages || []).forEach(function (page) {
+                var box = page.section.getBoundingClientRect();
+                if (box.bottom > edge && box.top < viewport.bottom) { visiblePages.push(page.index); }
+            });
+        }
         if (source && root.contains(source)) {
             var card = source;
             while (card && card !== root && !card.hasAttribute('data-group-id')) { card = card.parentNode; }
@@ -3015,6 +3051,15 @@
                 var cell = summaryOriginCell(origin.source);
                 origin.source.summaryOffset = (nodes.summary.getBoundingClientRect().top - viewport.top) / scale;
                 origin.source.cellOffset = cell ? (cell.getBoundingClientRect().top - viewport.top) / scale : null;
+            } else if (origin.source.card !== null) {
+                var page = (state.cardPages || []).filter(function (item) { return item.cards.indexOf(card) >= 0; })[0];
+                origin.source.cardOffset = (card.getBoundingClientRect().top - viewport.top) / scale;
+                origin.source.buttonOffset = (source.getBoundingClientRect().top - viewport.top) / scale;
+                if (feed && page) {
+                    origin.source.page = page.index;
+                    origin.source.neighbor = visiblePages.indexOf(page.index - 1) >= 0 ? -1 :
+                        visiblePages.indexOf(page.index + 1) >= 0 ? 1 : 0;
+                }
             }
         }
         return origin;
@@ -3100,9 +3145,15 @@
         returning.phase = 'page';
         returning.request = 'return-' + Date.now().toString(36) + '-' + (++state.navigationSequence);
         var origin = returning.origin, scope = currentScope(), meta = scope.pagination && scope.pagination[origin.group];
-        returning.page = Math.max(0, Math.min(origin.page, meta ? meta.pages - 1 : origin.page));
-        if (!invoke('page', {account_key:origin.context.account_key, scope:origin.context.scope, period_id:origin.context.period_id,
-                group:origin.group, page:returning.page, request_id:returning.request})) {
+        var revision = String(scope.data_revision || JSON.stringify(scope.summary));
+        if (!earlierDataRevision(revision, returning.latestRevision)) { returning.latestRevision = revision; }
+        var source = origin.source, page = source && hasNumber(source.page) ? source.page : origin.page;
+        returning.page = Math.max(0, Math.min(page, meta ? meta.pages - 1 : page));
+        var args = {account_key:origin.context.account_key, scope:origin.context.scope, period_id:origin.context.period_id,
+            group:origin.group, page:returning.page, request_id:returning.request};
+        if (source && source.card !== null && origin.group !== 'battles') { args.anchor_id = source.card; }
+        returning.locatingSource = !!args.anchor_id;
+        if (!invoke('page', args)) {
             cancelBattleNavigation(); setActionError(t('page.error'));
         }
     }
@@ -3113,17 +3164,40 @@
         if (!sameContext(origin.context) || state.group !== origin.group) { cancelBattleNavigation(); return; }
         if (orderingUnavailable(scope)) { return; }
         if (!sameBattleOriginOrder(scope.ordering && scope.ordering[origin.group] || getOrder(scope), origin.order)) { return; }
-        if (returning.phase === 'sort') { requestBattleReturnPage(returning); return; }
         var meta = scope.pagination && scope.pagination[origin.group];
-        if (returning.phase !== 'page' || !meta || meta.page !== returning.page || meta.request_id !== returning.request) { return; }
+        if (returning.phase === 'sort') {
+            if (meta && meta.order_request_id === returning.sortRequest) { requestBattleReturnPage(returning); }
+            return;
+        }
+        var revision = String(scope.data_revision || JSON.stringify(scope.summary));
+        var earlier = earlierDataRevision(revision, returning.latestRevision);
+        if (!earlier) { returning.latestRevision = revision; }
+        if (!earlier && returning.phase === 'restore' && returning.mounted && returning.revision !== revision) {
+            // A newer projection invalidates both the source rank and its
+            // surroundings while the return is still settling.
+            retireFeed(); state.feedForceStart = null;
+            returning.mounted = false; returning.neighbor = null;
+            returning.requestedOffset = returning.lastOffset = returning.focused = null;
+            returning.stable = 0; returning.settled = Date.now();
+            requestBattleReturnPage(returning); return;
+        }
+        if (returning.phase !== 'page' || !meta || meta.request_id !== returning.request ||
+                (!returning.locatingSource && meta.page !== returning.page)) { return; }
+        if (earlier) { requestBattleReturnPage(returning); return; }
+        returning.page = meta.page;
+        returning.revision = revision;
         returning.phase = 'restore';
         if (!returning.mounted) {
-            if (origin.feed && origin.feed.revision === String(scope.data_revision || JSON.stringify(scope.summary)) &&
+            if (origin.feed && origin.feed.revision === returning.revision &&
                     origin.feed.collectionKey === feedCollectionIdentity(scope) && origin.language === state.language) {
                 state.feed = copyBattleOriginFeed(origin.feed); state.renderedFeed = null;
                 state.feed.key = feedIdentity(scope); state.feed.collectionKey = feedCollectionIdentity(scope); state.feed.contextKey = feedContextIdentity();
                 state.feedForceStart = null;
-            } else { state.feedForceStart = returning.page; }
+            } else {
+                state.feedForceStart = returning.page;
+                var neighbor = origin.source && origin.source.neighbor ? returning.page + origin.source.neighbor : -1;
+                if (neighbor >= 0 && neighbor < meta.pages) { returning.neighbor = neighbor; }
+            }
             returning.mounted = true;
         }
         queueBattleReturn(returning);
@@ -3139,8 +3213,11 @@
         if (state.nativeSession && scope.pagination) {
             if (!sameBattleOriginOrder(actual, origin.order)) {
                 returning.phase = 'sort';
-                state.orderIntent = {context:origin.context, group:origin.group, options:origin.order};
-                var args = {account_key:origin.context.account_key, scope:origin.context.scope, period_id:origin.context.period_id, group:origin.group};
+                returning.sortRequest = orderRequestId();
+                state.orderIntent = {context:origin.context, group:origin.group, options:origin.order,
+                    id:returning.sortRequest, epoch:scope.order_epoch};
+                var args = {account_key:origin.context.account_key, scope:origin.context.scope, period_id:origin.context.period_id,
+                    group:origin.group, request_id:returning.sortRequest};
                 ['metric', 'statistic', 'direction', 'chronology'].forEach(function (key) { args[key] = origin.order[key]; });
                 if (!invoke('sort', args)) { cancelBattleNavigation(); setActionError(t('page.error')); }
             } else { requestBattleReturnPage(returning); }
@@ -3152,8 +3229,7 @@
         if (state.cardFlowQueued || state.groupMinHeight || state.feedStaging || nodes.groups.getAttribute('aria-busy') === 'true' || battleScrollPending(returning)) {
             queueBattleReturn(returning); return;
         }
-        var origin = returning.origin, scope = currentScope(), meta = scope.pagination && scope.pagination[origin.group];
-        if (state.nativeSession && meta && meta.page !== returning.page) { requestBattleReturnPage(returning); queueBattleReturn(returning); return; }
+        var origin = returning.origin;
         var scale = state.nativeScale || 1, scroll = nodes.scroll, viewport = scroll.getBoundingClientRect(), offset = origin.scroll * scale, anchor = null;
         origin.anchors.some(function (saved) {
             return (state.groupCards || []).some(function (card) {
@@ -3163,14 +3239,28 @@
         });
         var focus = findBattleOriginFocus(origin);
         if (returning.focused !== focus) { focusControl(focus); returning.focused = focus; }
-        var summaryPosition = null, sourceOffset = null;
+        var sourcePosition = null, sourceOffset = null;
         if (origin.source && origin.source.summary) {
-            summaryPosition = summaryOriginPosition(origin.source, viewport);
-            if (!summaryPosition) { queueBattleReturn(returning); return; }
-            var saved = summaryPosition.cell && hasNumber(origin.source.cellOffset) ? origin.source.cellOffset : origin.source.summaryOffset;
+            sourcePosition = summaryOriginPosition(origin.source, viewport);
+            if (!sourcePosition) { queueBattleReturn(returning); return; }
+            var saved = sourcePosition.cell && hasNumber(origin.source.cellOffset) ? origin.source.cellOffset : origin.source.summaryOffset;
             sourceOffset = hasNumber(saved) ? saved * scale : 0;
-            offset = summaryPosition.content - sourceOffset;
-        } else if (anchor) {
+        } else if (origin.source && origin.source.card !== null) {
+            var card = (state.groupCards || []).filter(function (item) {
+                return item.getAttribute('data-group-id') === origin.source.card;
+            })[0];
+            if (card) {
+                var exact = returnedSourceMatches(origin, focus), sourceNode = exact ? focus : card;
+                var cardBox = card.getBoundingClientRect(), sourceBox = exact ? sourceNode.getBoundingClientRect() : cardBox;
+                if (!(sourceBox.width > 1) || !(sourceBox.height > 1)) { queueBattleReturn(returning); return; }
+                var position = battleLayoutOffset(card, scroll);
+                if (position === null) { position = scroll.scrollTop + cardBox.top - viewport.top; }
+                sourcePosition = {node:sourceNode, content:position + sourceBox.top - cardBox.top};
+                sourceOffset = (exact ? origin.source.buttonOffset : origin.source.cardOffset) * scale;
+            }
+        }
+        if (sourcePosition) { offset = sourcePosition.content - sourceOffset; }
+        else if (anchor) {
             var layout = battleLayoutOffset(anchor.card, scroll), box = anchor.card.getBoundingClientRect();
             if (!(box.width > 1) || !(box.height > 1)) { queueBattleReturn(returning); return; }
             offset = (layout === null ? scroll.scrollTop + box.top - viewport.top : layout) - anchor.saved.offset * scale;
@@ -3182,14 +3272,15 @@
         }
         returning.requestedOffset = offset; state.scrollTarget = offset; scroll.scrollTop = offset;
         var sourceAligned = true;
-        if (summaryPosition) {
-            var alignedSource = summaryPosition.node.getBoundingClientRect();
+        if (sourcePosition) {
+            var alignedSource = sourcePosition.node.getBoundingClientRect();
             sourceAligned = alignedSource.width > 1 && alignedSource.height > 1 &&
                 Math.abs(alignedSource.top - viewport.top - sourceOffset - unclampedOffset + offset) <= scale;
         }
         if (!battleScrollPending(returning) && Math.abs(scroll.scrollTop - offset) <= scale && sourceAligned) { returning.stable += 1; }
         else { returning.stable = 0; returning.settled = Date.now(); }
         if (returning.stable >= 3 && Date.now() - returning.settled >= 300) {
+            suspendResizePrefetch();
             state.battleReturn = null; state.battleReturnTimer = null;
             markReturnedSource(origin, focus); syncScrollbar(); return;
         }
@@ -4234,6 +4325,22 @@
     }
     function feedIdentity(scope) { return feedCollectionIdentity(scope) + '/' + state.language; }
     function feedContextIdentity() { return JSON.stringify([state.payload.account_key, scopeName(), currentScope().period_id, state.group]); }
+    function earlierDataRevision(candidate, current) {
+        // Projection generations change on rebuild. Only their own counters
+        // can establish which snapshot is older.
+        var parsed = /^(.+):(\d+)$/.exec(candidate), known = /^(.+):(\d+)$/.exec(current);
+        return parsed && known && parsed[1] === known[1] && Number(parsed[2]) < Number(known[2]);
+    }
+    function hasOlderPageReply(snapshot) {
+        if (!state.payload || snapshot.account_key !== state.payload.account_key || state.orderIntent) { return false; }
+        var incoming = snapshot.scopes[scopeName()], current = currentScope(), returning = state.battleReturn;
+        var meta = incoming && incoming.pagination && incoming.pagination[state.group];
+        var focus = incoming && incoming.battle_focus, pending = state.pendingBattle;
+        if (focus && pending && focus.request_id === pending.request_id) { return false; }
+        return meta && meta.request_id && current && incoming.period_id === current.period_id &&
+            !(returning && returning.phase === 'page' && meta.request_id === returning.request) &&
+            earlierDataRevision(incoming.data_revision, current.data_revision);
+    }
     function cancelUITimer(timer) {
         if (timer !== null && timer !== undefined) { try { window.clearTimeout(timer); } catch (error) { /* Ownership guards retire retained callbacks. */ } }
     }
@@ -4315,6 +4422,7 @@
         if ((index !== null && index < feed.start) || (prior && Number(prior.getAttribute('data-page-index')) < feed.start)) { captureFeedAnchor(feed); }
         var old = nodes.groups.querySelector('.ss-page-pending');
         if (old && old.parentNode) { old.parentNode.removeChild(old); }
+        if (state.renderedFeed !== feed && feed.refreshing && feed.pending) { return; }
         if (!feed.pending && feed.error === null) { finishFeedAnchor(); return; }
         var section = pageBoundary(feed, index, !!feed.pending);
         section.className += ' ss-page-pending';
@@ -4344,6 +4452,14 @@
         function fail() {
             if (state.destroyed || state.feed !== feed || feed.pending !== pending) { return; }
             feed.pending = null; feed.error = index; feed.errorNavigate = pending.navigate;
+            var returning = state.battleReturn;
+            if (returning && index === returning.neighbor) {
+                // The exact source page already arrived. Finish the return
+                // if its optional surrounding page could not be loaded.
+                returning.neighbor = null;
+                feed.start = feed.last = returning.page; feed.error = null;
+                render(); return;
+            }
             if (state.renderedFeed !== feed) { nodes.groups.setAttribute('aria-busy', 'false'); }
             showFeedPending(feed); updateFeedControls(); setStatus(t('page.error'));
         }
@@ -4379,6 +4495,53 @@
         return {index:index, id:node && node.getAttribute('data-group-id'),
             offset:offset,
             sectionOffset:section.top - viewport.top, remaining:3, attempts:0, deadline:null};
+    }
+    function visibleRefreshPage(feed) {
+        var viewport = nodes.scroll.getBoundingClientRect(), scale = state.nativeScale || 1;
+        var edge = viewport.top + pinnedFilterHeight() + 24 * scale, current = null, last = null;
+        (state.cardPages || []).forEach(function (page) {
+            var box = page.section.getBoundingClientRect();
+            if (!(box.height > 1)) { return; }
+            if (current === null || box.top <= edge) { current = page.index; }
+            last = {index:page.index, bottom:box.bottom};
+        });
+        // The short last page may fit below the filter bar at the bottom.
+        if (last && last.bottom <= viewport.bottom + 2 * scale) { return last.index; }
+        return current === null ? feed.current : current;
+    }
+    function retargetFeedRefresh(feed, page) {
+        if (feed.start === page) { return; }
+        if (feed.pending) { cancelUITimer(feed.pending.timer); feed.pending = null; }
+        feed.start = feed.last = feed.current = page;
+        feed.error = null;
+        suspendResizePrefetch();
+    }
+    function deferFeedRefresh(feed) {
+        var work = feed.refreshInput;
+        if (work) {
+            work.frames = 0;
+            if (work.waiting && !state.scrollbarDrag) { work.waiting = false; work.schedule(); }
+            return;
+        }
+        work = {frames:0, attempts:0, offset:null, waiting:false, schedule:schedule}; feed.refreshInput = work;
+        function schedule() {
+            if (typeof window.requestAnimationFrame === 'function') { window.requestAnimationFrame(settle); }
+            else { window.setTimeout(settle, 16); }
+        }
+        function settle() {
+            if (state.destroyed || state.feed !== feed || feed.refreshInput !== work || state.renderedFeed === feed) { return; }
+            work.frames += 1; work.attempts += 1;
+            // Wheel and rail setters can be acknowledged on a later paint.
+            // Default keyboard scrolling can start after the input callback.
+            if (state.scrollbarDrag) { work.waiting = true; return; }
+            if (work.attempts < 60 && (work.frames < 8 ||
+                    battleScrollPending({requestedOffset:work.offset === null ? nodes.scroll.scrollTop : work.offset}))) {
+                schedule(); return;
+            }
+            feed.refreshInput = null;
+            render();
+        }
+        schedule();
     }
     function finishRefreshAnchor() {
         var feed = state.feed, anchor = feed && feed.refreshAnchor;
@@ -4420,10 +4583,11 @@
         // A superseded navigation response can arrive after the focus response.
         // Keep the mounted selection even if that reply has a different revision.
         if (following && feed && feed.key === key && (meta.request_id || focus) && focusedPage === null) { return feed; }
-        if (feed && feed.key === key && feed.refreshing && feed !== old && feed.pending &&
+        if (feed && feed.key === key && feed.refreshing && feed !== old && (feed.pending || feed.refreshInput) &&
                 feed.start < meta.pages && focusedPage === null) {
             // The in-flight request is still for the visible page. Later
             // revisions must not keep retiring and reissuing that request.
+            if (feed.revision !== revision) { feed.cache = {}; feed.signatures = {}; }
             feed.revision = revision;
         }
         if (!feed || feed.key !== key || feed.revision !== revision || (focusedPage !== null && focusedPage !== feed.start)) {
@@ -4437,12 +4601,13 @@
                 !state.battleJump && !returning && old && old.collectionKey === collectionKey;
             retireFeed();
             var start = state.feedForceStart !== null ? state.feedForceStart : focusedPage !== null ? focusedPage :
-                hasNumber(navigation) ? navigation : topRequested ? 0 : refreshing ? old.current : meta.page;
+                hasNumber(navigation) ? navigation : topRequested ? 0 : refreshing ? visibleRefreshPage(old) : meta.page;
             start = Math.max(0, Math.min(start, meta.pages - 1));
+            var neighbor = returning && returning.mounted && state.feedForceStart !== null && hasNumber(returning.neighbor) ? returning.neighbor : start;
             // Rebuild around one visible page. Previously visited pages can
             // be loaded from the new revision as the user reaches either edge.
             feed = {key:key, collectionKey:collectionKey, contextKey:feedContextIdentity(), revision:revision, context:viewContext(), group:state.group, cache:{}, signatures:{}, pending:null,
-                error:null, start:start, last:start, current:start,
+                error:null, start:Math.min(start, neighbor), last:Math.max(start, neighbor), current:start,
                 pages:meta.pages, total:meta.total, size:meta.page_size || 40, version:0, navigationPage:null, navigationDeadline:null,
                 topRequested:!!topRequested, prependAnchor:null, refreshing:!!refreshing,
                 preserveRefreshAnchor:!!refreshing, refreshAnchor:null};
@@ -4455,6 +4620,10 @@
         }
         feed.pages = meta.pages; feed.total = meta.total;
         feed.last = Math.min(feed.last, meta.pages - 1);
+        if (feed.refreshing && old && feed !== old && !feed.refreshInput && !feed.topRequested && focusedPage === null) {
+            if (state.scrollbarDrag) { deferFeedRefresh(feed); }
+            else { retargetFeedRefresh(feed, Math.max(0, Math.min(visibleRefreshPage(old), meta.pages - 1))); }
+        }
         var pending = feed.pending;
         var matching = !pending || (meta.page === pending.page && (!meta.request_id || meta.request_id === pending.id));
         if (matching) {
@@ -4487,7 +4656,7 @@
         }
         if (feed.topRequested && Object.prototype.hasOwnProperty.call(feed.cache, 0)) { revealFeedTop(feed); }
         if (!feed.pending && feed.error === null && feed.topRequested) { requestFeedPage(feed, 0, false); }
-        if (!feed.pending && feed.error === null && !feed.topRequested) {
+        if (!feed.pending && feed.error === null && !feed.topRequested && !feed.refreshInput) {
             for (var index = feed.start; index <= feed.last; index += 1) {
                 if (!Object.prototype.hasOwnProperty.call(feed.cache, index)) { requestFeedPage(feed, index, false); break; }
             }
@@ -4525,6 +4694,7 @@
         var meta = scope.pagination && scope.pagination[state.group];
         nodes['list-meta'].textContent = t('groups.' + state.group + '.total', [number(meta ? meta.total : (scope[state.group] || []).length)]);
         if (feed) {
+            if (feed.refreshInput && state.renderedFeed !== feed) { complete = false; }
             for (var index = feed.start; index <= feed.last; index += 1) {
                 if (!Object.prototype.hasOwnProperty.call(feed.cache, index)) { complete = false; break; }
             }
@@ -4773,7 +4943,7 @@
         if (state.destroyed) { return; }
         updatePinnedFilters();
         var guard = state.resizeFeedGuard;
-        if (state.pendingBattle || state.orderIntent || battleOwnsViewport() || state.resize ||
+        if (state.pendingBattle || state.battleReturn || state.orderIntent || battleOwnsViewport() || state.resize ||
                 (guard && guard.view === state.viewKey && guard.feed === state.feed)) { return; }
         if (state.renderedFeed && state.feed === state.renderedFeed) {
             var feed = state.feed;
@@ -4829,8 +4999,12 @@
         event.preventDefault(); event.stopPropagation();
         var last = Math.max(0, nodes.scroll.scrollHeight - nodes.scroll.clientHeight);
         var current = state.scrollTarget === null ? nodes.scroll.scrollTop : state.scrollTarget;
+        var work = state.feed && state.feed.refreshInput;
+        if (work && work.offset !== null) { current = work.offset; }
+        var destination = Math.max(0, Math.min(last, current + step));
+        if (work) { work.offset = destination; }
         state.scrollTarget = null;
-        nodes.scroll.scrollTop = Math.max(0, Math.min(last, current + step));
+        nodes.scroll.scrollTop = destination;
         /* Some client revisions deliver programmatic scroll events later.
            Appending near the end must not depend on another wheel notch. */
         loadNearEdges();
@@ -4866,14 +5040,16 @@
             if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey ||
                     ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 38, 40, 33, 34, 36, 35, 32].indexOf(key) < 0) { return; }
             while (target && target !== nodes.scroll) {
-                if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'SELECT') { return; }
+                if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' ||
+                        target.onkeydown || (target.tagName === 'BUTTON' && (key === ' ' || key === 32))) { return; }
                 target = target.parentNode;
             }
         } else if (event.type !== 'scrollbar' &&
                 (event.type !== 'mousedown' || event.button !== 0 || event.target !== nodes.scroll)) { return; }
         var feed = state.feed, visible = state.renderedFeed;
-        var stagedJump = feed && visible && feed !== visible && feed.collectionKey === visible.collectionKey &&
-            (hasNumber(feed.navigationPage) || feed.topRequested || (state.pageJump && state.pageJump.feed === feed));
+        var staged = feed && visible && feed !== visible && feed.collectionKey === visible.collectionKey;
+        var stagedJump = staged && (hasNumber(feed.navigationPage) || feed.topRequested ||
+            (feed.pending && feed.pending.navigate) || (state.pageJump && state.pageJump.feed === feed));
         cancelBattleNavigation();
         cancelPageJump();
         if (feed) {
@@ -4884,16 +5060,11 @@
         if (state.highlightedBattle) { state.highlightedBattle.followViewport = false; }
         state.resizeFeedGuard = null;
         if (stagedJump) {
-            // A revision was staging the cancelled destination. Refresh the
-            // visible page after the scroll input has updated its position.
+            // The explicit destination has yielded to the user's scroll.
             if (feed.pending) { cancelUITimer(feed.pending.timer); feed.pending = null; }
-            feed.start = feed.last = feed.current = Math.max(0, Math.min(visible.current, feed.pages - 1));
             feed.error = null; feed.refreshing = true; feed.preserveRefreshAnchor = true;
-            suspendResizePrefetch();
-            var resume = function () { if (!state.destroyed && state.feed === feed && state.renderedFeed !== feed) { render(); } };
-            if (typeof window.requestAnimationFrame === 'function') { window.requestAnimationFrame(resume); }
-            else { window.setTimeout(resume, 0); }
         }
+        if (staged && feed.refreshing) { deferFeedRefresh(feed); }
         // Native wheel input consumes the pending logical offset itself before
         // cancelling restoration; its DOM getter can still expose an old frame.
         if (wheel && state.bound) { return; }
@@ -4943,8 +5114,9 @@
         var viewKey = JSON.stringify([payload.account_key, scopeName(), state.group,
             scope.period_id, scope.from_point, scope.to_point, scope.from_date, scope.to_date, page && page.page]);
         var oldTop = state.scrollTarget === null ? nodes.scroll.scrollTop : state.scrollTarget;
+        var scrollingRefresh = state.feed && state.feed.refreshInput;
         state.viewKey = viewKey;
-        state.scrollTarget = oldTop;
+        if (!scrollingRefresh) { state.scrollTarget = oldTop; }
         selected('ss-scope-launch', state.scope === 'launch');
         selected('ss-scope-manual', state.scope === 'manual');
         selected('ss-scope-instance', state.scope === 'instance');
@@ -5041,7 +5213,7 @@
         if (scope.pending > 0) { status.push(t('status.pending', [number(scope.pending)])); }
         if (visibleWarnings.length) { status.push(t('status.notes', [visibleWarnings.length])); }
         setStatus(state.actionError || status.join(' · '));
-        nodes.scroll.scrollTop = oldTop;
+        if (!scrollingRefresh) { nodes.scroll.scrollTop = oldTop; }
         queueResize();
     }
     function update(payload) {
@@ -5062,8 +5234,8 @@
                 applyWindowSettings(windowPrefs, result);
                 return true;
             }
-            closeSelect(false);
             if (value && value.resize_gesture) {
+                closeSelect(false);
                 var gesture = value.resize_gesture;
                 if (state.resize && gesture.token === String(state.resizeSequence)) {
                     state.resize.native = true;
@@ -5075,22 +5247,28 @@
             }
             if (!value || typeof value !== 'object' || !value.scopes ||
                     !value.scopes.launch || !value.scopes.manual) { throw new Error('Invalid snapshot'); }
+            if (hasOlderOrderReply(value) || hasOlderPageReply(value)) { return true; }
             var intent = state.orderIntent;
             if (intent) {
                 var intended = value.scopes[intent.context.scope];
-                if (value.account_key === intent.context.account_key && intended && intended.period_id === intent.context.period_id) {
+                var sameOwner = value.account_key === intent.context.account_key && intended &&
+                    intended.period_id === intent.context.period_id && (!intended.order_epoch || intended.order_epoch === intent.epoch);
+                if (!sameOwner) { clearOrderIntent(); }
+                else if (!orderingUnavailable(intended, value)) {
                     var actual = intended.ordering && intended.ordering[intent.group];
-                    if (actual && !orderingUnavailable(intended, value)) {
-                        if (['metric', 'statistic', 'direction', 'chronology'].some(function (key) {
-                            return actual[key] !== intent.options[key];
-                        })) { return true; }
-                        if (intent.timer !== undefined) {
-                            retireFeed(); state.feedForceStart = 0;
-                        }
+                    var meta = intended.pagination && intended.pagination[intent.group];
+                    // A refresh can contain the same options as a newer
+                    // request (for example when switching A → B → A).
+                    if (!meta || meta.order_request_id !== intent.id || !sameBattleOriginOrder(actual, intent.options)) {
+                        return true;
                     }
+                    if (intent.timer !== undefined) {
+                        retireFeed(); state.feedForceStart = 0;
+                    }
+                    clearOrderIntent();
                 }
-                clearOrderIntent();
             }
+            closeSelect(false);
             if (historyOnlyUpdate(value)) { return true; }
             if (state.payload && state.payload.account_key !== value.account_key) {
                 showReset(false);
@@ -5279,6 +5457,7 @@
         cancelBattleNavigation(); clearBattleTarget(); cancelPageJump();
         if (state.feed) {
             var feed = state.feed; feed.prependAnchor = null; feed.refreshAnchor = null;
+            feed.refreshInput = null; feed.refreshing = false; feed.preserveRefreshAnchor = false;
             // Keep the requested data, but let Top supersede its old destination.
             feed.navigationPage = null; feed.errorNavigate = false;
             if (feed.pending) { feed.pending.navigate = false; }
@@ -5773,6 +5952,8 @@
         var metrics = scrollbarMetrics();
         if (!hasNumber(metrics.maximum)) { return; }
         state.scrollTarget = Math.max(0, Math.min(metrics.maximum, value));
+        var work = state.feed && state.feed.refreshInput;
+        if (work) { work.offset = state.scrollTarget; }
         nodes.scroll.scrollTop = state.scrollTarget;
         // Scrolling does not resize the native view. Only content changes need
         // a full layout, and their normal render path already schedules it.
@@ -5814,6 +5995,7 @@
         if (event && (event.type === 'mouseup' || event.type === 'pointerup') && hasNumber(event.button) && event.button !== 0) { return; }
         if (event && (event.type === 'mouseup' || event.type === 'pointerup')) { moveScrollbar(event); }
         state.scrollbarDrag = null;
+        if (state.feed && state.feed.refreshInput) { deferFeedRefresh(state.feed); }
         if (rail) {
             rail.classList.remove('is-dragging');
         }

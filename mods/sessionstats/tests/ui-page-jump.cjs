@@ -55,10 +55,11 @@ function assertFreshPageDeadline(source){
     pagination:{maps:{page:1,pages:5,total:200,page_size:40}}};
   Object.assign(context,{feedIdentity:()=>old.key,feedCollectionIdentity:()=>old.collectionKey,
     feedContextIdentity:()=>JSON.stringify(old.context),viewContext:()=>old.context,suspendResizePrefetch(){},
+    visibleRefreshPage:()=>old.current,render(){},
     requestFeedPage(feed,page,navigate){feed.pending={page,id:'fill-'+page,navigate,timer:null};},
     captureFeedAnchor(){throw Error('Explicit page reply must not become an automatic prepend anchor');},
     revealFeedTop(){throw Error('A page reply must not request Back to top');}});
-  vm.runInContext(actualFunction(source,'prepareFeed'),context);
+  for(const name of ['prepareFeed','retargetFeedRefresh','deferFeedRefresh'])vm.runInContext(actualFunction(source,name),context);
   const staged=context.prepareFeed(scope);
   assert.notStrictEqual(staged,old,'A changed result revision rebuilds its feed');
   assert.strictEqual(staged.navigationPage,2,'The revision rebuild stages the existing page destination');
@@ -67,6 +68,7 @@ function assertFreshPageDeadline(source){
   assert.strictEqual(staged.navigationDeadline,999,'The staged revision retains its original navigation deadline');
   context.onScrollIntent({type:'wheel',deltaY:1,target:renewed.scroll});
   assert.strictEqual(staged.navigationPage,null,'New user movement retires the staged revision destination');
+  for(let index=0;index<10&&staged.refreshInput;index++)renewed.tick(16);
   // Refresh the still-visible page, then accept a later, separately owned
   // page request with its own deadline.
   scope.maps=[{id:'refreshed-visible-page'}];scope.pagination.maps.page=0;
@@ -77,7 +79,7 @@ function assertFreshPageDeadline(source){
   const accepted=context.prepareFeed(scope);
   assert.strictEqual(accepted,staged,'The separately owned reply fills the current revision cache');
   assert(state.pageJump&&state.pageJump.page===3,'The fresh async reply owns its requested page');
-  assert.strictEqual(state.pageJump.deadline,11000,'A new async page reply receives a full lifetime after cancellation, not expired deadline 999');
+  assert.strictEqual(state.pageJump.deadline,context.Date.now()+10000,'A new async page reply receives a full lifetime after cancellation, not expired deadline 999');
   state.renderedFeed=accepted;state.cardPages=[{index:3,section:renewed.section}];
   context.finishPageJump();assert(renewed.scroll.scrollTop>1000,'The fresh async destination aligns instead of expiring immediately');
   renewed.settle();assert.strictEqual(state.pageJump,null,'The fresh async destination settles normally');

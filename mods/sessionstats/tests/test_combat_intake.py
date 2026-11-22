@@ -60,6 +60,41 @@ class CombatIntakeTests(unittest.TestCase):
         self.assertEqual(self.intake.pending('EU:200')[0][2]['arena_id'], 'different')
         self.assertEqual(self.intake.pending('EU:300'), [])
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows MAX_PATH fixture')
+    def test_long_unicode_profile_preserves_paths_bindings_and_fifo(self):
+        for length in (123, 235):
+            profile = os.path.join(self.directory, 'Ż' + 'x' * max(1, length - len(self.directory) - 2))
+            self.intake = CombatIntake(profile)
+            launch = 'a' * 32
+            installation = 'installation:' + 'b' * 64
+            try:
+                self.assertTrue(self.intake.bind_installation(launch, installation))
+                if length == 123 and len(profile) == length:
+                    # The old spelling still reaches the same marker.
+                    with open(os.path.join(profile, 'combat-intake', launch + '.installation'), 'rb') as handle:
+                        self.assertEqual(handle.read(), installation.encode('ascii'))
+                for kind, arena_id in (('begin', '42'), ('result', '42'), ('result', '43')):
+                    self.assertTrue(self.intake.submit('EU:100', kind, {'arena_id': arena_id}))
+                self.intake.close(wait=True)
+                self.assertFalse(self.intake.failed)
+                self.assertEqual(self.intake.waiting('EU:100'), 0)
+                self.intake = CombatIntake(profile)
+                self.assertEqual(self.intake.bound_installation(launch), installation)
+                pending = self.intake.pending('EU:100', limit=3)
+                self.assertEqual([row[1:] for row in pending], [
+                    ('begin', {'arena_id': '42'}), ('result', {'arena_id': '42'}),
+                    ('result', {'arena_id': '43'})])
+                for receipt, unused_kind, unused_payload in pending:
+                    self.assertGreater(len(os.path.join(profile, 'combat-intake', receipt.account,
+                                                        receipt.filename)), 260)
+                    self.assertTrue(self.intake.ack(receipt))
+                self.assertEqual(self.intake.pending('EU:100'), [])
+            finally:
+                self.intake.close(wait=True)
+                extended_profile = '\\\\?\\' + profile
+                if os.path.isdir(extended_profile):
+                    shutil.rmtree(extended_profile)
+
     def test_transient_disk_failure_retries_without_dropping_the_record(self):
         retried = threading.Event()
         write = self.intake._write
@@ -131,7 +166,9 @@ class CombatIntakeTests(unittest.TestCase):
         self.assertFalse(service.has_combat_receipt(self.intake.identity(second[0])))
         self.assertEqual(set(service._state['battles']), {'synthetic-independent'})
         runtime._drain_installation_captures(self.intake, account, service)
-        self.assertEqual(self.intake.pending(account, limit=2), [first, second])
+        producer = self.intake.identity(first[0])[0]
+        remaining = self.intake.pending(account, limit=3)
+        self.assertEqual([row for row in remaining if self.intake.identity(row[0])[0] == producer], [first, second])
 
         runtime._drain_account_captures(self.intake, account, service)
         runtime._drain_installation_captures(self.intake, account, service)
@@ -163,6 +200,68 @@ class CombatIntakeTests(unittest.TestCase):
         latest = next(capture for capture in restored.pending('EU:100', limit=3)
                       if capture[2]['arena_id'] == '43')
         self.assertNotEqual(restored.identity(latest[0])[0], producer)
+
+    def test_locked_installation_binding_preserves_producer_order_and_account_progress(self):
+        from grz_session_stats import combat_intake
+        from grz_session_stats.core import StatsService
+        from grz_session_stats.runtime import Runtime
+        from grz_session_stats.sessions import InstallationSession
+        from test_core import Clock, EXPECTED, result
+
+        account = 'EU:100'
+        launch = 'a' * 32
+        clock = Clock(1000)
+        service = StatsService(self.directory, account, 'synthetic-current', EXPECTED, now=clock)
+        runtime = Runtime(data_dir=self.directory, now=clock)
+        session = InstallationSession(self.directory, self.directory, 'synthetic-current', EXPECTED, clock)
+        runtime._instance_session = session
+        runtime._combat_installation = session.service.account_key
+        self.assertTrue(self.intake.bind_installation(launch, runtime._combat_installation))
+
+        def capture(writer, identifier, timestamp, origin):
+            self.assertTrue(writer.submit(account, 'result', {
+                'at': timestamp + 1, 'launch_id': launch, 'installation': origin, 'observed': True,
+                'record': result(identifier, timestamp),
+            }))
+
+        capture(self.intake, 'synthetic-first', 1010, None)
+        capture(self.intake, 'synthetic-second', 1020, runtime._combat_installation)
+        self.intake.close(wait=True)
+        first, second = self.intake.pending(account, limit=2)
+        independent = CombatIntake(self.directory)
+        capture(independent, 'synthetic-independent', 1030, runtime._combat_installation)
+        independent.close(wait=True)
+        binding_reads = []
+
+        def temporarily_locked(path, *args, **kwargs):
+            if os.path.basename(path) == launch + '.installation':
+                binding_reads.append(path)
+                if len(binding_reads) in (1, 3):
+                    raise IOError(errno.EACCES, 'Synthetic temporary file lock')
+            return open(path, *args, **kwargs)
+
+        combat_intake.open = temporarily_locked
+        try:
+            runtime._drain_account_captures(self.intake, account, service)
+            runtime._drain_account_captures(self.intake, account, service)
+            self.assertEqual(set(service._state['battles']),
+                             {'synthetic-first', 'synthetic-second', 'synthetic-independent'})
+            self.assertEqual(binding_reads, [])
+
+            runtime._drain_installation_captures(self.intake, account, service)
+            self.assertEqual(len(binding_reads), 1)
+            self.assertEqual(self.intake.pending(account, limit=3), [first, second])
+            self.assertEqual(set(session.service._state['battles']),
+                             {session.battle_key(account, 'synthetic-independent')})
+
+            runtime._drain_installation_captures(self.intake, account, service)
+            self.assertEqual(len(binding_reads), 2)
+            self.assertEqual(self.intake.pending(account), [])
+            self.assertEqual(set(session.service._state['battles']), {
+                session.battle_key(account, identifier)
+                for identifier in ('synthetic-first', 'synthetic-second', 'synthetic-independent')})
+        finally:
+            del combat_intake.open
 
     def test_late_installation_binding_is_durable_and_cannot_be_reassigned(self):
         launch = 'a' * 32

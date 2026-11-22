@@ -45,6 +45,10 @@ with tempfile.TemporaryDirectory(prefix='grz-return-navigation-') as directory:
                 row = copy.deepcopy(service._state['battles'][arena_id])
                 row.update(damage=row.get('damage', 1000) + 1, reconcile=True)
                 assert service.record_result(row)
+            elif action == 'revise_move':
+                row = copy.deepcopy(service._state['battles']['return-row-040'])
+                row.update(xp_base=220, reconcile=True)
+                assert service.record_result(row)
             elif action == 'revise_summary':
                 row = copy.deepcopy(service._state['battles']['return-row-124'])
                 row.update(xp_received=54321, reconcile=True)
@@ -52,10 +56,10 @@ with tempfile.TemporaryDirectory(prefix='grz-return-navigation-') as directory:
             elif action in ('page', 'sort', 'battle_select', 'vehicle_battles'):
                 accepted = command.get('account_key') == service.account_key
                 if accepted and action == 'page':
-                    accepted = service.set_page(command['scope'], command['group'], int(command['page']), command['period_id'], command.get('request_id'))
+                    accepted = service.set_page(command['scope'], command['group'], int(command['page']), command['period_id'], command.get('request_id'), command.get('anchor_id'))
                 elif accepted and action == 'sort':
                     options = dict((key, command[key]) for key in ('metric', 'statistic', 'direction', 'chronology'))
-                    accepted = service.set_order(command['scope'], command['group'], options, command['period_id'])
+                    accepted = service.set_order(command['scope'], command['group'], options, command['period_id'], command.get('request_id'))
                 elif accepted and action == 'vehicle_battles':
                     accepted = service.set_vehicle_battles(command['scope'], command['vehicle_id'], int(command['page']), command['period_id'], command.get('chronology'))
                 elif accepted:
@@ -90,6 +94,7 @@ module.exports=async({browser,nativeHost,check})=>{
         __returnBridgePending++;
         __returnNativeCommand(command).then(payload=>{
           if(window.__returnHoldRefresh&&command.action==='page'&&command.group==='maps'&&command.page==='0'){window.__returnHeldRefresh={command,payload};return;}
+          if(window.__returnHoldNeighbor&&command.action==='page'&&command.group==='maps'&&!command.anchor_id){window.__returnHeldNeighbor=payload;return;}
           const previousPayload=JSON.parse(model.payload);payload.viewport=previousPayload.viewport;payload.window_size=window.__returnWindowSize||[900,1050];
           if(window.__returnWindowSize){payload.appearance=payload.appearance||{};payload.appearance.window_settings={background_transparency:0,maximized:false,restored_width:__returnWindowSize[0],restored_height:__returnWindowSize[1]};}
           model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);
@@ -176,6 +181,48 @@ module.exports=async({browser,nativeHost,check})=>{
       await sourceMarker(mapSource,scenario.name);
       if(scenario.revise)check('A revised return reloads fresh result values instead of reviving stale source cache',Number((await page.locator('#ss-groups [data-group-id="return-map-060"] .ss-group-wn8-kpi .ss-kpi-value').textContent()).replace(/\s/g,''))===Math.round(revisedRating));
     }
+    for(const moved of [false,true]){
+      await configure('maps');
+      const boundarySource=mapSource.replace(sourceCard,'return-map-040');
+      await page.locator(boundarySource).evaluate(button=>{
+        const scroll=document.getElementById('ss-scroll'),viewport=scroll.getBoundingClientRect(),filter=document.getElementById('ss-filter-panel');
+        const section=button.closest('.ss-continuous-page');
+        scroll.scrollTop+=section.getBoundingClientRect().top-viewport.top-filter.getBoundingClientRect().height-80;
+      });await frames(page,12);
+      const before=await page.locator(boundarySource).evaluate(button=>{
+        const scroll=document.getElementById('ss-scroll').getBoundingClientRect(),filter=document.getElementById('ss-filter-panel');
+        const first=[...document.querySelectorAll('#ss-groups .ss-group')].find(card=>card.getBoundingClientRect().bottom>filter.getBoundingClientRect().bottom&&card.getBoundingClientRect().top<scroll.bottom);
+        const box=button.getBoundingClientRect();
+        return {first:first&&Number(first.closest('.ss-continuous-page').dataset.pageIndex),page:Number(button.closest('.ss-continuous-page').dataset.pageIndex),offset:box.top-scroll.top,visible:box.bottom<=scroll.bottom&&box.top>filter.getBoundingClientRect().bottom};
+      });
+      check('The previous page still supplies the first visible card at the clicked Maps boundary '+moved+' '+JSON.stringify(before),before.first===0&&before.page===1&&before.visible);
+      await page.locator(boundarySource).click();await opened();
+      await publish((await driver.request({action:'revise'})).payload);await opened();
+      const commandStart=await page.evaluate(()=>__grzCommands.length);
+      if(moved)await page.evaluate(()=>{window.__returnHoldNeighbor=true;window.__returnHeldNeighbor=null;});
+      await page.locator('.ss-battle-return').click();
+      let olderNeighbor=null;
+      if(moved){
+        await page.waitForFunction(()=>!!window.__returnHeldNeighbor);
+        olderNeighbor=await page.evaluate(()=>{window.__returnHoldNeighbor=false;return __returnHeldNeighbor;});
+        await publish((await driver.request({action:'revise_move'})).payload);
+      }
+      await ready('maps');
+      await sourceMarker(boundarySource,moved?'moved boundary source':'revised boundary source');
+      if(olderNeighbor)await publish(olderNeighbor);
+      const after=await page.locator(boundarySource).evaluate((button,start)=>{
+        const scroll=document.getElementById('ss-scroll').getBoundingClientRect();
+        return{page:Number(button.closest('.ss-continuous-page').dataset.pageIndex),offset:button.getBoundingClientRect().top-scroll.top,
+          pages:[...document.querySelectorAll('#ss-groups .ss-continuous-page')].map(section=>Number(section.dataset.pageIndex)),
+          commands:__grzCommands.slice(start).filter(command=>command.action==='page'&&command.group==='maps')};
+      },commandStart);
+      const pageNumber=moved?3:1;
+      const requestPattern=after.commands.map(command=>command.anchor_id||Number(command.page)).join(',');
+      check('Back asks for the clicked group and at most one adjacent page after a revision '+moved+' '+JSON.stringify(after),
+        after.page===pageNumber&&after.pages.join(',')===[pageNumber-1,pageNumber].join(',')&&
+        requestPattern===(moved?'return-map-040,0,return-map-040,2':'return-map-040,0'));
+      check('Back keeps the exact boundary source action at its original viewport offset '+moved+' '+JSON.stringify({before:before.offset,after:after.offset}),Math.abs(after.offset-before.offset)<=3);
+    }
     for(const reordered of [false,true]){
       await configure('battles');
       await page.evaluate(()=>{document.getElementById('ss-scroll').scrollTop=40;});await frames(page,12);
@@ -247,7 +294,9 @@ module.exports=async({browser,nativeHost,check})=>{
     const historySource='#ss-groups [data-group-id="'+vehicleId+'"] .ss-map-battle-open';
     await page.locator(historySource).first().waitFor({state:'visible',timeout:5000});await ready('vehicles');
     const historyBattle=await page.locator(historySource).first().getAttribute('data-battle-id'),historySelector=historySource+'[data-battle-id="'+historyBattle+'"]';
-    await page.locator(historySelector).click();await opened();await page.locator('.ss-battle-return').click();await ready('vehicles');
+    await page.locator(historySelector).click();await opened();
+    await publish((await driver.request({action:'revise',index:61})).payload);await opened();
+    await page.locator('.ss-battle-return').click();await ready('vehicles');
     await sourceMarker(historySelector,'vehicle history pointer');
     check('Back keeps the vehicle history expanded around its marked Show battle action',await page.locator('#ss-groups .ss-group').first().locator('.ss-vehicle-more-button').getAttribute('aria-expanded')==='true');
     const financial='#ss-groups [data-group-id="'+vehicleId+'"] .ss-credit-extreme-actions .ss-metric-battle-link[data-ss-source-metric="credits_income_received"][data-ss-extreme="max"]';

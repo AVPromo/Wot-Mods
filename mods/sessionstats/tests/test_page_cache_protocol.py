@@ -52,6 +52,33 @@ class PageCacheProtocolTests(unittest.TestCase):
         self.assertNotEqual(corrected, complete)
         self.assertEqual(self.scope()['data_revision'], corrected)
 
+    def test_sort_echo_identifies_the_command_even_when_options_match_the_previous_order(self):
+        initial = self.scope()
+        period = initial['period_id']
+        first = dict(DEFAULT_ORDER)
+        self.assertTrue(self.service.set_order('manual', 'battles', first, period, 'sort-first'))
+        second = dict(DEFAULT_ORDER, metric='xp_base')
+        self.assertTrue(self.service.set_order('manual', 'battles', second, period, 'sort-second'))
+        self.assertTrue(self.service.set_order('manual', 'battles', first, period, b'sort-third'))
+        self.assertTrue(self.service.set_page('manual', 'battles', 1, period, 'page-new'))
+        snapshot = self.scope()
+        meta = snapshot['pagination']['battles']
+        self.assertEqual(snapshot['ordering']['battles'], first)
+        self.assertEqual(meta['order_request_id'], 'sort-third')
+        self.assertEqual(meta['request_id'], 'page-new')
+        self.assertNotIn('order_request_id', snapshot['pagination']['maps'])
+        self.assertNotIn('order_request_id', initial['pagination']['battles'])
+        self.assertEqual(snapshot['order_epoch'], initial['order_epoch'])
+        self.assertFalse(self.service.set_order('manual', 'battles', second, period, 'invalid request'))
+        self.assertEqual(self.scope()['ordering']['battles'], first)
+        self.assertTrue(self.service.set_order('manual', 'battles', second, period))
+        without_request = self.scope()
+        self.assertNotEqual(without_request['order_epoch'], snapshot['order_epoch'])
+        self.assertNotIn('order_request_id', without_request['pagination']['battles'])
+        self.assertTrue(self.service.set_order('manual', 'battles', second, period, 'before-reset'))
+        self.assertTrue(self.service.reset_manual())
+        self.assertNotIn('order_request_id', self.scope()['pagination']['battles'])
+
     def test_newest_insert_invalidates_old_cached_page_boundaries(self):
         first = self.scope()
         period = first['period_id']

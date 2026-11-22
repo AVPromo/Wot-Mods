@@ -1315,19 +1315,22 @@ class Runtime(object):
 
     def _drain_installation_captures(self, intake, account_key, service):
         installation = self._instance_session
+        origins = {}
 
         def belongs_here(receipt, kind, capture):
             origin = self._capture_installation(intake, capture)
-            if origin:
-                return origin == self._combat_installation
-            # A previous launch with no verified root only belongs to the account.
-            return capture['launch_id'] != LAUNCH_ID
+            # A previous launch without a marker only belongs to the account.
+            belongs = (origin == self._combat_installation if origin else
+                       capture['launch_id'] != LAUNCH_ID)
+            if belongs:
+                origins[receipt] = origin
+            return belongs
 
         for receipt, kind, capture in intake.pending(account_key, limit=2, accept=belongs_here):
             identity = intake.identity(receipt)
             if not service.has_combat_receipt(identity):
                 break
-            if self._capture_installation(intake, capture):
+            if origins[receipt] is not None:
                 if installation is None or not installation.service.ready:
                     break
                 record = capture['record']
@@ -1895,7 +1898,7 @@ class Runtime(object):
                 return
             if action == 'sort':
                 options = dict((key, getter(key)) for key in ('metric', 'statistic', 'direction', 'chronology'))
-                if not service.set_order(scope, group, options, period_id):
+                if not service.set_order(scope, group, options, period_id, getter('request_id')):
                     return
             elif action == 'battle_select':
                 if not service.select_battle(scope, getter('id'), period_id, getter('request_id')):
@@ -1914,7 +1917,7 @@ class Runtime(object):
                 elif action == 'vehicle_battles':
                     accepted = service.set_vehicle_battles(scope, getter('vehicle_id'), int(raw_page), period_id, getter('chronology'))
                 else:
-                    accepted = service.set_page(scope, group, int(raw_page), period_id, getter('request_id'))
+                    accepted = service.set_page(scope, group, int(raw_page), period_id, getter('request_id'), getter('anchor_id'))
                 if not accepted:
                     return
             self._window_call('refresh')

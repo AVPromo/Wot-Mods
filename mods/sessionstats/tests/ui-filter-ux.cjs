@@ -20,20 +20,21 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
         const nested=node.querySelector(selector);if(nested)return nested;}return null;}
   }
   const controls={'ss-sort-off':new Node(),'ss-filter-loading':new Node(),'ss-sorting':new Node()},statistic=new Node();
-  const scope={period_id:'synthetic-filter-period',loading:false,load_error:'',pagination:{},ordering:{
+  const scope={period_id:'synthetic-filter-period',order_epoch:'synthetic-order-owner',loading:false,load_error:'',pagination:{},ordering:{
     vehicles:{metric:'xp_received',statistic:'avg',direction:'desc',chronology:'newest'},
     battles:{metric:'off',statistic:'avg',direction:'desc',chronology:'newest'},
     maps:{metric:'off',statistic:'avg',direction:'desc',chronology:'newest'}}};
-  const state={payload:{account_key:'synthetic-filter-account',loading:false,load_error:'',scopes:{launch:scope,instance:scope}},
-    scope:'launch',group:'vehicles',nativeSession:true,orders:{},orderIntent:null,wideFilters:true,feed:null};
+  const state={payload:{account_key:'synthetic-filter-account',loading:false,load_error:'',scopes:{launch:scope,manual:{},instance:scope}},
+    scope:'launch',group:'vehicles',nativeSession:true,orders:{},orderIntent:null,orderSequence:0,wideFilters:true,feed:null};
   const commands=[],selects={},timers=new Map();let sequence=0;
   const context={state,selects,root:new Node(),Object,String,JSON,
     window:{setTimeout(callback,delay){timers.set(++sequence,{callback,delay});return sequence;},clearTimeout:id=>timers.delete(id)},
     document:{createElement:()=>new Node(),getElementById:id=>controls[id]||(controls[id]=new Node()),querySelector:selector=>selector==='.ss-sort-statistic'?statistic:null},
-    t:key=>key,currentScope:()=>scope,scopeName:()=>state.scope,
+    t:key=>key,currentScope:()=>state.payload.scopes[state.scope],scopeName:()=>state.scope,
     viewContext:()=>({account_key:state.payload.account_key,scope:state.scope,period_id:scope.period_id}),
     sameContext:owner=>owner.account_key===state.payload.account_key&&owner.scope===state.scope&&owner.period_id===scope.period_id,
-    cancelBattleNavigation(){},retireFeed(){state.feed=null;},render(){},
+    cancelBattleNavigation(){},retireFeed(){state.feed=null;},render(){},closeSelect(){},
+    unwrap:value=>value,hasOlderPageReply:()=>false,historyOnlyUpdate:()=>false,applyLanguage(){},applyAppearance(){},consumeBattleReturn(){},
     setActionError(message){state.actionError=message;context.renderFilterActivity(scope);},
     invoke:(action,args)=>{commands.push({action,...JSON.parse(JSON.stringify(args))});return true;}};
   vm.createContext(context);
@@ -42,7 +43,7 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   for(const field of ['chronology','statistic','metric','direction']){
     selects[field]={trigger:new Node(),label:new Node(),menu:new Node(),options:context.selectOptions[field].map(()=>new Node())};
   }
-  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','observedTotal','baseCreditAvailability','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning','clearOrderIntent','cancelUITimer'])
+  for(const name of ['element','append','clear','appendClientWarning','missingReceivedField','orderKey','canonicalMetric','creditMetric','metricSeries','observedTotal','baseCreditAvailability','summableMetric','getOrder','groupSortValue','ordered','orderingUnavailable','changeOrder','rememberedMetric','toggleMetricOrder','renderSelects','renderFilterActivity','renderSortDataWarning','clearOrderIntent','orderRequestId','orderReplySequence','hasOlderOrderReply','sameBattleOriginOrder','cancelUITimer','update'])
     vm.runInContext(actual(name),context);
   context.hasNumber=value=>typeof value==='number'&&Number.isFinite(value);
   const warningOwner=new Node(),warningIcon=context.appendClientWarning(warningOwner,'ss-sort-partial-icon');
@@ -99,7 +100,41 @@ function assertFilterStateSource(source=fs.readFileSync(path.join(__dirname,'../
   context.changeOrder('metric','xp_base');
   const replacement=state.orderIntent;
   abandoned.callback();assert.strictEqual(state.orderIntent,replacement,'A retired timeout cannot cancel the next sort');
-  context.clearOrderIntent();state.feed=null;render();
+  const initialPayload=state.payload;
+  const nativeSnapshot=(metric,request)=>({
+    ...initialPayload,scopes:{...initialPayload.scopes,launch:{
+      ...scope,ordering:{...scope.ordering,vehicles:{...scope.ordering.vehicles,metric}},
+      pagination:{vehicles:{page:0,order_request_id:request}}
+    }}
+  });
+  context.changeOrder('metric','xp_received');
+  const newest=state.orderIntent;
+  assert.notStrictEqual(replacement.id,newest.id,'Sort commands have distinct acknowledgement IDs');
+  assert.strictEqual(commands.at(-1).request_id,newest.id);
+  assert(context.update(nativeSnapshot('xp_received','sort-original')));
+  assert(context.update(nativeSnapshot('xp_base',replacement.id)));
+  assert.strictEqual(state.orderIntent,newest,'The original ordering and superseded reply cannot confirm A → B → A');
+  assert.strictEqual(state.payload,initialPayload);
+  assert.strictEqual(state.feed,confirmedFeed);
+  assert(timers.has(newest.timer),'A stale refresh cannot clear the latest timeout');
+  const latestPayload=nativeSnapshot('xp_received',newest.id);
+  assert(context.update(latestPayload));
+  assert.strictEqual(state.orderIntent,null);
+  assert(!timers.has(newest.timer));
+  assert.strictEqual(state.feed,null,'The acknowledged sort refreshes the feed from page one');
+  assert.strictEqual(state.feedForceStart,0);
+  assert(context.update(nativeSnapshot('xp_base',replacement.id)));
+  assert.strictEqual(state.payload,latestPayload,'A superseded reply arriving after confirmation cannot restore its sorting');
+  state.group='maps';
+  assert(context.update(nativeSnapshot('xp_base',replacement.id)));
+  assert(context.update(nativeSnapshot('xp_base',undefined)));
+  assert.strictEqual(state.payload,latestPayload,'An obsolete snapshot cannot override sorting in a hidden tab, even without an echo');
+  const newOwner=nativeSnapshot('off',undefined);
+  newOwner.scopes.launch.order_epoch='next-owner';
+  assert(context.update(newOwner));
+  assert.strictEqual(state.payload,newOwner,'A re-created projection can replace historical request acknowledgements');
+  state.group='vehicles';
+  state.payload=initialPayload;state.feedForceStart=null;render();
   const before=commands.length;scope.loading=true;render();controls['ss-sort-off'].onclick();context.changeOrder('metric','xp_base');
   assert.strictEqual(commands.length,before,'Busy retained toggle and selector callbacks cannot sort an unavailable projection');
   context.renderFilterActivity(scope);assert.strictEqual(controls['ss-filter-loading'].style.visibility,'visible','A rebuilding projection displays its filter spinner');
@@ -280,7 +315,10 @@ module.exports=async({browser,nativeHost,check})=>{
     const acknowledge=async()=>{await page.evaluate(()=>{const command=__grzCommands.filter(item=>item.action==='sort').pop();
       const payload=JSON.parse(model.payload),scope=payload.scopes[command.scope];
       scope.ordering=scope.ordering||{};scope.ordering[command.group]={metric:command.metric,statistic:command.statistic,direction:command.direction,chronology:command.chronology};
-      if(scope.pagination&&scope.pagination[command.group])scope.pagination[command.group].page=0;
+      const meta=scope.pagination[command.group];
+      meta.page=0;
+      meta.order_request_id=command.request_id;
+      delete meta.request_id;
       model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();});await frames(page);};
     const choose=async(field,value)=>{await page.locator('#ss-sort-'+field+' .ss-select-trigger').click();
       await page.locator('#ss-sort-'+field+' [data-value="'+value+'"]').click();await acknowledge();};

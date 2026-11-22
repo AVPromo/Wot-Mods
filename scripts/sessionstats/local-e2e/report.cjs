@@ -4,6 +4,7 @@ const { createReadStream } = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createInterface } = require('node:readline');
+const { interactionResize } = require('./interactions.cjs');
 
 const names = {
   groups: { vehicles: 'Vehicles', maps: 'Maps', tiers: 'Tiers', battles: 'Battles', interactions: 'Interactions' },
@@ -41,6 +42,7 @@ const safeVersion = value => typeof value === 'string' && /^[0-9]+(?:\.[0-9]+){1
   ? value : '';
 const groupRanks = new Map(Object.keys(names.groups).map((name,index)=>[name,index]));
 const rangeRanks = new Map(Object.keys(names.ranges).map((name,index)=>[name,index]));
+const interactionStages = Object.keys(names.interactions).filter(name=>name!=='failure');
 
 function caseFromKey(key) {
   if (typeof key !== 'string' || key.length > 132) return null;
@@ -85,7 +87,22 @@ function frameFromShot(shot, row, phase) {
   return frame;
 }
 
-function publicCase(result) {
+function hasRequiredCapture(result,row,capture) {
+  const shots=result.shots;
+  if(shots!==undefined&&(!Array.isArray(shots)||shots.length!==row.frames.length)) return false;
+  const stages=new Set(row.frames.map(frame=>frame.file.split('.')[0]));
+  if(stages.size!==row.frames.length) return false;
+  if(shots?.some(shot=>(owns(shot,'reference')&&shot.reference!=='baseline/'+shot.image)||
+      (owns(shot,'diff')&&shot.diff!=='differences/'+shot.image))) return false;
+  if(row.issues.includes('fail')) return true;
+  if(capture==='failures') return stages.size===0;
+  const required = row.group==='interactions'
+    ? interactionStages.filter(stage=>stage!=='battle-resized'||interactionResize(row.width,row.height))
+    : capture==='final'?['3']:['0','1','2','3'];
+  return required.length===stages.size&&required.every(stage=>stages.has(stage));
+}
+
+function publicCase(result,{capture}={}) {
   const row = caseFromKey(result?.key);
   if (!row) return null;
   const phases = Array.isArray(result.phases) ? result.phases.slice(0,4) : [];
@@ -97,7 +114,7 @@ function publicCase(result) {
   if (row.frames.some(frame=>frame.changed)) issues.push('diff');
   if (row.frames.some(frame=>frame.missing)) issues.push('missing');
   row.issues = issues.length ? issues : ['pass'];
-  return row;
+  return capture&&!hasRequiredCapture(result,row,capture)?null:row;
 }
 
 function compareCases(a,b) {
@@ -254,6 +271,7 @@ function showMatrix(names) {
   byId('title').textContent = 'Session Stats' + (summary.version ? ' '+summary.version : '');
   byId('summary').textContent = [
     summary.incomplete ? 'Run incomplete' : '', summary.engine, summary.renderer, summary.suite,
+    summary.commit ? `Commit ${summary.commit.slice(0, 12)}` : '',
     summary.expectedShards === null ? '' : 'Shards '+summary.shards+'/'+summary.expectedShards,
     'Cases '+summary.completed+'/'+summary.planned,
     'Failures '+summary.failures, 'Visual differences '+summary.visualFailures,
@@ -281,6 +299,7 @@ async function writeReport(directory,state) {
   omitted += count(state.omittedRows) ?? 0;
   const summary = {
     version:safeVersion(state.version),
+    commit:typeof state.commit==='string'&&/^[a-f0-9]{40}$/.test(state.commit)?state.commit:undefined,
     engine:['chromium','gameface'].includes(state.engine) ? state.engine : '',
     renderer:safeVersion(state.renderer),
     suite:['smoke','full','build','quick'].includes(state.suite) ? state.suite : '',

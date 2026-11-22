@@ -52,7 +52,8 @@ function assertBidirectionalSource(source=shipped()){
     render(){context.renderGroups(scope);}};
   vm.createContext(context);
   for(const name of ['feedCollectionIdentity','feedIdentity','feedContextIdentity','battleOwnsViewport','retainBattleTargetAfterResize','cancelUITimer','cancelPageJump','beginPageJump','retireFeed','captureFeedAnchor','finishFeedAnchor',
-    'revealFeedTop','pageBoundary','showFeedPending','requestFeedPage','captureRefreshAnchor','finishRefreshAnchor','prepareFeed','updateFeedControls','renderGroups',
+    'revealFeedTop','pageBoundary','showFeedPending','requestFeedPage','captureRefreshAnchor','visibleRefreshPage','retargetFeedRefresh','deferFeedRefresh',
+    'battleScrollPending','finishRefreshAnchor','prepareFeed','updateFeedControls','renderGroups',
     'suspendResizePrefetch','loadNearEdges','onScrollIntent','changePage'])
     vm.runInContext(sourceFunction(source,name),context);
   const topStart=source.indexOf("    if (nodes['scroll-top']) { nodes['scroll-top'].onclick = function () {",source.indexOf('    function changePage('));
@@ -114,6 +115,16 @@ function assertBidirectionalSource(source=shipped()){
   // Reusing page zero needs no second backend request.
   const before=commands.length;nodes['scroll-top'].onclick();flush();assert.strictEqual(commands.length,before);assert.strictEqual(state.cardPages[0].index,0);
   assert.strictEqual(scroll.scrollTop,0);assert(dismissed>=3);assert(resizes>0);
+  start();scope.data_revision++;reply(5);
+  const ordinary=state.feed.pending;
+  context.onScrollIntent({type:'wheel',deltaY:1,target:scroll});
+  assert(state.feed.refreshInput,'A scroll waits for the painted viewport during an ordinary revision');
+  nodes['scroll-top'].onclick();flush();
+  const explicitTop=state.feed.pending;
+  assert(!state.feed.refreshInput&&explicitTop.page===0,'A newer explicit Top skips the retired scroll settlement');
+  reply(3,ordinary);reply(0,explicitTop);
+  assert.deepStrictEqual(Array.from(state.cardPages,page=>page.index),[0]);
+  assert.strictEqual(scroll.scrollTop,0,'The old refresh cannot retarget an explicit Top');
   start();context.changePage(1);flush();scope.data_revision++;reply(5);
   assert.strictEqual(groups.getAttribute('aria-busy'),'true');
   const stalledDestination=state.feed.pending;
@@ -167,17 +178,53 @@ function assertBidirectionalSource(source=shipped()){
   context.loadNearEdges();flush();
   assert.strictEqual(commands.length,beforeRevision+1,'Anchor correction cannot cause an unsolicited edge fetch');
 
-  state.highlightedBattle={id:visibleID,context:context.viewContext(),request_id:'selection-before-wheel',followViewport:true};
+  // The displayed status may still say page four when a new gesture has
+  // already painted page five. Let page four reply before that paint occurs.
+  for(const intent of [{type:'wheel',deltaY:1},{type:'keydown',key:'PageDown'},{type:'scrollbar'}]){
+    start();state.feed.last=4;reply(4);
+    state.feed.current=3;scroll.scrollTop=600;
+    scope.data_revision++;reply(5);
+    const outdated=state.feed.pending,requestedBefore=commands.length;
+    assert.strictEqual(outdated.page,3);
+    const oldCards=state.cardPages.slice();
+    const target=intent.type==='keydown'?{tagName:'BUTTON',parentNode:scroll}:scroll;
+    if(intent.type==='keydown'){
+      context.onScrollIntent({type:'keydown',key:' ',target});
+      assert(!state.feed.refreshInput,'Space activates a focused result button instead of starting scroll ownership');
+    }
+    context.onScrollIntent({...intent,target});
+    scope.battles=rows(3);scope.pagination.battles={page:3,pages:6,page_size:40,total:205,request_id:outdated.id};
+    context.renderGroups(scope);
+    assert.deepStrictEqual(state.cardPages,oldCards,'Page four cannot claim the viewport before the scroll paints');
+    scheduled.shift()();scheduled.shift()();
+    scroll.scrollTop=1330;
+    const expectedPage=oldCards[1],expectedCard=expectedPage.cards.find(card=>card.getBoundingClientRect().bottom>50);
+    const expectedTop=expectedCard.getBoundingClientRect().top;
+    flush();
+    assert.strictEqual(state.feed.pending.page,4,'The current page follows the painted viewport for '+intent.type);
+    assert.strictEqual(commands.length,requestedBefore+1,'One follow-up request is sufficient for '+intent.type);
+    const current=state.feed.pending;
+    reply(3,outdated);
+    assert.strictEqual(state.feed.pending,current,'A retired page-four response cannot supersede page five');
+    reply(4,current);
+    for(let measurement=0;measurement<3;measurement++)context.finishRefreshAnchor();
+    assert.deepStrictEqual(Array.from(state.cardPages,page=>page.index),[4]);
+    const replacement=state.cardPages[0].cards.find(card=>card.getAttribute('data-group-id')===expectedCard.getAttribute('data-group-id'));
+    assert.strictEqual(replacement.getBoundingClientRect().top,expectedTop,'The visible result stays put after retargeting');
+  }
+
+  state.highlightedBattle={id:state.groupCards[0].getAttribute('data-group-id'),context:context.viewContext(),request_id:'selection-before-wheel',followViewport:true};
   context.onScrollIntent({type:'wheel',deltaY:1,target:scroll});
   context.retainBattleTargetAfterResize();
-  scope.data_revision++;scope.battles=rows(3).map(row=>({...row,live:42}));
-  scope.pagination.battles={page:3,pages:6,page_size:40,total:206,request_id:refresh.id};
+  const requestsBeforeLate=commands.length;
+  scope.data_revision++;scope.battles=rows(4).map(row=>({...row,live:42}));
+  scope.pagination.battles={page:4,pages:6,page_size:40,total:206,request_id:refresh.id};
   context.renderGroups(scope);flush();
   assert.strictEqual(state.feed.total,206);
-  assert.strictEqual(state.feed.cache[3][0].live,42,'After wheel and resize, fresh stats with the last acknowledged page token still update the list');
-  assert.strictEqual(commands.length,beforeRevision+1,'A fresh acknowledgement never requests a stale page');
+  assert.strictEqual(state.feed.cache[4][0].live,42,'After wheel and resize, fresh stats with the last acknowledged page token still update the list');
+  assert.strictEqual(commands.length,requestsBeforeLate,'A fresh acknowledgement never requests a stale page');
   let pinnedWrites=0;context.updatePinnedFilters=()=>{pinnedWrites++;};state.destroyed=true;
-  context.loadNearEdges();flush();assert.strictEqual(commands.length,beforeRevision+1);assert.strictEqual(pinnedWrites,0,'A retained scroll listener cannot fetch or repaint after teardown');
+  context.loadNearEdges();flush();assert.strictEqual(commands.length,requestsBeforeLate);assert.strictEqual(pinnedWrites,0,'A retained scroll listener cannot fetch or repaint after teardown');
   assert(source.includes("nodes.scroll.removeEventListener('scroll', queueScrollEdges);"),'Cleanup removes its exact deferred edge-loading listener');
 }
 
@@ -187,12 +234,14 @@ module.exports=async({browser,nativeHost,check})=>{
   for(const scale of [1,2]){
     const page=await nativeHost(browser,{initialViewport:{width:2400,height:1800},viewport:{width:2400,height:1800,scale}});
     const label=' at '+(scale*100)+'%',requests=()=>page.evaluate(()=>__grzCommands.filter(item=>item.action==='page'));
-    const emit=async(index,request)=>{await page.evaluate(({index,request})=>{
+    const emit=async(index,request,{revision,wheel=false}={})=>{await page.evaluate(({index,request,revision,wheel})=>{
       const payload=JSON.parse(model.payload),scope=payload.scopes.launch;scope.battles=Array.from({length:index===5?5:40},(_,offset)=>({
         ...__midfeedSample,id:'synthetic-midfeed-'+(index*40+offset),name:'Synthetic battle '+(index*40+offset),started_at:1900000000-index*40-offset}));
+      if(revision)scope.data_revision=revision;
       scope.pagination.battles={page:index,pages:6,page_size:40,total:205};if(request)scope.pagination.battles.request_id=request.request_id;
+      if(wheel)document.getElementById('ss-scroll').dispatchEvent(new WheelEvent('wheel',{deltaY:-1,bubbles:true,cancelable:true}));
       model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
-    },{index,request});await frames(page);};
+    },{index,request,revision,wheel});await frames(page);};
     try{
       await page.evaluate(scale=>{const payload=JSON.parse(model.payload),scope=payload.scopes.launch;
         window.__midfeedSample=JSON.parse(JSON.stringify(scope.battles[0]));payload.account_key='synthetic-midfeed-'+scale;
@@ -234,6 +283,38 @@ module.exports=async({browser,nativeHost,check})=>{
         await page.locator('#ss-scroll').evaluate(node=>Math.abs(node.scrollTop)<=1) &&
         await page.locator('#ss-sort-chronology .ss-select-trigger').textContent()==='Newest first');
       await emit(1,previous);check('A retired reply cannot move the viewport after Top'+label,await page.locator('#ss-scroll').evaluate(node=>Math.abs(node.scrollTop)<=1));
+
+      await page.evaluate(()=>document.getElementById('ss-page-next').onclick());await frames(page);
+      sent=await requests();await emit(1,sent[sent.length-1]);
+      const newPage='.ss-continuous-page[data-page-index="1"]:not(.ss-page-pending)';
+      await page.locator(newPage).evaluate(section=>{
+        const scroll=document.getElementById('ss-scroll'),edge=scroll.getBoundingClientRect().top+document.getElementById('ss-filter-panel').getBoundingClientRect().height;
+        scroll.dispatchEvent(new WheelEvent('wheel',{deltaY:-1,bubbles:true,cancelable:true}));
+        scroll.scrollTop+=section.getBoundingClientRect().top-edge-scroll.clientHeight/8;
+        window.__midfeedPageBeforeRefresh=section;
+      });await frames(page);
+      await emit(2,null,{revision:'midfeed:2'});
+      sent=await requests();const originalRefresh=sent[sent.length-1];
+      check('An ordinary revision stages the page above the next divider'+label,originalRefresh.page==='0');
+      await emit(0,originalRefresh,{wheel:true});
+      await page.waitForFunction(count=>__grzCommands.filter(command=>command.action==='page').length>count,sent.length);
+      const retargeted=(await requests()).slice(sent.length);
+      const oldVisible=await page.locator(newPage).evaluate(section=>{
+        const scroll=document.getElementById('ss-scroll').getBoundingClientRect(),edge=scroll.top+document.getElementById('ss-filter-panel').getBoundingClientRect().height;
+        const card=[...section.querySelectorAll('.ss-group')].find(node=>node.getBoundingClientRect().bottom>edge&&node.getBoundingClientRect().top<scroll.bottom);
+        return {old:section===__midfeedPageBeforeRefresh,id:card&&card.dataset.groupId,offset:card&&card.getBoundingClientRect().top-scroll.top};
+      });
+      check('A wheel movement across the divider retargets a delayed refresh once'+label,retargeted.length===1&&retargeted[0].page==='1'&&oldVisible.old&&!!oldVisible.id);
+      await emit(1,retargeted[0]);
+      const card=page.locator(newPage+' [data-group-id="'+oldVisible.id+'"]');
+      const refreshedOffset=await card.evaluate(node=>node.getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top);
+      check('The revised cards replace the painted page and keep its visible card in position'+label,
+        await page.locator('.ss-continuous-page:not(.ss-page-pending)').count()===1&&Math.abs(oldVisible.offset-refreshedOffset)<=2*scale);
+      const completedCount=(await requests()).length;
+      await emit(0,originalRefresh,{revision:'midfeed:1'});
+      check('An older response after retarget completion does not restart or move the refreshed feed'+label,
+        (await requests()).length===completedCount&&await card.count()===1&&
+        Math.abs(refreshedOffset-await card.evaluate(node=>node.getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top))<=2*scale);
     }finally{await page.close();}
   }
 };
