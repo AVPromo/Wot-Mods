@@ -53,7 +53,7 @@ function assertBidirectionalSource(source=shipped()){
   vm.createContext(context);
   for(const name of ['feedCollectionIdentity','feedIdentity','feedContextIdentity','battleOwnsViewport','retainBattleTargetAfterResize','cancelUITimer','cancelPageJump','beginPageJump','retireFeed','captureFeedAnchor','finishFeedAnchor',
     'revealFeedTop','pageBoundary','showFeedPending','requestFeedPage','captureRefreshAnchor','visibleRefreshPage','retargetFeedRefresh','deferFeedRefresh',
-    'battleScrollPending','finishRefreshAnchor','prepareFeed','updateFeedControls','renderGroups',
+    'battleScrollPending','finishRefreshAnchor','prepareFeed','updateFeedControls','retireHistoryCards','renderGroups',
     'suspendResizePrefetch','loadNearEdges','onScrollIntent','changePage'])
     vm.runInContext(sourceFunction(source,name),context);
   const topStart=source.indexOf("    if (nodes['scroll-top']) { nodes['scroll-top'].onclick = function () {",source.indexOf('    function changePage('));
