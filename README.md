@@ -26,7 +26,7 @@ See [release architecture and race conditions](docs/MULTIMOD_RELEASES.md), [oper
 
 ### Session Stats visual matrix
 
-On an open pull request from this repository that includes the matrix test harness, a maintainer can post a new comment containing only `/sessionstats-matrix` for the full run across all date ranges. Use `/sessionstats-matrix smoke` for a quick report check or `/sessionstats-matrix full` for all sort variants in the primary date ranges. Each completed attempt adds a new comment to the pull request with the result and links to Actions and the HTML report when available. Extract the downloaded archive and open `index.html`. The report uses synthetic data and test artwork.
+On an open pull request from this repository that includes the matrix test harness, a maintainer can post a new comment containing only `/sessionstats-matrix` for the full run across all date ranges. Use `/sessionstats-matrix smoke` for a quick report check or `/sessionstats-matrix full` for all sort variants in the primary date ranges. Each run adds a status comment with the Actions link before the browser jobs start. The workflow updates that comment as the run starts, runs, and finishes. The final update includes the report job and the HTML download when available. GitHub workflow retries update the same run comment. Extract the downloaded archive and open `index.html`. The report uses synthetic data and test artwork.
 
 [Release protection and owner re-attestation](docs/BUILD_RELEASE.md#existing-release-protection-and-owner-re-attestation).
 
