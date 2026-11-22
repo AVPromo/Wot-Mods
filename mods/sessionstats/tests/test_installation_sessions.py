@@ -51,7 +51,9 @@ class InstallationLedgerTests(unittest.TestCase):
         self.assertEqual(self.stats(restored)['battles'], 2)
         previous = copy.deepcopy(self.session.snapshot()[0])
         current = copy.deepcopy(restored.snapshot()[0])
+        # Restarting replaces the projection and its sort acknowledgements.
         self.assertNotEqual(current.pop('data_revision'), previous.pop('data_revision'))
+        self.assertNotEqual(current.pop('order_epoch'), previous.pop('order_epoch'))
         self.assertEqual(current, previous)
 
     def test_manual_installation_reset_survives_restart_and_excludes_late_old_results(self):
