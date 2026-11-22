@@ -38,10 +38,41 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 -I scripts/sessionstats/matrix_request.py
 
-  render:
-    name: Render Chromium ${{ needs.configuration.outputs.coverage }} shard ${{ matrix.shard }}
+  announce:
+    name: Announce matrix run on the pull request
     if: needs.configuration.outputs.target_sha != ''
     needs: configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      comment_id: ${{ steps.started.outputs.comment_id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.issue.number }}
+      COMMAND_ID: ${{ github.event.comment.id }}
+      COVERAGE: ${{ needs.configuration.outputs.coverage }}
+      TARGET_SHA: ${{ needs.configuration.outputs.target_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Post the Actions link and started status
+        id: started
+        run: python3 -I scripts/sessionstats/matrix_notification.py started
+      - name: Mark the status comment as running
+        env:
+          STATUS_COMMENT_ID: ${{ steps.started.outputs.comment_id }}
+        run: python3 -I scripts/sessionstats/matrix_notification.py running
+
+  render:
+    name: Render Chromium ${{ needs.configuration.outputs.coverage }} shard ${{ matrix.shard }}
+    if: ${{ !cancelled() && needs.configuration.result == 'success' && needs.configuration.outputs.target_sha != '' }}
+    needs: [configuration, announce]
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
@@ -176,8 +207,8 @@ jobs:
 
   browser-contracts:
     name: Detailed Chromium contracts
-    if: needs.configuration.outputs.target_sha != '' && needs.configuration.outputs.coverage != 'smoke'
-    needs: configuration
+    if: ${{ !cancelled() && needs.configuration.result == 'success' && needs.configuration.outputs.target_sha != '' && needs.configuration.outputs.coverage != 'smoke' }}
+    needs: [configuration, announce]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -191,78 +222,29 @@ jobs:
         run: python3 -I scripts/sessionstats/browser_qa.py
 
   notify:
-    name: Post matrix result on the pull request
-    if: ${{ !cancelled() && needs.configuration.result == 'success' && needs.configuration.outputs.target_sha != '' }}
-    needs: [configuration, report]
+    name: Update the matrix result on the pull request
+    if: ${{ always() && needs.configuration.result == 'success' && needs.configuration.outputs.target_sha != '' }}
+    needs: [configuration, announce, report]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      contents: read
       actions: read
       pull-requests: write
     steps:
-      # This job uses the trusted workflow and GitHub metadata only.
-      - name: Append a matrix result comment
+      # This job uses the trusted default-branch workflow and GitHub metadata only.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Update the status comment and link the report
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
           COMMAND_ID: ${{ github.event.comment.id }}
           COVERAGE: ${{ needs.configuration.outputs.coverage }}
           TARGET_SHA: ${{ needs.configuration.outputs.target_sha }}
+          STATUS_COMMENT_ID: ${{ needs.announce.outputs.comment_id }}
           REPORT_RESULT: ${{ needs.report.result }}
           ARTIFACT_ID: ${{ needs.report.outputs.artifact_id }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          import subprocess
-
-          def api(path, *args):
-              return subprocess.check_output(["gh", "api", path, *args], text=True)
-
-          def positive_id(value):
-              return re.fullmatch(r"[1-9][0-9]*", value or "") is not None
-
-          def metadata(path):
-              try:
-                  result = json.loads(api(path))
-                  return result if isinstance(result, dict) else {}
-              except (subprocess.CalledProcessError, ValueError):
-                  print(f"Could not resolve matrix metadata from {path}.")
-                  return {}
-
-          env = os.environ
-          repo = env["GITHUB_REPOSITORY"]
-          pr, command, run, attempt = (env[name] for name in
-              ("PR_NUMBER", "COMMAND_ID", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"))
-          coverage, sha = env["COVERAGE"], env["TARGET_SHA"]
-          if not all(positive_id(value) for value in (pr, command, run, attempt)):
-              raise SystemExit("Invalid GitHub event or run metadata")
-          if coverage not in ("smoke", "full", "exhaustive") or not re.fullmatch(r"[0-9a-f]{40}", sha):
-              raise SystemExit("Invalid matrix configuration")
-          repository_url = f'{env["GITHUB_SERVER_URL"]}/{repo}'
-          run_url = f"{repository_url}/actions/runs/{run}"
-          run_api = f"repos/{repo}/actions/runs/{run}"
-          links = [f"[Actions run]({run_url})"]
-          jobs = metadata(f"{run_api}/attempts/{attempt}/jobs?per_page=100").get("jobs", [])
-          job = next((str(row["id"]) for row in jobs if row["name"] == "Downloadable HTML matrix"), "")
-          if positive_id(job):
-              links.insert(0, f"[Report job]({run_url}/job/{job})")
-          artifact = env.get("ARTIFACT_ID")
-          if positive_id(artifact):
-              report = metadata(f"repos/{repo}/actions/artifacts/{artifact}")
-              if (str(report.get("id")) == artifact
-                      and str((report.get("workflow_run") or {}).get("id")) == run
-                      and re.fullmatch(r"sessionstats-matrix-html-attempt-[1-9][0-9]*", str(report.get("name")))
-                      and report.get("expired") is False):
-                  links.insert(0, f"[Download HTML report]({run_url}/artifacts/{artifact})")
-
-          verdict = {"success": "passed", "failure": "failed",
-                     "cancelled": "cancelled", "skipped": "skipped"}.get(env["REPORT_RESULT"], "failed")
-          command_url = f"{repository_url}/pull/{pr}#issuecomment-{command}"
-          body = "\n\n".join((f"**Session Stats Chromium `{coverage}` — {verdict}.**",
-                             f"Tested `{sha[:12]}` in attempt {attempt} from [this command]({command_url}).",
-                             " · ".join(links)))
-          comments_api = f"repos/{repo}/issues/{pr}/comments"
-          api(comments_api, "--method", "POST", "-f", f"body={body}", "--silent")
-          PY
+        run: python3 -I scripts/sessionstats/matrix_notification.py complete
