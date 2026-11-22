@@ -3,6 +3,7 @@
 from __future__ import unicode_literals
 
 from .battle_details import clean_details, merge_details
+from .capture_order import compare_capture_order, valid_capture_order
 from .localization import message
 
 import bisect
@@ -312,6 +313,7 @@ class StatsService(object):
         self._history_request = {}
         self._battle_focus = {}
         self._receipt = None
+        self.capture_clock_domain = None
         self._intake = None
         self._received_context = {}
         self._received_records = {}
@@ -481,6 +483,8 @@ class StatsService(object):
 
     def _resolve_captured_result(self, record, context):
         result = dict(record)
+        order = context.get('capture_order')
+        passive = context.get('passive_capture') is True
         stored = self.result_context(result['arena_id'], include_received=False)
         candidates = context.get('candidates', [])
         if candidates:
@@ -498,6 +502,10 @@ class StatsService(object):
             duration = _number(context.get('duration'), True)
             if duration is not None:
                 result['ended_at'] = result['started_at'] + duration
+        if order is not None:
+            result['_capture_order'] = order
+        if passive:
+            result['_passive_capture'] = True
         return result
 
     @staticmethod
@@ -509,11 +517,44 @@ class StatsService(object):
                                      for candidate in record['_deferred_candidates']]
         if record.get('_require_known'):
             context['require_known'] = True
+        if valid_capture_order(record.get('_capture_order')):
+            context['capture_order'] = record['_capture_order']
+        if record.get('_passive_capture') is True:
+            context['passive_capture'] = True
         return context
 
     def has_combat_receipt(self, receipt):
         producer, sequence = receipt
         return self._state.get('_startup_receipts', {}).get(producer, 0) >= sequence
+
+    def refresh_capture_history(self):
+        """Rebase garage processing if another client committed first."""
+        if self.loading:
+            return True
+        if not self.ready or self._closed:
+            return False
+        try:
+            if not self.store.changed_on_disk():
+                return True
+            store = GenerationStore(self.store.directory, self.store.schema_version,
+                                    self.store.keep_generations)
+            state = store.load(self._validate_state)
+            if state is None:
+                raise StorageError(message('storage.changed'))
+        except (IOError, OSError, StorageError) as error:
+            self.last_error = _text(error)
+            return False
+        self.store, self._state = store, state
+        self._rebuild_indexes()
+        self._filtered_timeline = None
+        self.cancel_timeline()
+        if self._timeline_enabled and any(self._timeline_range):
+            from .projection import ScopeIndex
+            self._timeline_job = {'index': ScopeIndex(self._timeline_period_id(), self.expected_table),
+                                  'lower': self._timeline_bounds[0], 'upper': self._timeline_bounds[1],
+                                  'cursor': None}
+        self.last_error = None
+        return True
 
     def replay_combat_capture(self, record, timestamp, launch_id, is_result, receipt):
         """Apply a persisted capture once the ordinary history is ready."""
@@ -617,7 +658,8 @@ class StatsService(object):
             return self._indexes[scope]
         return None
 
-    def set_page(self, scope, group, page, period_id=None, request_id=None, anchor_id=None):
+    def set_page(self, scope, group, page, period_id=None, request_id=None, anchor_id=None,
+                 order_epoch=None, history_anchor_id=None):
         if not self.ready or self._closed:
             return False
         if group not in ('battles', 'vehicles', 'maps', 'tiers'):
@@ -625,7 +667,7 @@ class StatsService(object):
         index = self._view_index(scope)
         if index is None:
             return False
-        if period_id is not None and period_id != index.identifier:
+        if (period_id is not None and period_id != index.identifier) or not self._matches_view_epoch(scope, order_epoch):
             return False
         if request_id is not None:
             if not isinstance(request_id, (text_type, bytes)):
@@ -643,6 +685,17 @@ class StatsService(object):
             current_page = index.group_page(group, anchor_id, self._orders.get(scope, {}).get(group))
             if current_page is not None:
                 page = current_page
+        if history_anchor_id is not None:
+            if group not in ('maps', 'vehicles') or anchor_id is None or not isinstance(history_anchor_id, (text_type, bytes)):
+                return False
+            battle_id = _text(history_anchor_id)
+            if not 1 <= len(battle_id) <= 256:
+                return False
+            options = self._orders.get(scope, {}).get(group)
+            detail_page = index.group_battle_page(group, anchor_id, battle_id, options)
+            if detail_page is not None:
+                opened = self._map_pages if group == 'maps' else self._vehicle_pages
+                self._remember_group_page(scope, group, anchor_id, detail_page, index.identifier, opened)
         self._pages.setdefault(scope, {})[group] = page
         requests = self._page_requests.setdefault(scope, {})
         if request_id is None:
@@ -659,6 +712,9 @@ class StatsService(object):
     def _advance_order_epoch(self, scope):
         self._order_epochs[scope] = self._order_epochs.get(scope, 0) + 1
 
+    def _matches_view_epoch(self, scope, epoch):
+        return epoch is None or (isinstance(epoch, (text_type, bytes)) and _text(epoch) == self._order_epoch(scope))
+
     def set_order(self, scope, group, options, period_id, request_id=None, order_epoch=None):
         from .projection import valid_order
         if (not valid_order(options, group) or not self.ready or self._closed or
@@ -667,8 +723,7 @@ class StatsService(object):
         index = self._view_index(scope)
         if index is None or period_id != index.identifier:
             return False
-        if order_epoch is not None and (not isinstance(order_epoch, (text_type, bytes)) or
-                                        _text(order_epoch) != self._order_epoch(scope)):
+        if not self._matches_view_epoch(scope, order_epoch):
             return False
         if request_id is not None:
             if not isinstance(request_id, (text_type, bytes)):
@@ -700,32 +755,36 @@ class StatsService(object):
             self._battle_focus.pop(scope, None)
         return True
 
-    def set_map_battles(self, scope, map_id, page, period_id, chronology=None):
-        return self._set_group_battles(scope, 'maps', map_id, page, period_id, self._map_pages, chronology)
+    def set_map_battles(self, scope, map_id, page, period_id, chronology=None, order_epoch=None):
+        return self._set_group_battles(scope, 'maps', map_id, page, period_id, self._map_pages, chronology, order_epoch)
 
-    def set_vehicle_battles(self, scope, vehicle_id, page, period_id, chronology=None):
-        return self._set_group_battles(scope, 'vehicles', vehicle_id, page, period_id, self._vehicle_pages, chronology)
+    def set_vehicle_battles(self, scope, vehicle_id, page, period_id, chronology=None, order_epoch=None):
+        return self._set_group_battles(scope, 'vehicles', vehicle_id, page, period_id, self._vehicle_pages, chronology, order_epoch)
 
-    def _set_group_battles(self, scope, kind, group_id, page, period_id, opened, chronology=None):
+    def _set_group_battles(self, scope, kind, group_id, page, period_id, opened, chronology, order_epoch):
         if (not self.ready or self._closed or not isinstance(group_id, (text_type, bytes)) or
                 isinstance(page, bool) or not isinstance(page, int) or not 0 <= page < 10 ** 8):
             return False
         index = self._view_index(scope)
         group_id = _text(group_id)
-        if index is None or period_id != index.identifier or group_id not in index.groups[kind]:
+        if (index is None or period_id != index.identifier or group_id not in index.groups[kind] or
+                not self._matches_view_epoch(scope, order_epoch)):
             return False
         current_order = self._orders.get(scope, {}).get(kind, {})
         if chronology is not None and chronology != current_order.get('chronology', 'newest'):
             return False
+        self._remember_group_page(scope, kind, group_id, page, period_id, opened)
+        return True
+
+    def _remember_group_page(self, scope, kind, group_id, page, period_id, opened):
         current = opened.get(scope)
         if current is None or current['period_id'] != period_id:
             current = {'period_id': period_id, 'pages': {}}
             opened[scope] = current
         current['pages'][group_id] = page
         self._history_request[scope] = {'period_id': period_id, 'kind': kind, 'id': group_id, 'page': page}
-        return True
 
-    def select_battle(self, scope, identifier, period_id, request_id):
+    def select_battle(self, scope, identifier, period_id, request_id, order_epoch=None):
         if (not self.ready or self._closed or
                 not isinstance(identifier, (text_type, bytes)) or
                 not isinstance(request_id, (text_type, bytes))):
@@ -735,7 +794,7 @@ class StatsService(object):
                 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-' for char in request_id)):
             return False
         index = self._view_index(scope)
-        if index is None or period_id != index.identifier:
+        if index is None or period_id != index.identifier or not self._matches_view_epoch(scope, order_epoch):
             return False
         page = index.battle_page(identifier, self._orders.get(scope, {}).get('battles'))
         if page is None:
@@ -881,6 +940,8 @@ class StatsService(object):
             for key in ('revision', '_updated_at'):
                 if key in battle and _number(battle[key], True) is None:
                     raise StorageError(message('core.battle'))
+            if '_capture_order' in battle and not valid_capture_order(battle['_capture_order']):
+                raise StorageError(message('core.battle'))
             for key, kind in (('_manual_id', 'manual_sessions'), ('_launch_id', 'launch_sessions')):
                 if battle.get(key) is not None and (not isinstance(battle[key], text_type)
                         or battle[key] not in period_ids[kind]):
@@ -936,7 +997,7 @@ class StatsService(object):
         # Activity is observed at commit time, independently of the battle's
         # historical memberships. Both active periods protect reset boundaries.
         for epoch in (self._launch(candidate, self.launch_id), candidate['manual_sessions'][-1]):
-            if epoch is not None:
+            if epoch is not None and epoch.get('ended_at') is None:
                 epoch['last_seen_at'] = max(self._last_seen(epoch), timestamp)
 
     def _memberships(self, timestamp, current_time):
@@ -1058,11 +1119,36 @@ class StatsService(object):
         # Authority and completeness are separate: a new XP bonus can arrive
         # while a currency is unavailable. This control flag is not ledger data.
         revise = incoming.pop('reconcile', False)
+        passive = record.get('_passive_capture') is True
+        order, previous_order = record.get('_capture_order'), old.get('_capture_order')
+        if not is_result or not valid_capture_order(order):
+            order = None
+        stale = False
+        if is_result and valid_capture_order(previous_order):
+            if order is None:
+                stale = captured_launch is not None
+            elif order != previous_order:
+                stale = compare_capture_order(order, previous_order, self.capture_clock_domain) != 1
+        if stale or passive:
+            # An older receipt or another read of an existing native bundle
+            # can fill gaps without revising facts from a fresh delivery.
+            revise = False
+            if stale and old.get('xp_received') is not None:
+                incoming.pop('xp_bonus_applied', None)
+            if 'warnings' in old:
+                incoming.pop('warnings', None)
         # The raw server-result cache may predate an already applied premium XP
         # bonus even after restart. Only another bonus-aware reading can revise it.
         if old.get('xp_bonus_applied') and not incoming.get('xp_bonus_applied'):
             incoming.pop('xp_received', None)
         merged = _merge_known(old, incoming, revise)
+        # The native XP controller is specifically re-read to pick up a
+        # multiplier applied after the original battle-result delivery.
+        xp = incoming.get('xp_received')
+        changed_bonus = (passive and not stale and incoming.get('xp_bonus_applied') and xp is not None and
+                         (xp != old.get('xp_received') or not old.get('xp_bonus_applied')))
+        if changed_bonus:
+            merged['xp_received'] = xp
         if merged.get('mode') not in (None, 'random'):
             return False
         if old:
@@ -1108,10 +1194,20 @@ class StatsService(object):
                                        (revise and update.get(net) is None and
                                         (update.get(income) is not None or update.get('costs') is not None))):
                     values[net] = values[income] - values['costs']
+        # Record the latest authoritative observation even when its values
+        # match the old row. An older conflicting receipt may still be in RAM
+        # in a different client and become visible after this observation.
+        advance_order = order is not None and (revise or changed_bonus) and order != previous_order
         if merged == old:
+            if advance_order:
+                merged['_capture_order'] = order
+                if self._commit(self._candidate(), {arena_id: merged}):
+                    old['_capture_order'] = order
             return False
+        if advance_order:
+            merged['_capture_order'] = order
         merged['revision'] = old.get('revision', 0) + 1
-        merged['_updated_at'] = timestamp
+        merged['_updated_at'] = max(old.get('_updated_at', 0), timestamp)
         candidate = self._candidate()
         self._touch(candidate, timestamp)
         if not self._commit(candidate, {arena_id: merged}):

@@ -14,6 +14,7 @@ import time
 import uuid
 
 from .normalize import text_type
+from .capture_order import CaptureClock
 from .storage import (GenerationStore, MAX_TRANSACTION_BYTES, _create_file,
                       _ensure_directory, canonical_bytes, check_json_depth)
 
@@ -35,9 +36,9 @@ class _PublicationBusy(Exception):
 
 
 @contextmanager
-def _publication_lock(directory):
-    """Serialize receipt writers for this account, including other processes."""
-    path = os.path.join(directory, '.receipt-write.lock')
+def _publication_lock(directory, filename='.receipt-write.lock'):
+    """An exclusive process-owned lock released by the OS on exit."""
+    path = os.path.join(directory, filename)
     if os.name == 'nt':
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_TEMPORARY | os.O_NOINHERIT
         try:
@@ -88,7 +89,7 @@ class CombatIntake(object):
     of its flushed file. Readers keep receipts until the ledger accepts them.
     """
 
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, launch_id=None):
         subdirectory = b'combat-intake' if isinstance(data_dir, bytes) else 'combat-intake'
         self._storage = GenerationStore(os.path.join(data_dir, subdirectory))
         self._directory = self._storage.directory
@@ -100,6 +101,53 @@ class CombatIntake(object):
         self._failed = False
         self._last_id = 0
         self._producer = uuid.uuid4().hex
+        self._launch_id = _validated_text(launch_id, _LAUNCH)
+        self._clock = CaptureClock()
+
+    @property
+    def clock_domain(self):
+        return self._clock.domain
+
+    def capture_order(self):
+        return self._clock.stamp()
+
+    @contextmanager
+    def account_transaction(self, account_key, create=False):
+        """Share the receipt writer's lock with garage reads and direct commits."""
+        directory = os.path.join(self._directory, _account_folder(account_key))
+        lock = _publication_lock(directory)
+        try:
+            if create:
+                _ensure_directory(directory)
+            lock.__enter__()
+        except _PublicationBusy:
+            yield False
+            return
+        except (IOError, OSError) as error:
+            if create or error.errno != errno.ENOENT:
+                self._mark_failed()
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            lock.__exit__(None, None, None)
+
+    def launch_is_alive(self, launch_id):
+        """An unbound capture is recoverable while its owner is still active."""
+        launch = _validated_text(launch_id, _LAUNCH)
+        if launch is None:
+            return False
+        try:
+            with _publication_lock(self._directory, launch + '.live'):
+                return False
+        except _PublicationBusy:
+            return True
+        except (IOError, OSError) as error:
+            if error.errno == errno.ENOENT:
+                return False
+            self._mark_failed()
+            raise
 
     @property
     def failed(self):
@@ -146,6 +194,14 @@ class CombatIntake(object):
             self._failed = True
 
     def _write_queue(self):
+        leases = []
+        try:
+            self._publish_queue(leases)
+        finally:
+            for lease in leases:
+                lease.__exit__(None, None, None)
+
+    def _publish_queue(self, leases):
         shutdown_retry = True
         shutdown_lock_retries = _SHUTDOWN_LOCK_RETRIES
         while True:
@@ -158,6 +214,10 @@ class CombatIntake(object):
             try:
                 directory = os.path.join(self._directory, account)
                 _ensure_directory(directory)
+                if self._launch_id is not None and not leases:
+                    lease = _publication_lock(self._directory, self._launch_id + '.live')
+                    lease.__enter__()
+                    leases.append(lease)
                 with _publication_lock(directory):
                     receipt = self._next_receipt(account, submitted_order)
                     self._write(receipt, kind, payload)
@@ -255,6 +315,13 @@ class CombatIntake(object):
         """Read a bounded number of published receipts while in the garage."""
         receipts, unused_blocked = self._pending(account_key, limit, skip, accept)
         return receipts
+
+    def has_published(self, account_key):
+        try:
+            return bool(self._receipt_filenames(_account_folder(account_key)))
+        except OSError:
+            self._mark_failed()
+            return False
 
     def has_backlog(self, account_key, accept=None):
         """Defer newer writes while an older receipt may still be replayed."""

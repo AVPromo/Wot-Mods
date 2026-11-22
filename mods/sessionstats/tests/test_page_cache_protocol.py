@@ -106,7 +106,7 @@ class PageCacheProtocolTests(unittest.TestCase):
         self.assertTrue(self.service.record_result(result('row-00010', 120, reconcile=True, xp_base=888)))
         self.assertNotEqual(self.service.timeline_snapshot()['data_revision'], selected['data_revision'])
 
-    def test_returning_to_a_timeline_range_creates_a_new_sort_owner_before_loading(self):
+    def test_returning_to_a_timeline_range_rejects_all_previous_navigation_owners(self):
         self.assertTrue(self.service.set_timeline_range('__custom__', '__custom__', 120, 130))
         initial = self.finish()
         period, epoch = initial['period_id'], initial['order_epoch']
@@ -124,8 +124,50 @@ class PageCacheProtocolTests(unittest.TestCase):
         self.assertEqual(returned['order_epoch'], loading['order_epoch'])
         self.assertNotIn('order_request_id', returned['pagination']['battles'])
         self.assertFalse(self.service.set_order('timeline', 'battles', DEFAULT_ORDER, period, 'stale', epoch))
+        self.assertFalse(self.service.set_page('timeline', 'battles', 3, period, 'stale', order_epoch=epoch))
+        self.assertFalse(self.service.set_map_battles('timeline', 'map-a', 2, period, order_epoch=epoch))
+        self.assertFalse(self.service.set_vehicle_battles('timeline', '1', 2, period, order_epoch=epoch))
+        self.assertFalse(self.service.select_battle('timeline', 'row-00010', period, 'stale', epoch))
+        self.assertNotIn('battle_history', self.service.timeline_snapshot())
+        self.assertNotIn('battle_focus', self.service.timeline_snapshot())
         self.assertTrue(self.service.set_order('timeline', 'battles', DEFAULT_ORDER, period, 'latest', returned['order_epoch']))
         self.assertEqual(self.service.timeline_snapshot()['pagination']['battles']['order_request_id'], 'latest')
+        current = returned['order_epoch']
+        self.assertTrue(self.service.set_page('timeline', 'battles', 0, period, 'latest-page', order_epoch=current))
+        self.assertTrue(self.service.set_map_battles('timeline', 'map-a', 0, period, order_epoch=current))
+        self.assertTrue(self.service.set_vehicle_battles('timeline', '1', 0, period, order_epoch=current))
+        self.assertTrue(self.service.select_battle('timeline', 'row-00010', period, 'latest-battle', current))
+
+    def test_anchored_page_finds_a_battle_that_moved_inside_map_and_vehicle_history(self):
+        self.seed(10)
+        for row in self.service._state['battles'].values():
+            row['map_id'] = 'map-a'
+        self.service._rebuild_indexes()
+        initial = self.scope()
+        period, epoch = initial['period_id'], initial['order_epoch']
+        kinds = (('maps', 'map-a', self.service.set_map_battles),
+                 ('vehicles', '1', self.service.set_vehicle_battles))
+        for kind, identifier, open_history in kinds:
+            self.assertTrue(open_history('manual', identifier, 0, period, order_epoch=epoch))
+        self.assertTrue(self.service.record_result(result('fixture-recent', 500, map_id='map-a')))
+        for kind, identifier, unused in kinds:
+            for chronology, expected in (('newest', 1), ('oldest', 0)):
+                options = dict(DEFAULT_ORDER, chronology=chronology)
+                self.assertTrue(self.service.set_order('manual', kind, options, period))
+                self.assertTrue(self.service.set_page('manual', kind, 0, period, 'return-test', identifier,
+                                                      epoch, 'row-00000'))
+                scope = self.scope()
+                detail = next(row['battle_list'] for row in scope[kind] if row['id'] == identifier)
+                self.assertEqual(scope['pagination'][kind]['request_id'], 'return-test')
+                self.assertEqual(detail['page'], expected)
+                self.assertIn('row-00000', [row['id'] for row in detail['items']])
+                self.assertEqual(scope['battle_history']['battle_list'], detail)
+                self.assertTrue(self.service.set_page('manual', kind, 0, period, 'missing-battle', identifier,
+                                                      epoch, 'absent-fixture'))
+                self.assertEqual(next(row['battle_list'] for row in self.scope()[kind] if row['id'] == identifier), detail)
+        self.assertFalse(self.service.set_page('manual', 'tiers', 0, period, 'wrong-group', '1', epoch, 'row-00000'))
+        self.assertFalse(self.service.set_page('manual', 'maps', 0, period, 'missing-group', order_epoch=epoch,
+                                               history_anchor_id='row-00000'))
 
     def test_rebuilding_same_period_retires_its_previous_revision(self):
         before = self.scope()
@@ -242,7 +284,7 @@ class NativePageCacheProtocolTests(NativePaginationFixture, unittest.TestCase):
         self.window._model.onAction(command)
         for changes in ({'request_id': ''}, {'request_id': 'bad\nrequest'}, {'request_id': b'\xff'},
                         {'request_id': True}, {'request_id': 'x' * 65}, {'period_id': 'expired'},
-                        {'account_key': 'EU:other'}):
+                        {'account_key': 'EU:other'}, {'order_epoch': 'expired:1'}):
             self.window._model.onAction(dict(command, page='0', **changes))
             after = self.payload()['scopes']['manual']
             self.assertEqual(after['pagination']['battles']['page'], 1)
@@ -269,6 +311,13 @@ class NativePageCacheProtocolTests(NativePaginationFixture, unittest.TestCase):
                 identifier = history['battle_list']['items'][0]['id']
                 if scope == 'instance':
                     self.assertEqual(identifier, self.mod._instance_session.battle_key('EU:7', '0'))
+                command.update(action='page', anchor_id=history['id'], history_anchor_id=identifier,
+                               request_id='return-history', order_epoch=before['order_epoch'])
+                self.window._model.onAction(command)
+                restored = self.payload()['scopes'][scope]
+                card = next(row for row in restored[kind] if row['id'] == history['id'])
+                self.assertEqual(card['battle_list']['items'][0]['id'], identifier)
+                self.assertEqual(restored['pagination'][kind]['request_id'], 'return-history')
 
 
 if __name__ == '__main__':

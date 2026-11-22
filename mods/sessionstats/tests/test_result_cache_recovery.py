@@ -414,6 +414,34 @@ class RecoveryRuntimeTests(unittest.TestCase):
         self.assertEqual(self.mod.active_service._state['battles'][ARENA_ID]['damage'], 2400)
         self.assertIs(self.mod.inflight[(self.mod.active_key, ARENA_ID)], current)
 
+    def _assert_cache_reply_fills_missing_fields_without_revising_known_result(self):
+        newer = raw_result()
+        newer['personal'][1]['damageDealt'] = 2777
+        del newer['personal'][1]['kills']
+        self.api.events.onBattleResultsReceived(True, newer)
+        battle = self.mod.active_service._state['battles'][ARENA_ID]
+        self.assertEqual(battle['damage'], 2777)
+        self.assertIsNone(battle['frags'])
+        self.receive(1, raw_result())
+        battle = self.mod.active_service._state['battles'][ARENA_ID]
+        self.assertEqual(battle['damage'], 2777)
+        self.assertEqual(battle['frags'], 2)
+
+    def test_current_mod_cache_reply_preserves_newer_authoritative_result(self):
+        self.enter_battle()
+        self.garage()
+        self.tick()
+        self._assert_cache_reply_fills_missing_fields_without_revising_known_result()
+        self.assertEqual(self.mod.inflight, {})
+
+    def test_current_native_cache_reply_preserves_newer_authoritative_result(self):
+        self.enter_battle()
+        self.garage()
+        calls = []
+        self.api.cache.get(int(ARENA_ID), lambda *args: calls.append(args))
+        self._assert_cache_reply_fills_missing_fields_without_revising_known_result()
+        self.assertEqual(len(calls), 1)
+
     def test_late_stream_cannot_mark_an_unapplied_xp_value_as_bonus_applied(self):
         self.enter_battle()
         self.garage()

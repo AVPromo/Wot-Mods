@@ -515,6 +515,17 @@ class ScopeIndex(object):
         return next(position // PAGE_SIZE for position, group in enumerate(self._ordered(kind, options))
                     if group.identifier == identifier)
 
+    def group_battle_page(self, kind, identifier, battle_id, options=None):
+        group = self.groups[kind].get(identifier)
+        record = group.records.get(battle_id) if group is not None else None
+        if record is None:
+            return None
+        options = options if valid_order(options, kind) else DEFAULT_ORDER
+        position = bisect.bisect_left(group.battle_order, (record.get('started_at') or 0, battle_id))
+        if options['chronology'] not in ('oldest', 'last_asc'):
+            position = len(group.battle_order) - 1 - position
+        return position // MAP_BATTLE_PAGE_SIZE
+
     def map_battles(self, identifier, page, options=None):
         return self._group_battles('maps', identifier, page, options)
 

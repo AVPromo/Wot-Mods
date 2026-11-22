@@ -87,13 +87,26 @@ function decorate(payload, size) {
   return payload;
 }
 
+function resultPage(model, task) {
+  const scope=model.scopes[task.scope], order=scope.ordering[task.group];
+  const {page,page_size:pageSize,total}=scope.pagination[task.group];
+  const offset=page*pageSize, rows=scope[task.group];
+  const owner=JSON.stringify([model.account_key,task.scope,scope.period_id,scope.order_epoch,
+    scope.data_revision,task.group,pageSize,total,...actionFields.map(field=>order[field])]);
+  return {owner,page,offset,total,ids:rows.map(row=>String(row.id))};
+}
+
 function session(driver, backend, inventory, out, hostSize, compare, screenshotOptions) {
-  let size, model, submitted = 0;
+  let size, model, currentPage, submitted = 0;
+  const pythonPages = new Map();
   const screenshots = [];
   async function publish(payload) {
     model=decorate(payload,size);
     const accepted=await driver.evaluate(model=>window.__localPublish(model),model);
     assert(accepted,'Shipped panel rejected the Python payload');
+    currentPage=resultPage(model,size);
+    if(!pythonPages.has(currentPage.owner)) pythonPages.set(currentPage.owner,new Map());
+    pythonPages.get(currentPage.owner).set(currentPage.page,currentPage);
   }
   const collectActions = () => driver.evaluate(()=>window.__localActions.splice(0));
   async function flush() {
@@ -179,11 +192,12 @@ function session(driver, backend, inventory, out, hostSize, compare, screenshotO
     await flush();
   }
   async function setup(task) {
-    size={...hostSize,...task};
+    const scope=task.scope||inventory.ranges.find(range=>range.id===task.range).scope;
+    size={...hostSize,...task,scope};
     model=null;
+    pythonPages.clear();
     await collectActions();
     await publish(await backend.ask('setup',{range:task.range,group:task.group,language:task.language}));
-    const scope=task.scope||(inventory.ranges.find(range=>range.id===task.range)||{}).scope;
     const active=`#ss-scope-${scope==='timeline'?'manual':scope}`;
     await until(()=>driver.evaluate(()=>window.GRZSessionStats?.getState().nativeBound),'WoT host bridge was not bound');
     if(!await driver.evaluate(selector=>document.querySelector(selector)?.getAttribute('aria-pressed')==='true',active)) await click(active);
@@ -242,7 +256,43 @@ function session(driver, backend, inventory, out, hostSize, compare, screenshotO
     await idle();
   }
   return {driver, setup, idle, flush, click, select, snapshot, resize, applyOrder, until,
+    resultPages:()=>({current:currentPage,pages:pythonPages.get(currentPage.owner)}),
     read:()=>model, count:()=>submitted, screenshots, check:(condition,explanation)=>assert(condition,explanation)};
+}
+
+function assertResultOrder({current,pages}, cards, wide) {
+  const mounted=new Map();
+  let previousPage=-1;
+  for(const card of cards) {
+    assert(/^\d+$/.test(card.page)&&/^\d+$/.test(card.index),'Result card is missing a page or list position');
+    const page=Number(card.page), index=Number(card.index), expected=pages.get(page);
+    assert(expected,`Panel mounted page ${page+1} without a matching Python response`);
+    assert(page>=previousPage,'Mounted result pages are out of order');
+    previousPage=page;
+    const position=index-expected.offset;
+    assert(position>=0&&position<expected.ids.length,`Result card at list position ${index+1} is outside page ${page+1}`);
+    if(!mounted.has(page)) mounted.set(page,{positions:new Set(),lastInLane:[null,null],left:[null,null]});
+    const rendered=mounted.get(page);
+    assert(!rendered.positions.has(position),`Duplicate result card at list position ${index+1}`);
+    rendered.positions.add(position);
+    assert(card.id===expected.ids[position],`Rendered result order differs from Python on page ${page+1} at list position ${index+1}`);
+
+    // Matrix cases leave cards collapsed. The two lanes then alternate in
+    // Python order, with each lane flowing down independently.
+    const lane=wide ? position%2 : 0;
+    assert(card.lane===lane,`Result card at list position ${index+1} is in the wrong lane`);
+    const prior=rendered.lastInLane[lane];
+    assert(!prior||Number(prior.index)<index,'Result cards in one lane are out of order');
+    assert(!prior||prior.top===null||card.top===null||prior.top<card.top,'Result cards in one lane appear in reverse vertical order');
+    rendered.lastInLane[lane]=card;
+    if(rendered.left[lane]===null) rendered.left[lane]=card.left;
+  }
+  if(current.ids.length) assert(mounted.has(current.page),`Panel did not mount Python page ${current.page+1}`);
+  for(const [page,rendered] of mounted) {
+    assert(rendered.positions.size===pages.get(page).ids.length,`Panel mounted only part of Python page ${page+1}`);
+    const [left,right]=rendered.left;
+    assert(left===null||right===null||left<right,'Result lanes are out of order across the panel');
+  }
 }
 
 async function measure(driver) {
@@ -254,6 +304,7 @@ async function measure(driver) {
     const contentTop=pinned ? Math.max(scrollBox.top,filterBox.bottom) : scrollBox.top;
     const contentBottom=scrollBox.bottom;
     const groups=get('ss-groups'), cards=Array.from(groups.querySelectorAll('.ss-group'));
+    const rendered=[];
     // A translated filter can enlarge scrollHeight beyond the end of the list.
     const paddingBottom=parseFloat(getComputedStyle(scroll).paddingBottom)||0;
     const listRemaining=groups.getBoundingClientRect().bottom+paddingBottom-contentBottom;
@@ -261,6 +312,14 @@ async function measure(driver) {
     let visible=0, resultsTop=null, resultsReached=false;
     for(const card of cards) {
       const box=card.getBoundingClientRect();
+      const validLayout=box.width>0&&box.height>0;
+      const parent=card.parentNode;
+      let section=parent;
+      while(section!==groups&&!section.hasAttribute('data-page-index')) section=section.parentNode;
+      rendered.push({id:card.getAttribute('data-group-id'),index:card.getAttribute('data-list-index'),
+        page:section===groups?null:section.getAttribute('data-page-index'),
+        lane:parent.classList.contains('ss-card-column-left')?0:parent.classList.contains('ss-card-column-right')?1:null,
+        top:validLayout?box.top:null,left:validLayout?box.left:null});
       if(box.width<=0||box.height<=0) continue;
       const top=Math.max(contentTop,box.top), bottom=Math.min(contentBottom,box.bottom);
       const left=Math.max(scrollBox.left,box.left), right=Math.min(scrollBox.right,box.right);
@@ -289,6 +348,7 @@ async function measure(driver) {
     }
     return {width:panel.width,height:panel.height,top:Math.round(scroll.scrollTop),remaining,
       visible,resultsTop,resultsReached,contentTop,contentBottom,
+      rendered,wide:groups.classList.contains('ss-two-columns'),
       mounted:cards.length,wheelAt,layout:get('ss-list-controls').getAttribute('data-filter-layout'),
       group:document.querySelector('.ss-group-tab[aria-pressed="true"]')?.id.slice('ss-group-'.length),
       version:get('ss-version').textContent,overflow:controls.length,warning:getComputedStyle(get('ss-sort-data-warning')).display!=='none',
@@ -311,8 +371,8 @@ async function runCase(ctx, task, order, version, capture) {
       await ctx.driver.wheel(at.x,at.y,-120);
       await ctx.idle();
     }
-    const model=ctx.read(),scope=model.scopes[task.scope];
-    const state=await measure(ctx.driver);
+    const expected=ctx.resultPages();
+    const {rendered,wide,...state}=await measure(ctx.driver);
     assert(Math.abs(state.width-task.width)<=1 && Math.abs(state.height-task.height)<=1,`Wrong rendered size ${state.width}x${state.height}`);
     assert.equal(state.group,task.group);
     assert.equal(state.version,'v'+version);
@@ -327,13 +387,14 @@ async function runCase(ctx, task, order, version, capture) {
       assert(previous.remaining<=1||state.top>previous.top,
         `Wheel ${step} did not move the primary scroll viewport with ${Math.round(previous.remaining)} px available`);
     }
-    if(scope.pagination[task.group].total>0) {
+    if(expected.current.total>0) {
       assert(state.mounted>0,'Python returned results but the panel mounted no cards');
       assert(state.resultsTop!==null,'Python returned results but no result card has visible layout');
       if(state.resultsReached) assert(state.visible>0,'The results area is visible without any result cards');
     } else {
       assert.equal(state.mounted,0,'The panel retained result cards for an empty Python response');
     }
+    assertResultOrder(expected,rendered,wide);
     if(capture==='all'||(capture==='final'&&step===3)) state.image=await ctx.snapshot(root+'/'+step);
     phases.push(state);
   }

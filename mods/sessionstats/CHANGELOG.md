@@ -1,5 +1,15 @@
 # Session Stats changelog
 
+## 0.9.37 - 2026-11-22
+
+- Protect newer battle facts when another client publishes an older result, and retain installation provenance while its source is being resolved.
+- Retry interrupted garage writes and let cached results fill missing fields without replacing confirmed battle facts.
+- Resolve Windows directory aliases to the same installation history.
+- Restore resize controls after interrupted native gestures and release stale window anchors.
+- Return to the exact map or vehicle history row when newer results move it to another page.
+- Clamp pending scroll positions to current bounds and reject commands from a previous visit to the same Timeline range.
+- Check the displayed card order against the statistics model and run PR validation for matrix workflow changes.
+
 ## 0.9.36 - 2026-11-22
 
 - Preserve the order of combat results across concurrent clients and temporarily unreadable files, and finish accepted writes on clean shutdown.

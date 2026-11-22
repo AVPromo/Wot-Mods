@@ -1,4 +1,4 @@
-GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.36 (history schema unchanged)
+GRZ SESSION STATS — IMPLEMENTATION CONTRACT v0.9.37 (history schema unchanged)
 Release date: 2026-11-17.
 
 Target: World of Tanks PC Wargaming EU 2.4.1.1, Python 2.7 runtime.
@@ -82,7 +82,7 @@ to current launch just because received now. Use returned battle start time in a
 
 SNAPSHOT -> Window ViewModel string property `payload`
 {
- version: '0.9.36', account_key: string, generated_at: unix seconds,
+ version: '0.9.37', account_key: string, generated_at: unix seconds,
  expected: {version: string, ...}, warnings: [string],
  appearance: {panel_css:string, footer_css:string, scroll_speed:number},
  recovery: {pending:int, in_flight:int, states:{status_label:int}},
@@ -99,9 +99,13 @@ matching acknowledgement in place. Other configuration changes discovered on
 disk go through the full snapshot path.
 A sort command supplies a request ID. The applied order echoes the ID as
 `order_request_id` in the corresponding scope's pagination entry, independently
-of the current page request. The optional command `order_epoch` must match the
-current scope. Its service identifier and increasing counter distinguish an
-earlier visit to the same timeline range from the current projection.
+of the current page request. The optional `order_epoch` on sort, page, map
+history, vehicle history and battle selection must match the current scope. Its
+service identifier and increasing counter distinguish an earlier visit to the
+same timeline range from the current projection. A return to the source may
+include `anchor_id` to locate the parent card and `history_anchor_id` to locate
+the battle inside its expanded map or vehicle history. The same page response
+then includes the current nested page when the battle is still present.
 STATS = {
  battles:int, observed_battles:int, missing_results:int, partial_results:int,
  wins:int, losses:int, draws:int, win_rate:number or null,

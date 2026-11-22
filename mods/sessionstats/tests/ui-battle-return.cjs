@@ -53,17 +53,34 @@ with tempfile.TemporaryDirectory(prefix='grz-return-navigation-') as directory:
                 row = copy.deepcopy(service._state['battles']['return-row-124'])
                 row.update(xp_received=54321, reconcile=True)
                 assert service.record_result(row)
-            elif action in ('page', 'sort', 'battle_select', 'vehicle_battles'):
+            elif action == 'prepare_nested_map':
+                for index in range(10):
+                    assert service.record_result(result('return-nested-map-{0}'.format(index), 300 + index,
+                        vehicle_id=2, map_id='return-nested-map', map_name='Synthetic nested map', ended_at=420 + index))
+                assert service.set_order('timeline', 'maps', dict(DEFAULT_ORDER), period)
+                assert service.set_page('timeline', 'maps', 0, period, 'setup-nested-map', 'return-nested-map')
+            elif action == 'insert_history_result':
+                vehicle = command['group'] == 'vehicles'
+                assert service.record_result(result('return-inserted-' + command['group'], 700,
+                    vehicle_id=1 if vehicle else 2, map_id='return-nested-map',
+                    map_name='Synthetic nested map', ended_at=750))
+            elif action == 'revisit_timeline':
+                assert service.set_timeline_range('__custom__', '__custom__', 120, 1500)
+                assert service.set_timeline_range('', '')
+            elif action in ('page', 'sort', 'battle_select', 'vehicle_battles', 'map_battles'):
                 accepted = command.get('account_key') == service.account_key
                 if accepted and action == 'page':
-                    accepted = service.set_page(command['scope'], command['group'], int(command['page']), command['period_id'], command.get('request_id'), command.get('anchor_id'))
+                    accepted = service.set_page(command['scope'], command['group'], int(command['page']), command['period_id'],
+                        command.get('request_id'), command.get('anchor_id'), command.get('order_epoch'), command.get('history_anchor_id'))
                 elif accepted and action == 'sort':
                     options = dict((key, command[key]) for key in ('metric', 'statistic', 'direction', 'chronology'))
                     accepted = service.set_order(command['scope'], command['group'], options, command['period_id'], command.get('request_id'), command.get('order_epoch'))
                 elif accepted and action == 'vehicle_battles':
-                    accepted = service.set_vehicle_battles(command['scope'], command['vehicle_id'], int(command['page']), command['period_id'], command.get('chronology'))
+                    accepted = service.set_vehicle_battles(command['scope'], command['vehicle_id'], int(command['page']), command['period_id'], command.get('chronology'), command.get('order_epoch'))
+                elif accepted and action == 'map_battles':
+                    accepted = service.set_map_battles(command['scope'], command['map_id'], int(command['page']), command['period_id'], command.get('chronology'), command.get('order_epoch'))
                 elif accepted:
-                    accepted = service.select_battle(command['scope'], command['id'], command['period_id'], command['request_id'])
+                    accepted = service.select_battle(command['scope'], command['id'], command['period_id'], command['request_id'], command.get('order_epoch'))
             elif action != 'snapshot':
                 raise ValueError('Unexpected synthetic bridge command: ' + str(action))
             print(json.dumps({'sequence':request['sequence'], 'accepted':bool(accepted), 'payload':snapshot()}))
@@ -90,7 +107,7 @@ module.exports=async({browser,nativeHost,check})=>{
     await page.evaluate(()=>{
       window.__returnBridgeErrors=[];window.__returnBridgePending=0;
       const previous=model.onAction;
-      model.onAction=function(command){previous.call(this,command);if(!['battle_select','page','sort','vehicle_battles'].includes(command.action)||window.__returnBridgeFrozen)return;
+      model.onAction=function(command){previous.call(this,command);if(!['battle_select','page','sort','vehicle_battles','map_battles'].includes(command.action)||window.__returnBridgeFrozen)return;
         __returnBridgePending++;
         __returnNativeCommand(command).then(payload=>{
           if(window.__returnHoldRefresh&&command.action==='page'&&command.group==='maps'&&command.page==='0'){window.__returnHeldRefresh={command,payload};return;}
@@ -317,14 +334,17 @@ module.exports=async({browser,nativeHost,check})=>{
     },{selector:summarySource,oldExtreme},{timeout:5000});
     check('A changed extremum uses fallback focus without marking a replacement result or group tab',true);
     check('A changed summary reference still returns to the same upper metric cell',await page.locator(summarySource).evaluate(node=>Math.abs(node.closest('.ss-metric-number').getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top-__returnChangedSummaryCellOffset)<=2));
-    for(const changed of ['account','range']){
+    for(const changed of ['account','range','epoch']){
       await configure('battles');await page.locator(summarySource).click();await opened();
-      const retired=await page.evaluate(changed=>{const callback=document.querySelector('.ss-battle-return').onclick,payload=JSON.parse(model.payload),owner={account:payload.account_key,period:payload.scopes.timeline.period_id};
+      const epoch=changed==='epoch'?(await driver.request({action:'revisit_timeline'})).payload.scopes.timeline.order_epoch:null;
+      const retired=await page.evaluate(({changed,epoch})=>{const callback=document.querySelector('.ss-battle-return').onclick,payload=JSON.parse(model.payload),owner={account:payload.account_key,period:payload.scopes.timeline.period_id};
         // The driver owns one account. External replacement views still record
         // commands, while their independent native responses are out of scope.
         window.__returnBridgeFrozen=true;
-        if(changed==='account')payload.account_key='SYNTHETIC:return-replacement';else{payload.scopes.timeline.period_id='timeline:return-other-range';payload.scopes.timeline.from_point='return-other-range';}
-        model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);const start=__grzCommands.length;callback();return {start,owner};},changed);await frames(page);
+        if(changed==='account')payload.account_key='SYNTHETIC:return-replacement';
+        else if(changed==='range'){payload.scopes.timeline.period_id='timeline:return-other-range';payload.scopes.timeline.from_point='return-other-range';}
+        else payload.scopes.timeline.order_epoch=epoch;
+        model.payload=JSON.stringify(payload);GRZSessionStats.update(payload);const start=__grzCommands.length;callback();return {start,owner};},{changed,epoch});await frames(page);
       check('A retired Back callback cannot restore an earlier '+changed,await page.evaluate(({start,owner})=>!__grzCommands.slice(start).some(command=>['page','sort','battle_select'].includes(command.action)&&command.account_key===owner.account&&command.period_id===owner.period),retired));
     }
     await page.evaluate(()=>{window.__returnBridgeFrozen=false;});const vehicleSetup=await driver.request({action:'configure'});await publish(vehicleSetup.payload);
@@ -333,15 +353,35 @@ module.exports=async({browser,nativeHost,check})=>{
     await page.locator('#ss-groups .ss-group').first().locator('.ss-vehicle-more-button').click();
     const historySource='#ss-groups [data-group-id="'+vehicleId+'"] .ss-map-battle-open';
     await page.locator(historySource).first().waitFor({state:'visible',timeout:5000});await ready('vehicles');
-    const historyBattle=await page.locator(historySource).first().getAttribute('data-battle-id'),historySelector=historySource+'[data-battle-id="'+historyBattle+'"]';
+    const historyBattle=await page.locator(historySource).last().getAttribute('data-battle-id'),historySelector=historySource+'[data-battle-id="'+historyBattle+'"]';
     await page.locator(historySelector).click();await opened();
-    await publish((await driver.request({action:'revise',index:61})).payload);await opened();
+    await publish((await driver.request({action:'insert_history_result',group:'vehicles'})).payload);await opened();
     await page.locator('.ss-battle-return').click();await ready('vehicles');
     await sourceMarker(historySelector,'vehicle history pointer');
     check('Back keeps the vehicle history expanded around its marked Show battle action',await page.locator('#ss-groups .ss-group').first().locator('.ss-vehicle-more-button').getAttribute('aria-expanded')==='true');
+    check('Back requests the moved vehicle history row and renders its new nested page',await page.evaluate(({vehicleId,historyBattle})=>{
+      const scope=JSON.parse(model.payload).scopes.timeline, item=scope.vehicles.find(row=>String(row.id)===vehicleId);
+      return item&&item.battle_list.page===1&&__grzCommands.some(command=>command.action==='page'&&command.group==='vehicles'&&
+        command.anchor_id===vehicleId&&command.history_anchor_id===historyBattle&&command.order_epoch===scope.order_epoch);
+    },{vehicleId,historyBattle}));
     const financial='#ss-groups [data-group-id="'+vehicleId+'"] .ss-credit-extreme-actions .ss-metric-battle-link[data-ss-source-metric="credits_income_received"][data-ss-extreme="max"]';
     await page.locator(financial).click();await opened();check('Opening another source retires the previous returned marker',await page.locator('.ss-source-returned').count()===0);
     await page.locator('.ss-battle-return').click();await ready('vehicles');await sourceMarker(financial,'financial Max');
+    await publish((await driver.request({action:'prepare_nested_map'})).payload);
+    await page.locator('#ss-group-maps').click();await ready('maps');
+    const mapCard=page.locator('#ss-groups [data-group-id="return-nested-map"]');
+    await mapCard.locator('.ss-map-more-button').click();
+    await mapCard.locator('.ss-map-battle-open').first().waitFor({state:'visible',timeout:5000});await ready('maps');
+    const mapBattle=await mapCard.locator('.ss-map-battle-open').last().getAttribute('data-battle-id');
+    const mapHistorySource='#ss-groups [data-group-id="return-nested-map"] .ss-map-battle-open[data-battle-id="'+mapBattle+'"]';
+    await page.locator(mapHistorySource).click();await opened();
+    await publish((await driver.request({action:'insert_history_result',group:'maps'})).payload);await opened();
+    await page.locator('.ss-battle-return').click();await ready('maps');await sourceMarker(mapHistorySource,'moved map history pointer');
+    check('Back restores the new nested map page containing the exact source action',await page.evaluate(mapBattle=>{
+      const scope=JSON.parse(model.payload).scopes.timeline, item=scope.maps.find(row=>row.id==='return-nested-map');
+      return item&&item.battle_list.page===1&&__grzCommands.some(command=>command.action==='page'&&command.group==='maps'&&
+        command.anchor_id==='return-nested-map'&&command.history_anchor_id===mapBattle&&command.order_epoch===scope.order_epoch);
+    },mapBattle));
     check('Real native return bridge accepts every owned command without errors',await page.evaluate(()=>__returnBridgeErrors.length===0));
     await page.evaluate(()=>GRZSessionStats.destroy());
     check('Destroying the panel removes the returned-source marker immediately',await page.locator('.ss-source-returned').count()===0);

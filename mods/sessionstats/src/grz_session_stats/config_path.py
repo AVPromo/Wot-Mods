@@ -272,7 +272,7 @@ def prepare_config_path(package_name=None, resmgr=None, cwd=None):
 
 
 def find_installation_root(resmgr=None, cwd=None):
-    """Identify the physical game root, independently of mod/client versions."""
+    """Identify the game root, retaining its observed Windows spelling."""
     try:
         if resmgr is None:
             try:
@@ -302,4 +302,9 @@ def find_installation_root(resmgr=None, cwd=None):
 
 
 def _real_installation_root(xml_path):
-    return logical_data_path(os.path.realpath(native_data_path(os.path.dirname(xml_path))))
+    directory = os.path.dirname(xml_path)
+    if sys.platform == 'win32':
+        # InstallationSession resolves the physical directory and checks this
+        # spelling for history created before junctions were resolved.
+        return logical_data_path(os.path.abspath(directory))
+    return os.path.realpath(directory)

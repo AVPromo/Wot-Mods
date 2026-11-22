@@ -207,6 +207,10 @@ class GenerationStore(object):
                 found.append((int(match.group(1)), os.path.join(self.directory, name)))
         return sorted(found, reverse=True)
 
+    def changed_on_disk(self):
+        files = self._files()
+        return (files[0][0] if files else 0) != self._observed_generation
+
     def _decode(self, path, generation, allow_journal=True, file_checksum=None):
         output = [None]
         complete(self._decode_steps(path, generation, output, allow_journal, file_checksum))

@@ -250,6 +250,80 @@ module.exports = async function ({browser, nativeHost, check}) {
     timing.releaseLayout && timing.staleFramesInert);
   await responsive.close();
 
+  const missingRelease = await nativeHost(browser, {viewport:{width:1600,height:1100,scale:1}});
+  const release = await missingRelease.evaluate(() => {
+    const grip = document.querySelector('[data-corner="se"]'), tracking = [];
+    viewEnv.setTrackMouseOnStage = active => tracking.push(active);
+    const commands = action => __grzCommands.filter(command => command.action === action);
+    function press(pointerId) {
+      grip.dispatchEvent(new PointerEvent('pointerdown', {button:0,pointerId,clientX:690,clientY:725,
+        bubbles:true,cancelable:true}));
+      return commands('resize_begin').at(-1).token;
+    }
+    function sample(token,sequence,width,active) {
+      GRZSessionStats.update({resize_gesture:{token,sequence,width,height:800,active}});
+    }
+    function pointerUp(pointerId,button) {
+      document.dispatchEvent(new PointerEvent('pointerup', {pointerId,button,bubbles:true,cancelable:true}));
+    }
+    const timer = delay => [...__grzTimers].find(([,entry]) => entry.delay === delay);
+    function fire(entry) { __grzTimers.delete(entry[0]); entry[1].callback(); }
+    const first = press(1);
+    sample(first,1,880,true);
+    const oldLease = timer(1500);
+    sample(first,2,900,true);
+    oldLease[1].callback();
+    pointerUp(2,0);pointerUp(1,2);
+    const keepHolding = commands('resize_end').length === 0 && tracking.join(',') === 'true';
+    pointerUp(1,0);
+    const fallback = timer(400);
+    // A delayed active sample cannot extend a gesture that is already ending.
+    sample(first,3,1100,true);
+    fire(fallback);
+    const firstClosed = tracking.join(',') === 'true,false' &&
+      commands('resize_end').filter(command => command.token === first).length === 2 &&
+      commands('size_preference').at(-1).width === '900';
+    const filter = document.querySelector('#ss-sort-chronology .ss-select-trigger');
+    filter.click();
+    const filterOpened = filter.getAttribute('aria-expanded') === 'true';
+    sample(first,4,1500,false);
+    const obsoletePacketLeavesMenu = filterOpened && filter.getAttribute('aria-expanded') === 'true';
+    filter.click();
+
+    const second = press(2);
+    sample(second,5,920,true);
+    fallback[1].callback();
+    sample(first,6,1500,false);
+    const secondOwned = first !== second && tracking.at(-1) === true;
+    sample(second,7,950,false);
+    const secondClosed = tracking.at(-1) === false && commands('size_preference').at(-1).width === '950';
+
+    const outside = press(3);
+    sample(outside,8,970,true);
+    __grzEvents.mouseup();
+    const ambiguous = commands('resize_end').every(command => command.token !== outside);
+    fire(timer(1500));
+    const outsideClosed = tracking.at(-1) === false && commands('resize_end').at(-1).token === outside;
+
+    const last = press(4);
+    sample(last,9,980,true);
+    window.dispatchEvent(new Event('blur'));
+    const late = timer(400);
+    const blurArmed = late && commands('resize_end').at(-1).token === last;
+    GRZSessionStats.destroy();
+    const afterDestroy = __grzCommands.length;
+    late[1].callback();
+    return {keepHolding,firstClosed,obsoletePacketLeavesMenu,secondOwned,secondClosed,ambiguous,outsideClosed,blurArmed,
+      destroyRetired:tracking.at(-1) === false && __grzCommands.length === afterDestroy && !__grzTimers.has(late[0])};
+  });
+  check('Resize ignores unrelated pointer releases and stays active on a renewed native lease', release.keepHolding);
+  check('A lost terminal resize update releases capture and saves the last visible size', release.firstClosed);
+  check('An obsolete terminal resize update leaves a newly opened filter menu alone', release.obsoletePacketLeavesMenu);
+  check('Late resize packets and callbacks cannot finish a newer gesture', release.secondOwned && release.secondClosed);
+  check('A lost outside release is recovered after the native lease expires', release.ambiguous && release.outsideClosed);
+  check('Focus loss starts bounded release and destroying the panel retires its callback', release.blurArmed && release.destroyRetired);
+  await missingRelease.close();
+
   const feedPage = await nativeHost(browser, {
     initialViewport:{width:1700,height:1150}, viewport:{width:1700,height:1150,scale:1},
   });
@@ -315,6 +389,12 @@ module.exports = async function ({browser, nativeHost, check}) {
         }
         scroll.dispatchEvent(new Event('scroll'));
       }, input);
+      if (input === 'uncancelable wheel') {
+        await settle();
+        check('An uncancelable synthetic wheel cannot claim the guarded resize viewport',
+          await feedPage.evaluate(() => __grzCommands.filter(command => command.action === 'page').length === __resizeFeedPagesBefore));
+        continue;
+      }
       await feedPage.waitForFunction(() => __grzCommands.filter(command => command.action === 'page').length > __resizeFeedPagesBefore);
       check('Intentional '+input+' still requests the adjacent Battles page and displays its loading state',
         await feedPage.evaluate(() => {

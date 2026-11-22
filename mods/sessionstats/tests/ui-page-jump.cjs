@@ -7,11 +7,11 @@ function actualFunction(source,name){
 }
 function geometry(source=shipped()){
   let clock=1000,offset=0,physical=0,position=1500,missing=false,busy=false,validContext=true;
-  let lag=false,pendingOffset=null,nextTimer=1,pinnedUpdates=0,resizes=0;
+  let lag=false,pendingOffset=null,nextTimer=1,pinnedUpdates=0,resizes=0,maximum=4000;
   const timers=new Map(),owner={account_key:'synthetic-page-jump',scope:'launch',period_id:'synthetic-period'};
   const feed={context:owner,key:'synthetic-page-order',collectionKey:'synthetic-page-order',group:'maps',
     start:0,last:2,current:0,pages:5,navigationPage:2,topRequested:false,prependAnchor:null,pending:null};
-  const scroll={get scrollTop(){return offset;},set scrollTop(value){const next=Math.max(0,Math.min(4000,value));
+  const scroll={get scrollTop(){return offset;},set scrollTop(value){const next=Math.max(0,Math.min(maximum,value));
       if(lag==='drop'){lag=false;return;}
       if(lag){pendingOffset=next;if(lag==='getter')physical=next;if(lag==='rect')offset=next;}
       else{offset=next;physical=next;}},clientHeight:500,scrollHeight:4500,
@@ -28,7 +28,7 @@ function geometry(source=shipped()){
     hasNumber:value=>typeof value==='number'&&Number.isFinite(value),sameContext:()=>validContext,
     cancelUITimer:id=>timers.delete(id),window:{setTimeout(callback,delay){const id=nextTimer++;timers.set(id,{callback,delay});return id;}},
     document:{documentElement:{contains:()=>true}},pinnedFilterHeight:()=>60,
-    scrollbarMetrics:()=>({maximum:4000}),queueResize(){resizes++;},
+    scrollbarMetrics:()=>({maximum}),queueResize(){resizes++;},
     updatePinnedFilters(){pinnedUpdates++;},updateFeedControls(){},syncScrollbar(){},
     cancelBattleNavigation(){state.battleJump=null;},clearBattleTarget(){},
     resetViewScroll(){state.scrollTarget=0;scroll.scrollTop=0;}};
@@ -41,7 +41,7 @@ function geometry(source=shipped()){
   return{context,state,scroll,section,timers,feed,begin(){context.beginPageJump(feed,2);context.finishPageJump();},
     tick,settle(){for(let index=0;index<12&&state.pageJump;index++)tick(100);},
     show(){state.cardPages=[{index:2,section}];},missing(value){missing=value;},busy(value){busy=value;},
-    move(value){position=value;},setContext(value){validContext=value;},lag(value){lag=value;},
+    move(value){position=value;},limit(value){maximum=value;},setContext(value){validContext=value;},lag(value){lag=value;},
     flush(){lag=false;if(pendingOffset!==null){offset=pendingOffset;physical=pendingOffset;pendingOffset=null;}},
     pinnedUpdates:()=>pinnedUpdates,resizes:()=>resizes};
 }
@@ -125,6 +125,12 @@ function assertPageJumpSource(source=shipped()){
   assert.strictEqual(dropped.state.pageJump.requestedOffset,requested,'A dropped setter retries the same owned divider offset');
   assert.strictEqual(dropped.scroll.scrollTop,requested,'The page retry reissues the dropped setter without manual native acknowledgement');
   dropped.settle();assert.strictEqual(dropped.state.pageJump,null,'The reissued page setter settles without a manual flush');
+  const shrinking=geometry(source);shrinking.show();shrinking.lag('drop');shrinking.begin();
+  assert(shrinking.state.pageJump.requestedOffset>150,'The divider requested a position above the future range');
+  shrinking.move(225);shrinking.limit(150);shrinking.tick();
+  assert.strictEqual(shrinking.state.pageJump.requestedOffset,150,'A retained divider setter uses the new maximum');
+  assert.strictEqual(shrinking.scroll.scrollTop,150);
+  shrinking.settle();assert.strictEqual(shrinking.state.pageJump,null,'The divider settles before its timeout after the range shrinks');
 
   const final=geometry(source);final.show();final.move(4200);final.begin();final.settle();
   assert.strictEqual(final.scroll.scrollTop,4000,'A short final page clamps to the actual scroll range');

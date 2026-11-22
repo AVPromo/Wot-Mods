@@ -381,6 +381,39 @@ class CombatIntakeTests(unittest.TestCase):
         finally:
             del combat_intake.open
 
+    def test_shared_installation_tracks_one_writer_per_account_even_when_drained_in_reverse(self):
+        from grz_session_stats.core import StatsService
+        from grz_session_stats.runtime import Runtime
+        from grz_session_stats.sessions import InstallationSession
+        from test_core import Clock, EXPECTED, result
+
+        clock = Clock(1000)
+        launch = 'e' * 32
+        runtime = Runtime(data_dir=self.directory, now=clock)
+        session = InstallationSession(self.directory, self.directory, launch, EXPECTED, clock)
+        runtime._instance_session = session
+        runtime._combat_installation = session.service.account_key
+        accounts = ('EU:100', 'EU:200')
+        services = {account: StatsService(self.directory, account, launch, EXPECTED, now=clock)
+                    for account in accounts}
+        for account in accounts:
+            # These legacy receipts intentionally carry no observation order.
+            self.assertTrue(self.intake.submit(account, 'result', {
+                'at': 1100, 'launch_id': launch, 'observed': True,
+                'installation': session.service.account_key,
+                'record': result('same-arena', 1010),
+            }))
+        self.intake.close(wait=True)
+        older, newer = [self.intake.identity(self.intake.pending(account)[0][0]) for account in accounts]
+        self.assertLess(older[1], newer[1])
+        self.assertNotEqual(older[0], newer[0])
+        for account in reversed(accounts):
+            runtime._drain_account_captures(self.intake, account, services[account])
+            runtime._drain_installation_captures(self.intake, account, services[account])
+            self.assertEqual(self.intake.pending(account), [])
+        self.assertEqual(set(session.service._state['battles']),
+                         set(session.battle_key(account, 'same-arena') for account in accounts))
+
     def test_late_installation_binding_is_durable_and_cannot_be_reassigned(self):
         launch = 'a' * 32
         first = 'installation:' + 'b' * 64

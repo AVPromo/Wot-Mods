@@ -2993,12 +2993,15 @@
 
     function viewContext() {
         var scope = currentScope();
-        return {account_key:state.payload.account_key, scope:scopeName(), period_id:scope.period_id};
+        var context = {account_key:state.payload.account_key, scope:scopeName(), period_id:scope.period_id};
+        if (scope.order_epoch) { context.order_epoch = scope.order_epoch; }
+        return context;
     }
     function sameContext(context) {
         if (state.destroyed || !state.payload || !currentScope()) { return false; }
         var current = viewContext();
-        return context.account_key === current.account_key && context.scope === current.scope && context.period_id === current.period_id;
+        return context.account_key === current.account_key && context.scope === current.scope &&
+            context.period_id === current.period_id && context.order_epoch === current.order_epoch;
     }
     function sameBattleOriginOrder(left, right) {
         return !!left && !!right && canonicalMetric(left.metric) === canonicalMetric(right.metric) &&
@@ -3069,7 +3072,7 @@
             while (card && card !== root && !card.hasAttribute('data-group-id')) { card = card.parentNode; }
             origin.source = {summary:nodes.summary.contains(source), card:card && card !== root ? card.getAttribute('data-group-id') : null,
                 metric:source.getAttribute('data-ss-source-metric'), statistic:source.getAttribute('data-ss-extreme'),
-                battle:source.getAttribute('data-battle-id')};
+                battle:source.getAttribute('data-battle-id'), history:source.classList.contains('ss-map-battle-open')};
             if (origin.source.summary) {
                 var cell = summaryOriginCell(origin.source);
                 origin.source.summaryOffset = (nodes.summary.getBoundingClientRect().top - viewport.top) / scale;
@@ -3198,7 +3201,9 @@
         returning.page = Math.max(0, Math.min(page, meta ? meta.pages - 1 : page));
         var args = {account_key:origin.context.account_key, scope:origin.context.scope, period_id:origin.context.period_id,
             group:origin.group, page:returning.page, request_id:returning.request};
+        if (origin.context.order_epoch) { args.order_epoch = origin.context.order_epoch; }
         if (source && source.card !== null && origin.group !== 'battles') { args.anchor_id = source.card; }
+        if (args.anchor_id && source.history && source.battle) { args.history_anchor_id = source.battle; }
         returning.locatingSource = !!args.anchor_id;
         if (!invoke('page', args)) {
             cancelBattleNavigation(); setActionError(t('page.error'));
@@ -3282,14 +3287,7 @@
         }
         var origin = returning.origin;
         var scale = state.nativeScale || 1, scroll = nodes.scroll, maximum = scrollbarMetrics().maximum;
-        if (battleScrollPending(returning)) {
-            // Native scroll writes can be dropped, and rebuilding a last page
-            // can shrink the range before the previous write is acknowledged.
-            if (Math.abs(scroll.scrollTop - returning.requestedOffset) > scale) {
-                returning.requestedOffset = Math.min(maximum, returning.requestedOffset);
-                state.scrollTarget = returning.requestedOffset;
-                scroll.scrollTop = returning.requestedOffset;
-            }
+        if (battleScrollPending(returning, true)) {
             queueBattleReturn(returning); return;
         }
         var viewport = scroll.getBoundingClientRect(), offset = origin.scroll * scale, anchor = null;
@@ -3469,8 +3467,9 @@
             cancelBattleNavigation(); setActionError(t('page.error'));
         }, 10000);
         renderFilterActivity(currentScope());
-        if (!invoke('battle_select', {account_key:context.account_key, scope:context.scope,
-                period_id:context.period_id, id:id, request_id:request}) &&
+        var args = {account_key:context.account_key, scope:context.scope, period_id:context.period_id, id:id, request_id:request};
+        if (context.order_epoch) { args.order_epoch = context.order_epoch; }
+        if (!invoke('battle_select', args) &&
                 state.pendingBattle === pending) { cancelBattleNavigation(); }
     }
     function consumeBattleFocus(scope) {
@@ -3538,9 +3537,19 @@
         }
         return node === ancestor ? offset : null;
     }
-    function battleScrollPending(jump) {
+    function battleScrollPending(jump, retry) {
         if (!jump || !hasNumber(jump.requestedOffset)) { return false; }
         var scale = state.nativeScale || 1, scroll = nodes.scroll;
+        if (retry) {
+            // A native write can be dropped, or the range can shrink before
+            // the renderer acknowledges the previous destination.
+            var offset = Math.min(scrollbarMetrics().maximum, jump.requestedOffset);
+            if (offset !== jump.requestedOffset || Math.abs(scroll.scrollTop - offset) > scale) {
+                jump.requestedOffset = state.scrollTarget = offset;
+                scroll.scrollTop = offset;
+                return true;
+            }
+        }
         if (Math.abs(scroll.scrollTop - jump.requestedOffset) > scale) { return true; }
         var origin = battleLayoutOffset(nodes.groups, scroll);
         if (origin === null) { return false; }
@@ -3575,14 +3584,7 @@
                 nodes.groups.getAttribute('aria-busy') === 'true') { retryBattleJump(jump); return; }
         // Native rectangles and scrollTop can acknowledge a setter in either
         // order. Never mix samples from opposite sides of that handoff.
-        if (battleScrollPending(jump)) {
-            // A Gameface write can be dropped while the scroll range is growing.
-            if (Math.abs(nodes.scroll.scrollTop - jump.requestedOffset) > (state.nativeScale || 1)) {
-                state.scrollTarget = jump.requestedOffset;
-                nodes.scroll.scrollTop = jump.requestedOffset;
-            }
-            retryBattleJump(jump); return;
-        }
+        if (battleScrollPending(jump, true)) { retryBattleJump(jump); return; }
         jump.requestedOffset = null;
         var target = renderedBattleTarget(jump.id);
         var scroll = nodes.scroll, box = target && target.getBoundingClientRect(), container = scroll.getBoundingClientRect();
@@ -3625,7 +3627,7 @@
     }
     function attachMapMore(card, header, map) {
         var vehicle = state.group === 'vehicles', kind = vehicle ? 'vehicle' : 'map';
-        var context = viewContext(), key = JSON.stringify([context.account_key, context.scope, context.period_id, kind, String(map.id)]);
+        var context = viewContext(), key = JSON.stringify([context.account_key, context.scope, context.period_id, context.order_epoch, kind, String(map.id)]);
         var identifier = String(map.id), group = state.group, historyChronology = getOrder(currentScope()).chronology;
         var titleKey = vehicle ? 'vehicles.battles' : 'maps.battles';
         var button = append(header, element('button', 'ss-control ss-button ss-more-button ss-map-more-button' + (vehicle ? ' ss-vehicle-more-button' : '')));
@@ -3677,6 +3679,7 @@
                 pending.timer = window.setTimeout(fail, 10000);
                 var args = {account_key:context.account_key, scope:context.scope, period_id:context.period_id,
                     page:page, chronology:historyChronology};
+                if (context.order_epoch) { args.order_epoch = context.order_epoch; }
                 args[kind + '_id'] = identifier;
                 if (!invoke(kind + '_battles', args)) { fail(); }
             }
@@ -4437,11 +4440,14 @@
     }
     function feedCollectionIdentity(scope) {
         var order = getOrder(scope);
-        return JSON.stringify([state.payload.account_key, scopeName(), scope.period_id, state.group,
+        return JSON.stringify([state.payload.account_key, scopeName(), scope.period_id, scope.order_epoch, state.group,
             order.metric, order.statistic, order.direction, order.chronology]);
     }
     function feedIdentity(scope) { return feedCollectionIdentity(scope) + '/' + state.language; }
-    function feedContextIdentity() { return JSON.stringify([state.payload.account_key, scopeName(), currentScope().period_id, state.group]); }
+    function feedContextIdentity() {
+        var scope = currentScope();
+        return JSON.stringify([state.payload.account_key, scopeName(), scope.period_id, scope.order_epoch, state.group]);
+    }
     function earlierDataRevision(candidate, current) {
         // Projection generations change on rebuild. Only their own counters
         // can establish which snapshot is older.
@@ -4587,8 +4593,10 @@
                 cancelUITimer(pending.timer); feed.pending = null;
                 showFeedPending(feed); updateFeedControls(); return;
             }
-            if (!invoke('page', {scope:feed.context.scope, group:feed.group, page:index, period_id:feed.context.period_id,
-                    account_key:feed.context.account_key, request_id:request})) {
+            var args = {scope:feed.context.scope, group:feed.group, page:index, period_id:feed.context.period_id,
+                account_key:feed.context.account_key, request_id:request};
+            if (feed.context.order_epoch) { args.order_epoch = feed.context.order_epoch; }
+            if (!invoke('page', args)) {
                 cancelUITimer(pending.timer); fail();
             }
         }
@@ -5014,14 +5022,7 @@
                 nodes.groups.getAttribute('aria-busy') === 'true') { retryPageJump(jump); return; }
         // A native setter and its rectangles can acknowledge different frames.
         // Keep the destination until both describe the same scroll position.
-        if (battleScrollPending(jump)) {
-            // A setter issued before the native content range grows can be
-            // clamped or dropped. Reissue the owned value without combining
-            // an old getter with a newer rectangle to derive another target.
-            state.scrollTarget = jump.requestedOffset;
-            nodes.scroll.scrollTop = jump.requestedOffset;
-            retryPageJump(jump); return;
-        }
+        if (battleScrollPending(jump, true)) { retryPageJump(jump); return; }
         jump.requestedOffset = null;
         var target = null;
         (state.cardPages || []).some(function (page) { if (page.index === jump.page) { target = page.section; return true; } return false; });
@@ -5224,13 +5225,13 @@
             hasInstance ? t('scope.launch.short') : t('scope.launch');
         var scope = currentScope();
         if (!scope || !scope.summary) { return; }
-        var mapContext = JSON.stringify([payload.account_key, scopeName(), scope.period_id]);
+        var mapContext = JSON.stringify([payload.account_key, scopeName(), scope.period_id, scope.order_epoch]);
         if (mapContext !== state.mapContext) { state.openMaps = {}; state.mapContext = mapContext; }
         if (state.highlightedBattle && !sameContext(state.highlightedBattle.context)) { clearBattleTarget(); }
         consumeBattleFocus(scope);
         var page = scope.pagination && scope.pagination[state.group];
         var viewKey = JSON.stringify([payload.account_key, scopeName(), state.group,
-            scope.period_id, scope.from_point, scope.to_point, scope.from_date, scope.to_date, page && page.page]);
+            scope.period_id, scope.order_epoch, scope.from_point, scope.to_point, scope.from_date, scope.to_date, page && page.page]);
         var oldTop = state.scrollTarget === null ? nodes.scroll.scrollTop : state.scrollTarget;
         var scrollingRefresh = state.feed && state.feed.refreshInput;
         state.viewKey = viewKey;
@@ -5353,13 +5354,18 @@
                 return true;
             }
             if (value && value.resize_gesture) {
-                closeSelect(false);
-                var gesture = value.resize_gesture;
-                if (state.resize && gesture.token === String(state.resizeSequence)) {
-                    state.resize.native = true;
+                var gesture = value.resize_gesture, drag = state.resize;
+                var numbered = hasNumber(gesture.sequence);
+                if (drag && gesture.token === drag.token && (!gesture.active || !drag.ending) &&
+                        (!numbered || gesture.sequence > drag.sample)) {
+                    closeSelect(false);
+                    drag.native = true;
+                    if (numbered) { drag.sample = gesture.sequence; }
                     setLogicalSize(gesture.width, gesture.height);
-                    if (gesture.active) { queueResize(); }
-                    else { endResize(false); }
+                    if (gesture.active) {
+                        watchResizeRelease(drag, 1500);
+                        queueResize();
+                    } else { finishResize(drag, false); }
                 }
                 return true;
             }
@@ -5900,21 +5906,20 @@
         var rect = root.getBoundingClientRect();
         var grip = event.currentTarget, corner = grip.getAttribute('data-corner') || 'se';
         focusControl(grip);
-        state.resize = {x:event.clientX, y:event.clientY, width:rect.width, height:rect.height,
-            pointer:event.pointerId, grip:grip, corner:corner, native:false,
-            surfaceTimer:null, layoutTimer:null, layoutWidth:resizePanelDimensions(rect).width};
+        var drag = state.resize = {x:event.clientX, y:event.clientY, width:rect.width, height:rect.height,
+            pointer:event.pointerId, grip:grip, corner:corner, native:false, token:String(++state.resizeSequence), sample:0,
+            releaseTimer:null, surfaceTimer:null, layoutTimer:null, layoutWidth:resizePanelDimensions(rect).width};
         state.resizeMeasureToken += 1;
         state.resizeQueued = false;
-        state.resizeSequence += 1;
         state.resizeLast = Date.now() - 100;
         requestResizeCursor(grip, true);
-        trackResizeOnStage(state.resize, true);
+        trackResizeOnStage(drag, true);
         if (event.pointerId !== undefined && typeof grip.setPointerCapture === 'function') {
             try { grip.setPointerCapture(event.pointerId); } catch (error) { /* The game-level gesture also tracks outside the document. */ }
         }
         if (state.bound) {
             invoke('drag', {active:true});
-            invoke('resize_begin', {corner:corner, token:String(state.resizeSequence)});
+            if (state.resize === drag) { invoke('resize_begin', {corner:corner, token:drag.token}); }
         }
         event.preventDefault();
     }
@@ -5931,22 +5936,38 @@
             (drag.height + (vertical ? (event.clientY - drag.y) * (north ? -1 : 1) : 0)) / state.nativeScale);
         if (event.type !== 'mouseup' && event.type !== 'pointerup') { queueResize(); }
     }
+    function watchResizeRelease(drag, delay) {
+        cancelUITimer(drag.releaseTimer);
+        var timer = window.setTimeout(function () {
+            if (state.resize !== drag || drag.releaseTimer !== timer) { return; }
+            drag.releaseTimer = null;
+            finishResize(drag, true);
+        }, delay);
+        drag.releaseTimer = timer;
+    }
     function endResize(notify) {
-        if (!state.resize) { return; }
         var drag = state.resize;
+        if (!drag) { return; }
+        if (notify && ((drag.pointer !== undefined && notify.pointerId !== undefined && drag.pointer !== notify.pointerId) ||
+                ((notify.type === 'mouseup' || notify.type === 'pointerup') && hasNumber(notify.button) && notify.button !== 0))) { return; }
         if (notify) { consumeResizeInput(notify); }
-        if (drag.native && notify && (notify.type === 'blur' || notify.type === 'pointercancel')) { return; }
-        if (drag.native && notify !== false && !state.destroyed) {
-            // The game samples the release position once more. Keep this token
-            // alive until its final payload arrives, then persist that size.
+        if (drag.native && !state.destroyed) {
+            // The game samples the release once more. If its terminal update
+            // is lost, finish at the last visible size and release input.
             if (drag.ending) { return; }
             drag.ending = true;
-            if (invoke('resize_end', {token:String(state.resizeSequence)})) { return; }
+            watchResizeRelease(drag, 400);
+            if (invoke('resize_end', {token:drag.token})) { return; }
         }
         if (!drag.native && notify && (notify.type === 'mouseup' || notify.type === 'pointerup')) {
             moveResize(notify);
         }
+        finishResize(drag, !drag.ending);
+    }
+    function finishResize(drag, notifyNative) {
+        if (state.resize !== drag) { return; }
         state.resize = null;
+        cancelUITimer(drag.releaseTimer);
         cancelUITimer(drag.surfaceTimer);
         cancelUITimer(drag.layoutTimer);
         trackResizeOnStage(drag, false);
@@ -5958,7 +5979,7 @@
             try { drag.grip.releasePointerCapture(drag.pointer); } catch (error) { /* Capture may already be released by the engine. */ }
         }
         if (state.bound) {
-            if (notify !== false) { invoke('resize_end', {token:String(state.resizeSequence)}); }
+            if (notifyNative) { invoke('resize_end', {token:drag.token}); }
             invoke('drag', {active:false});
             if (state.logicalSize) { invoke('size_preference', state.logicalSize); }
         }

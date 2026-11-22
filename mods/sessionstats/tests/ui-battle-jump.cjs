@@ -7,7 +7,7 @@ function actualFunction(source,name) {
 }
 function geometry(source=shipped()) {
   let clock=1000,offset=0,physical=0,position=1500,missing=false,busy=false,validContext=true,lag=false,pendingOffset=null,focused=0,paints=0,nextTimer=1,pinnedUpdates=0;
-  let droppedWrites=0;
+  let droppedWrites=0,maximum=4000;
   const timers=new Map(),owner={account_key:'synthetic-jump',scope:'launch',period_id:'synthetic-period'};
   const feed={navigationPage:2};
   const target={getAttribute:name=>name==='data-group-id'?'selected-page-three':null,
@@ -16,7 +16,7 @@ function geometry(source=shipped()) {
     querySelector:selector=>selector==='.ss-battle-selection-banner'?{
       getBoundingClientRect:()=>({top:90+position-physical,bottom:110+position-physical,height:20})
     }:null};
-  const scroll={get scrollTop(){return offset;},set scrollTop(value){const next=Math.max(0,Math.min(4000,value));
+  const scroll={get scrollTop(){return offset;},set scrollTop(value){const next=Math.max(0,Math.min(maximum,value));
       if(droppedWrites>0){droppedWrites--;return;}
       if(lag){pendingOffset=next;if(lag==='getter')physical=next;if(lag==='rect')offset=next;}
       else {offset=next;physical=next;}},
@@ -33,7 +33,7 @@ function geometry(source=shipped()) {
     currentScope:()=>({}),renderFilterActivity(){},
     clearBattleTarget(){state.highlightedBattle=null;},paintBattleTarget(){paints++;},
     cancelUITimer:id=>timers.delete(id),window:{setTimeout(callback,delay){const id=nextTimer++;timers.set(id,{callback,delay});return id;}},
-    focusControl(){focused++;},pinnedFilterHeight:()=>60,scrollbarMetrics:()=>({maximum:4000}),
+    focusControl(){focused++;},pinnedFilterHeight:()=>60,scrollbarMetrics:()=>({maximum}),
     queueResize(){context.finishBattleJump();},updatePinnedFilters(){pinnedUpdates++;},syncScrollbar(){}};
   vm.createContext(context);
   const names=['cancelBattleNavigation','cancelPageJump','retireFeed','consumeBattleFocus','startBattleJump','retainBattleTargetAfterResize',
@@ -44,7 +44,7 @@ function geometry(source=shipped()) {
   return {context,state,scroll,target,timers,
     tick(delta=100){clock+=delta;const next=[...timers].find(([,timer])=>timer.delay>0&&timer.delay<=100);if(next){timers.delete(next[0]);next[1].callback();}},
     show(){state.groupCards=[target];},missing(value){missing=value;},busy(value){busy=value;},
-    move(value){position=value;},setContext(value){validContext=value;},lag(value){lag=value;},
+    move(value){position=value;},limit(value){maximum=value;},setContext(value){validContext=value;},lag(value){lag=value;},
     dropNextWrite(){droppedWrites++;},
     flush(){lag=false;if(pendingOffset!==null){offset=pendingOffset;physical=pendingOffset;pendingOffset=null;}},
     focused:()=>focused,paints:()=>paints,pinnedUpdates:()=>pinnedUpdates};
@@ -125,6 +125,15 @@ function assertBattleJumpSource(source=shipped()) {
   for(let index=0;index<8&&dropped.scroll.scrollTop===0;index++)dropped.tick();
   assert.strictEqual(dropped.scroll.scrollTop,1424,'A discarded scroll write is reissued while the original battle still owns alignment');
   assert.strictEqual(dropped.focused(),1,'Reissuing the scroll preserves the single focus transfer');
+
+  const shrinking=geometry(source);shrinking.show();shrinking.dropNextWrite();shrinking.context.finishBattleJump();
+  assert(shrinking.state.battleJump.requestedOffset>150,'The selected card requested a position above the future range');
+  shrinking.move(225);shrinking.limit(150);shrinking.tick();
+  assert.strictEqual(shrinking.state.battleJump.requestedOffset,150,'The retained selected card setter uses the new maximum');
+  assert.strictEqual(shrinking.scroll.scrollTop,150);
+  for(let index=0;index<12&&shrinking.state.battleJump;index++)shrinking.tick();
+  assert.strictEqual(shrinking.state.battleJump,null,'The selected card settles before timeout after the range shrinks');
+  assert.strictEqual(shrinking.focused(),1);
 
   for(const kind of ['wheel','mousedown','keydown']) {
     const moved=geometry(source);moved.context.finishBattleJump();

@@ -27,7 +27,7 @@ import uuid
 from . import VERSION
 from .normalize import arena_start, normalize_result, _number, _integer, text_type
 from .monitor import ResultMonitor
-from .storage import check_json_depth, native_data_path
+from .storage import StorageError, check_json_depth, native_data_path
 
 LOG = logging.getLogger('grz.sessionstats')
 LAUNCH_ID = uuid.uuid4().hex
@@ -828,7 +828,7 @@ class Runtime(object):
                 self._combat_installation = installation_key(self._installation_dir)
         except (ValueError, OSError, TypeError):
             pass  # Account results must survive an unavailable optional installation identity.
-        self._combat_intake = CombatIntake(self.data_dir)
+        self._combat_intake = CombatIntake(self.data_dir, LAUNCH_ID)
         self._combat_beginnings.clear()
         self._combat_diagnostics = []
         self._load_appearance()
@@ -991,8 +991,8 @@ class Runtime(object):
         if self._combat_intake is not None:
             # Shutdown is the last opportunity to publish queued captures,
             # including when the launcher is exiting directly from a battle.
-            self._combat_intake.close(wait=True)
             self._bind_combat_installation()
+            self._combat_intake.close(wait=True)
             if self._combat_intake.failed:
                 self._warn_once('combat_capture', message('storage.failed'))
             self._combat_intake = None
@@ -1062,6 +1062,8 @@ class Runtime(object):
             if key not in self.services:
                 self.services[key] = self.service_factory(self.data_dir, key, LAUNCH_ID,
                                                          self.expected_table, now=self.now)
+                if self._combat_intake is not None:
+                    self.services[key].capture_clock_domain = self._combat_intake.clock_domain
                 restored = len(self.services[key].pending_arena_ids())
                 if restored:
                     LOG.info('Restored incomplete results: count=%s; background recovery remains active.', restored)
@@ -1133,6 +1135,8 @@ class Runtime(object):
             self._instance_session = InstallationSession(self.data_dir, root, LAUNCH_ID,
                                                         self.expected_table, self.now, self._started_at,
                                                         deferred=self._deferred_loading)
+            if self._combat_intake is not None:
+                self._instance_session.service.capture_clock_domain = self._combat_intake.clock_domain
             self._installation_dir = root
             if self._combat_installation is None and self._combat_intake is not None:
                 self._combat_installation = self._instance_session.service.account_key
@@ -1159,10 +1163,14 @@ class Runtime(object):
                 self._record_installation(account_key, record, is_result=True)
 
     def _record_installation(self, account_key, record, is_result=False):
+        """Return None for a failed attempt, including a lost write race."""
         session = self._ensure_installation_session()
         if session is None:
             return False
         try:
+            if not session.service.refresh_capture_history():
+                raise StorageError(message('installation.save'))
+            session.service.last_error = None
             if is_result:
                 observed = (account_key, str(record['arena_id'])) in self._observed_arenas
                 changed = session.result(account_key, record, allow_new=observed)
@@ -1175,7 +1183,7 @@ class Runtime(object):
         except Exception:
             self._warn_once('installation:storage',
                             message('installation.save'))
-            return False
+            return None
 
     def _close_cache_observer(self):
         observer = self._cache_observer
@@ -1304,8 +1312,12 @@ class Runtime(object):
         for account_key, service in self.services.items():
             if not service.ready:
                 continue
-            self._drain_account_captures(intake, account_key, service)
-            self._drain_installation_captures(intake, account_key, service)
+            with intake.account_transaction(account_key) as locked:
+                if not locked or not intake.has_published(account_key) or not service.refresh_capture_history():
+                    continue
+                self._drain_account_captures(intake, account_key, service)
+                self._drain_installation_captures(intake, account_key, service)
+        self._schedule_loading()
 
     def _drain_account_captures(self, intake, account_key, service):
         # Each ledger persists its own watermark with its data. A missing or
@@ -1329,13 +1341,21 @@ class Runtime(object):
     def _capture_installation(self, intake, capture):
         return capture['installation'] or intake.bound_installation(capture['launch_id'])
 
+    def _owns_capture_installation(self, origin):
+        accepts = getattr(self._instance_session, 'accepts_installation', None)
+        return origin == self._combat_installation or (callable(accepts) and accepts(origin))
+
     def _drain_installation_captures(self, intake, account_key, service):
         installation = self._instance_session
+        if installation is not None and installation.service.ready:
+            # Aliases learned by a peer must be visible before choosing which
+            # receipts this installation owns.
+            installation.service.refresh_capture_history()
         origins = {}
 
         def belongs_here(receipt, kind, capture):
             origin = self._capture_installation(intake, capture)
-            belongs = origin is None or origin == self._combat_installation
+            belongs = origin is None or self._owns_capture_installation(origin)
             if belongs:
                 origins[receipt] = origin
             return belongs
@@ -1345,13 +1365,20 @@ class Runtime(object):
             if not service.has_combat_receipt(identity):
                 break
             if origins[receipt] is None:
-                # Retain this launch's early captures until the discovered
-                # installation has a durable marker. Older unbound launches
-                # have no provenance to recover for the installation ledger.
-                if capture['launch_id'] == LAUNCH_ID:
+                # Another live launch may publish its marker after we have
+                # already committed the account result. Check the binding
+                # again if its lease disappeared during the lookup.
+                launch = capture['launch_id']
+                if launch == LAUNCH_ID or intake.launch_is_alive(launch):
                     break
+                origin = self._capture_installation(intake, capture)
+                if origin is not None and not self._owns_capture_installation(origin):
+                    continue
             else:
-                if installation is None or not installation.service.ready:
+                origin = origins[receipt]
+            if origin is not None:
+                if (installation is None or not installation.service.ready or
+                        not installation.service.refresh_capture_history()):
                     break
                 record = capture['record']
                 installation.service.last_error = None
@@ -1414,30 +1441,48 @@ class Runtime(object):
         if not self.running or not is_player_vehicle or self.api.is_replay():
             return
         try:
+            order = self._capture_result_order()
             account_key = self._result_account()
             if account_key is not None:
-                self._process(results, account_key, self.services.get(account_key))
+                self._process(results, account_key, self.services.get(account_key), order=order)
         except Exception:
             self._warn_once('results:received', message('runtime.results'), exception=True)
             self.monitor.fault('result_reader', 'onBattleResultsReceived', 'readable result', 'exception')
             self._service_diagnostics()
 
-    def _process(self, results, account_key, service, reusable=None, source='event'):
+    def _capture_result_order(self):
+        intake = self._combat_intake
+        return intake.capture_order() if intake is not None else None
+
+    def _process(self, results, account_key, service, reusable=None, source='event', order=None):
         if not self.running:
             return False
         arena_id = str(results.get('arenaUniqueID', '')) if isinstance(results, dict) else ''
-        if self.api.in_battle() or service is None or self._combat_backlog(account_key, service, arena_id):
-            return self._process_result(results, account_key, service, reusable, source, arena_id, stage=True)
+        intake = self._combat_intake
+        if order is None:
+            order = self._capture_result_order()
+        if self.api.in_battle() or service is None:
+            return self._process_result(results, account_key, service, reusable, source, arena_id, order, stage=True)
+        if intake is None:
+            return self._process_garage_result(results, account_key, service, reusable, source, arena_id, order)
+        with intake.account_transaction(account_key, create=True) as locked:
+            if (not locked or not service.refresh_capture_history() or
+                    self._combat_backlog(account_key, service, arena_id)):
+                return self._process_result(results, account_key, service, reusable, source, arena_id, order, stage=True)
+            return self._process_garage_result(results, account_key, service, reusable, source, arena_id, order)
+
+    def _process_garage_result(self, results, account_key, service, reusable, source, arena_id, order):
         self._processing[account_key] = self._processing.get(account_key, 0) + 1
         self._publish_activity()
         try:
-            return self._process_result(results, account_key, service, reusable, source, arena_id)
+            return self._process_result(results, account_key, service, reusable, source, arena_id, order)
         finally:
             remaining = max(0, self._processing.get(account_key, 1) - 1)
             if remaining:
                 self._processing[account_key] = remaining
             else:
                 self._processing.pop(account_key, None)
+            self._schedule_loading()
             self._publish_activity()
             self._service_diagnostics()
 
@@ -1456,12 +1501,14 @@ class Runtime(object):
                 return kind == 'result' and capture['record']['arena_id'] == arena_id
             origin = self._capture_installation(intake, capture)
             if origin is None:
-                return capture['launch_id'] == LAUNCH_ID
-            return origin == self._combat_installation
+                launch = capture['launch_id']
+                return (launch == LAUNCH_ID or
+                        (capture['record']['arena_id'] == arena_id and intake.launch_is_alive(launch)))
+            return self._owns_capture_installation(origin)
 
         return intake.has_backlog(account_key, accept=blocks_new_result)
 
-    def _process_result(self, results, account_key, service, reusable, source, arena_id, stage=False):
+    def _process_result(self, results, account_key, service, reusable, source, arena_id, order, stage=False):
         context = {}
         context_getter = getattr(service, 'result_context', None)
         if callable(context_getter):
@@ -1500,6 +1547,12 @@ class Runtime(object):
                                   mission_resolver=resolve_missions if callable(resolver) else None)
         if record is None:
             return False
+        if order is not None:
+            record['_capture_order'] = order
+            if source in ('refresh', 'postbattle', 'cache', 'native_cache'):
+                # Reading an existing native bundle again is not a new
+                # delivery. Avoid durably stamping every unchanged bundle.
+                record['_passive_capture'] = True
         if source == 'late_cache':
             # An expired request can still carry the only available result.
             # Fill unknowns, but never revise facts from a newer delivery.
@@ -1549,15 +1602,23 @@ class Runtime(object):
                     self._warn_once('results:bonus',
                                     message('runtime.bonus'),
                                     exception=True)
+        observed = (account_key, record['arena_id']) in self._observed_arenas
         if stage:
             return self._stage_combat_capture(
-                'result', account_key, record,
-                observed=(account_key, record['arena_id']) in self._observed_arenas)
-        changed = service.record_result(record)
-        installation_changed = self._record_installation(account_key, record, is_result=True)
-        LOG.info('Result normalized: source=%s complete=%s changed=%s', source, record.get('complete'), changed)
+                'result', account_key, record, observed=observed)
+        service.last_error = None
+        try:
+            changed = service.record_result(record)
+        except (StorageError, IOError, OSError):
+            changed = False
+            service.last_error = message('storage.failed')
         if service.last_error:
             LOG.error('Statistics storage reported an error; previous data preserved.')
+            return self._stage_combat_capture('result', account_key, record, observed=observed)
+        installation_changed = self._record_installation(account_key, record, is_result=True)
+        if installation_changed is None:
+            self._stage_combat_capture('result', account_key, record, observed=observed)
+        LOG.info('Result normalized: source=%s complete=%s changed=%s', source, record.get('complete'), changed)
         self._remember_result(account_key, record)
         if ((changed and service is self.active_service) or
                 (installation_changed and self._instance_tab_enabled)):
@@ -1574,11 +1635,12 @@ class Runtime(object):
         if not self.running or self.api.is_replay():
             return
         try:
+            order = self._capture_result_order()
             account_key = self._result_account()
             bundle = controller.getResults()
             raw = getattr(bundle, 'results', None)
             if account_key is not None:
-                self._process(raw, account_key, self.services.get(account_key), reusable, source='posted')
+                self._process(raw, account_key, self.services.get(account_key), reusable, source='posted', order=order)
         except Exception:
             self._warn_once('results:posted_callback', message('runtime.processed'), exception=True)
             self.monitor.fault('posted_reader', 'onResultPosted', 'readable posted result', 'exception')
@@ -1921,12 +1983,13 @@ class Runtime(object):
             period_id = getter('period_id')
             if not period_id:
                 return
+            order_epoch = getter('order_epoch')
             if action == 'sort':
                 options = dict((key, getter(key)) for key in ('metric', 'statistic', 'direction', 'chronology'))
-                if not service.set_order(scope, group, options, period_id, getter('request_id'), getter('order_epoch')):
+                if not service.set_order(scope, group, options, period_id, getter('request_id'), order_epoch):
                     return
             elif action == 'battle_select':
-                if not service.select_battle(scope, getter('id'), period_id, getter('request_id')):
+                if not service.select_battle(scope, getter('id'), period_id, getter('request_id'), order_epoch):
                     return
             else:
                 raw_page = getter('page')
@@ -1938,11 +2001,14 @@ class Runtime(object):
                 if not isinstance(raw_page, text_type) or len(raw_page) > 8 or not raw_page or any(char not in '0123456789' for char in raw_page):
                     return
                 if action == 'map_battles':
-                    accepted = service.set_map_battles(scope, getter('map_id'), int(raw_page), period_id, getter('chronology'))
+                    accepted = service.set_map_battles(scope, getter('map_id'), int(raw_page), period_id,
+                                                       getter('chronology'), order_epoch)
                 elif action == 'vehicle_battles':
-                    accepted = service.set_vehicle_battles(scope, getter('vehicle_id'), int(raw_page), period_id, getter('chronology'))
+                    accepted = service.set_vehicle_battles(scope, getter('vehicle_id'), int(raw_page), period_id,
+                                                           getter('chronology'), order_epoch)
                 else:
-                    accepted = service.set_page(scope, group, int(raw_page), period_id, getter('request_id'), getter('anchor_id'))
+                    accepted = service.set_page(scope, group, int(raw_page), period_id, getter('request_id'),
+                                                getter('anchor_id'), order_epoch, getter('history_anchor_id'))
                 if not accepted:
                     return
             self._window_call('refresh')

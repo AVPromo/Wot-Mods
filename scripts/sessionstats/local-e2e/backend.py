@@ -399,21 +399,23 @@ class Backend:
 
     @staticmethod
     def _navigation(service, scope, kind, group, period, action):
+        order_epoch = action.get('order_epoch')
         if kind == 'sort':
             return service.set_order(scope, group, {key: action.get(key) for key in ORDER_FIELDS},
-                                     period, action.get('request_id'), action.get('order_epoch'))
+                                     period, action.get('request_id'), order_epoch)
         if kind == 'battle_select':
-            return service.select_battle(scope, action.get('id'), period, action.get('request_id'))
+            return service.select_battle(scope, action.get('id'), period, action.get('request_id'), order_epoch)
         raw_page = action.get('page')
         if not isinstance(raw_page, str) or not PAGE.fullmatch(raw_page):
             return False
         page = int(raw_page)
         chronology = action.get('chronology')
         if kind == 'map_battles':
-            return service.set_map_battles(scope, action.get('map_id'), page, period, chronology)
+            return service.set_map_battles(scope, action.get('map_id'), page, period, chronology, order_epoch)
         if kind == 'vehicle_battles':
-            return service.set_vehicle_battles(scope, action.get('vehicle_id'), page, period, chronology)
-        return service.set_page(scope, group, page, period, action.get('request_id'), action.get('anchor_id'))
+            return service.set_vehicle_battles(scope, action.get('vehicle_id'), page, period, chronology, order_epoch)
+        return service.set_page(scope, group, page, period, action.get('request_id'), action.get('anchor_id'),
+                                order_epoch, action.get('history_anchor_id'))
 
 
 def main():

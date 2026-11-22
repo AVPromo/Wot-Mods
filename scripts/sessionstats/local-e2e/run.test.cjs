@@ -11,18 +11,27 @@ const phase=(top,remaining,layout={})=>({top,remaining,visible:1,mounted:3,resul
   contentTop:120,contentBottom:650,...layout});
 const clipped={visible:0,resultsReached:false,resultsTop:830};
 
-function probe(phases,total=3) {
+function mounted({page,offset,ids},wide=false,top=0) {
+  const cards=ids.map((id,index)=>({id,page:String(page),index:String(offset+index),lane:wide?index%2:0,
+    top:top+(wide?Math.floor(index/2)*100+(index%2)*25:index*100),left:wide&&index%2?450:100}));
+  // Each lane is a DOM column; the intended reading order interleaves them.
+  return wide?[...cards.filter(card=>card.lane===0),...cards.filter(card=>card.lane===1)]:cards;
+}
+
+function probe(phases,total=3,results=null) {
   let index=-1;
+  const first={page:0,offset:0,total,ids:['9007199254740993','002','10'].slice(0,total)};
+  results=results||{current:first,pages:new Map([[0,first]])};
   const wheels=[], captures=[];
   const ctx={
     applyOrder:async()=>{},
     idle:async()=>{},
-    read:()=>({scopes:{timeline:{pagination:{vehicles:{total}}}}}),
+    resultPages:()=>results,
     snapshot:async name=>{captures.push(name);return name;},
     driver:{
       evaluate:async()=> {
         if(index++===-1) return;
-        return {...phases[index-1],width:task.width,height:task.height,group:task.group,
+        return {rendered:mounted(results.current),wide:false,...phases[index-1],width:task.width,height:task.height,group:task.group,
           version:'v'+version,wheelAt:{x:100,y:200},errors:[],wheels:[...wheels]};
       },
       wheel:async(x,y,delta)=>{wheels.push({delta,trusted:true});}
@@ -79,4 +88,40 @@ test('cards clipped outside the reachable range fail the case',async()=>{
 test('an empty response can scroll or stay put and cannot show stale cards',async()=>{
   await probe(Array.from({length:4},()=>phase(0,0,{...clipped,mounted:0,resultsTop:null})),0).run();
   await assert.rejects(probe([phase(0,0)],0).run(),/retained result cards for an empty Python response/);
+});
+
+test('mounted IDs must match the Python order at each position and screenshot phase',async()=>{
+  const current={page:0,offset:0,total:3,ids:['9007199254740993','02','10']};
+  const results={current,pages:new Map([[0,current]])};
+  const original=mounted(current), reversed=mounted({...current,ids:[...current.ids].reverse()});
+  const phases=[phase(0,500,{rendered:original}),phase(130,370,{rendered:reversed})];
+  await assert.rejects(probe(phases,3,results).run(),/Rendered result order differs from Python on page 1 at list position 1/);
+  const rounded=original.map((card,index)=>index?card:{...card,id:String(Number(card.id))});
+  await assert.rejects(probe([phase(0,0,{rendered:rounded})],3,results).run(),/Rendered result order differs/);
+});
+
+test('cached pages remain verifiable in the two-column layout',async()=>{
+  const first={page:0,offset:0,total:6,ids:['a','b','c','d']};
+  const current={page:1,offset:4,total:6,ids:['e','f']};
+  const results={current,pages:new Map([[0,first],[1,current]])};
+  const rendered=[...mounted(first,true),...mounted(current,true,230)];
+  const layout={rendered,wide:true,mounted:6};
+  const {run,captures}=probe(Array.from({length:4},()=>phase(0,0,layout)),6,results);
+  const report=await run();
+  assert.equal(captures.length,4);
+  assert(report.phases.every(item=>!Object.hasOwn(item,'rendered')),'Card IDs are not included in the report');
+  const [a,c,b,d,e,f]=rendered;
+  for(const [items,error] of [
+    [[a,{...c,index:'0'},b,d,e,f],/Duplicate result card/],
+    [[a,b,d,e,f],/only part of Python page 1/],
+    [[a,c,b,d],/did not mount Python page 2/],
+    [[a,c,b,d,e,{...f,page:'2'}],/without a matching Python response/],
+    [[e,f,a,c,b,d],/Mounted result pages are out of order/],
+    [[a,{...c,lane:1},b,d,e,f],/wrong lane/],
+    [[c,a,b,d,e,f],/one lane are out of order/],
+    [[a,{...c,top:-1},b,d,e,f],/reverse vertical order/],
+    [[a,c,{...b,left:20},d,e,f],/lanes are out of order across the panel/],
+  ]) {
+    await assert.rejects(probe([phase(0,0,{...layout,rendered:items,mounted:items.length})],6,results).run(),error);
+  }
 });
