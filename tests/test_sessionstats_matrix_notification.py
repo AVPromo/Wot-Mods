@@ -12,7 +12,7 @@ RUN_API = f"repos/{REPO}/actions/runs/123"
 COMMENTS_API = f"repos/{REPO}/issues/17/comments"
 COMMENT_API = f"repos/{REPO}/issues/comments/900"
 ARTIFACT_API = f"repos/{REPO}/actions/artifacts/567"
-MARKER = "<!-- sessionstats-matrix-run:123:456 -->"
+MARKER = "<!-- sessionstats-matrix-run:123:456:1 -->"
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/sessionstats-matrix-command.yml"
 
 
@@ -32,13 +32,21 @@ class MatrixNotificationTests(unittest.TestCase):
         }
         self.requests = []
         self.posted = []
+        self.comments = {}
 
     def api(self, path, *args):
         self.requests.append((path, args))
         if args[:1] == ("--method",):
             method, body = args[1], args[3].removeprefix("body=")
             self.posted.append((method, path, body))
-            return {"id": 900}
+            if method == "POST":
+                comment_id = 900 + len(self.comments)
+            else:
+                comment_id = int(path.rsplit("/", 1)[1])
+                self.assertIn(comment_id, self.comments)
+            comment = {"id": comment_id, "user": {"login": "github-actions[bot]"}, "body": body}
+            self.comments[comment_id] = comment
+            return comment
         if path == ARTIFACT_API:
             return {"id": 567, "name": "sessionstats-matrix-html-attempt-1", "expired": False,
                     "workflow_run": {"id": 123}}
@@ -48,8 +56,8 @@ class MatrixNotificationTests(unittest.TestCase):
             self.assertEqual(args, ("--paginate", "--slurp"))
             return [
                 [{"id": 100, "user": {"login": "a-user"}, "body": MARKER},
-                 {"id": 600, "user": {"login": "github-actions[bot]"}, "body": "<!-- sessionstats-matrix-run:111:456 -->"}],
-                [{"id": 900, "user": {"login": "github-actions[bot]"}, "body": MARKER}],
+                 {"id": 600, "user": {"login": "github-actions[bot]"}, "body": "<!-- sessionstats-matrix-run:111:456:1 -->"}],
+                list(self.comments.values()),
             ]
         self.fail(f"Unexpected API request {path} {args}")
 
@@ -64,7 +72,7 @@ class MatrixNotificationTests(unittest.TestCase):
         for (_, _, body), status in zip(self.posted, ("Started", "Running", "Passed")):
             self.assertIn(f"— {status}.", body)
             self.assertIn(MARKER, body)
-            self.assertIn("/actions/runs/123)", body)
+            self.assertIn("/actions/runs/123/attempts/1)", body)
         self.assertIn("/job/789)", self.posted[-1][2])
         self.assertIn("/artifacts/567)", self.posted[-1][2])
 
@@ -76,25 +84,37 @@ class MatrixNotificationTests(unittest.TestCase):
         self.env["ARTIFACT_ID"] = ""
         publish("complete", self.env, self.api)
         self.assertIn("— Failed.", self.posted[-1][2])
-        self.assertIn("/actions/runs/123)", self.posted[-1][2])
+        self.assertIn("/actions/runs/123/attempts/1)", self.posted[-1][2])
         self.assertNotIn("/artifacts/", self.posted[-1][2])
 
-    def test_failed_only_retry_reuses_comment_and_requires_current_attempt_artifact(self):
-        self.env.update(GITHUB_RUN_ATTEMPT="2", REPORT_RESULT="failure")
-        publish("complete", self.env, self.api)
-        self.assertEqual(self.posted[-1][:2], ("PATCH", COMMENT_API))
-        self.assertIn("attempt 2", self.posted[-1][2])
-        self.assertNotIn("/artifacts/", self.posted[-1][2])
+    def test_failed_only_retry_posts_a_separate_result_and_preserves_the_failed_comment(self):
+        self.env["REPORT_RESULT"] = "failure"
+        first = publish("complete", self.env, self.api)
+        failed = self.comments[first]["body"]
+        self.env.update(GITHUB_RUN_ATTEMPT="2", REPORT_RESULT="success", STATUS_COMMENT_ID=str(first))
 
-    def test_rerun_start_reuses_bot_comment_and_new_command_posts_a_new_comment(self):
-        self.env["GITHUB_RUN_ATTEMPT"] = "2"
-        publish("started", self.env, self.api)
-        publish("running", self.env, self.api)
-        self.assertEqual([item[:2] for item in self.posted], [("PATCH", COMMENT_API)] * 2)
-        self.env.update(GITHUB_RUN_ATTEMPT="1", GITHUB_RUN_ID="321", COMMAND_ID="1000")
-        publish("started", self.env, self.api)
+        retry = publish("complete", self.env, self.api)
         self.assertEqual(self.posted[-1][:2], ("POST", COMMENTS_API))
-        self.assertIn("<!-- sessionstats-matrix-run:321:1000 -->", self.posted[-1][2])
+        self.assertNotEqual(retry, first)
+        self.assertIn("— Failed.", failed)
+        self.assertEqual(self.comments[first]["body"], failed)
+        self.assertIn("— Passed.", self.comments[retry]["body"])
+        self.assertIn("/actions/runs/123/attempts/2)", self.comments[retry]["body"])
+        self.assertNotIn("/artifacts/", self.comments[retry]["body"])
+        self.assertEqual(publish("complete", self.env, self.api), retry)
+        self.assertEqual(self.posted[-1][:2], ("PATCH", f"repos/{REPO}/issues/comments/{retry}"))
+
+    def test_retry_and_new_command_get_separate_started_comments(self):
+        first = publish("started", self.env, self.api)
+        self.env["GITHUB_RUN_ATTEMPT"] = "2"
+        retry = publish("started", self.env, self.api)
+        self.assertEqual(self.posted[-1][:2], ("POST", COMMENTS_API))
+        self.assertEqual(publish("running", self.env, self.api), retry)
+        self.env.update(GITHUB_RUN_ATTEMPT="1", GITHUB_RUN_ID="321", COMMAND_ID="1000")
+        new = publish("started", self.env, self.api)
+        self.assertEqual(len({first, retry, new}), 3)
+        self.assertEqual(self.posted[-1][:2], ("POST", COMMENTS_API))
+        self.assertIn("<!-- sessionstats-matrix-run:321:1000:1 -->", self.posted[-1][2])
 
     def test_completion_posts_result_if_announce_could_not_post(self):
         def no_announced_comment(path, *args):
@@ -115,7 +135,7 @@ class MatrixNotificationTests(unittest.TestCase):
 
         publish("complete", self.env, unavailable)
         self.assertIn("— Failed.", self.posted[-1][2])
-        self.assertIn("/actions/runs/123)", self.posted[-1][2])
+        self.assertIn("/actions/runs/123/attempts/1)", self.posted[-1][2])
         self.assertNotIn("/job/", self.posted[-1][2])
 
     def test_artifact_belongs_to_this_run_and_is_downloadable(self):
@@ -143,8 +163,8 @@ class MatrixNotificationTests(unittest.TestCase):
             self.assertIn("ref: ${{ github.sha }}", job)
             self.assertIn("persist-credentials: false", job)
         self.assertEqual(text.count("needs: [configuration, announce]"), 2)
-        self.assertIn("comment_id: ${{ steps.started.outputs.comment_id }}", announce)
-        self.assertIn("STATUS_COMMENT_ID: ${{ needs.announce.outputs.comment_id }}", notify)
+        self.assertIn("STATUS_COMMENT_ID: ${{ steps.started.outputs.comment_id }}", announce)
+        self.assertNotIn("STATUS_COMMENT_ID:", notify)
 
 
 if __name__ == "__main__":
