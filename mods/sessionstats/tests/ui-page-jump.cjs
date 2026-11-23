@@ -59,7 +59,7 @@ function assertFreshPageDeadline(source){
     requestFeedPage(feed,page,navigate){feed.pending={page,id:'fill-'+page,navigate,timer:null};},
     captureFeedAnchor(){throw Error('Explicit page reply must not become an automatic prepend anchor');},
     revealFeedTop(){throw Error('A page reply must not request Back to top');}});
-  for(const name of ['prepareFeed','retargetFeedRefresh','deferFeedRefresh'])vm.runInContext(actualFunction(source,name),context);
+  for(const name of ['prepareFeed','captureRefreshAnchor','retargetFeedRefresh','deferFeedRefresh'])vm.runInContext(actualFunction(source,name),context);
   const staged=context.prepareFeed(scope);
   assert.notStrictEqual(staged,old,'A changed result revision rebuilds its feed');
   assert.strictEqual(staged.navigationPage,2,'The revision rebuild stages the existing page destination');
