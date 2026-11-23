@@ -1,19 +1,23 @@
 """Keep CI optimizations fail-closed and inside their existing trust boundary."""
 from pathlib import Path
 import re
+import sys
 import unittest
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tests'))
 from test_unified_release_workflow import condition_matches
 
 
-ROOT = Path(__file__).resolve().parents[1]
 STATS = (ROOT / '.github/workflows/sessionstats-ci.yml').read_text()
 MEDKIT = (ROOT / '.github/workflows/ci.yml').read_text()
+AIMTIMER = (ROOT / '.github/workflows/aimtimer-ci.yml').read_text()
+RANGEFINDER = (ROOT / '.github/workflows/rangefinder-ci.yml').read_text()
 RELEASE = (ROOT / '.github/workflows/wotmods-release.yml').read_text()
 COMPILER = (ROOT / '.github/actions/python27/action.yml').read_text()
 VALIDATE = (ROOT / 'scripts/sessionstats/validate.sh').read_text()
 CACHE_PIN = 'caa296126883cff596d87d8935842f9db880ef25'
-PHASES = ['preview', 'python3', 'python27', 'browser', 'build', 'integration', 'privacy']
+PACKAGE_PHASES = ['preview', 'build', 'integration', 'privacy']
 
 
 def job(text, name):
@@ -28,7 +32,7 @@ class CiOptimizationContracts(unittest.TestCase):
     def test_only_new_commits_on_the_same_pr_supersede_validation(self):
         group = ('${{ github.workflow }}-${{ github.event_name }}-'
                  '${{ github.event.pull_request.number || github.run_id }}')
-        for text in (STATS, MEDKIT):
+        for text in (STATS, MEDKIT, AIMTIMER, RANGEFINDER):
             with self.subTest(workflow=text.splitlines()[0]):
                 concurrency = text.split('\nconcurrency:\n', 1)[1].split('\njobs:', 1)[0]
                 self.assertIn('  group: ' + group, concurrency)
@@ -54,37 +58,65 @@ class CiOptimizationContracts(unittest.TestCase):
         self.assertIn('needs: [plan, updates]', job(RELEASE, 'build'))
         self.assertIn('needs: [plan, updates, build]', job(RELEASE, 'publish'))
 
-    def test_native_parallelism_waits_for_both_python_suites_and_browser_qa(self):
-        parallel = STATS.split('      - parallel:\n', 1)[1].split('\n      - name:', 1)[0]
-        names = re.findall(r'^          - name: (.+)$', parallel, re.MULTILINE)
-        self.assertEqual(len(names), 3)
-        self.assertEqual(len(set(names)), 3)
-        self.assertEqual(re.findall(r'run: bash scripts/sessionstats/validate\.sh (\w+)', parallel),
-                         ['python3', 'python27', 'browser'])
-        self.assertEqual(parallel.count("if: steps.source.outputs.enabled == 'true'"), 3)
+    def test_windows_runs_both_native_python_suites_and_browser_once(self):
+        windows = job(STATS, 'sessionstats_windows')
+        self.assertIn('runs-on: windows-2025', windows)
+        self.assertIn('shell: pwsh', windows)
+        self.assertIn('needs: source', windows)
+        self.assertIn("if: needs.source.outputs.enabled == 'true'", windows)
+        self.assertIn('GIT_CONFIG_KEY_0: core.autocrlf', windows)
+        self.assertIn("GIT_CONFIG_VALUE_0: 'false'", windows)
+        parallel = windows.split('      - parallel:\n', 1)[1]
+        for command in ('python -B -m unittest discover -s mods/sessionstats/tests -v',
+                        '& $env:PYTHON27 -E -s -B -m unittest discover -s mods/sessionstats/tests -v',
+                        'python -I scripts/sessionstats/browser_qa.py --e2e build'):
+            self.assertEqual(parallel.count(command), 1)
+            self.assertEqual(STATS.count(command), 1)
+        self.assertEqual(len(re.findall(r'^          - name: (.+)$', parallel, re.MULTILINE)), 3)
         self.assertNotIn('continue-on-error', parallel)
+        self.assertNotIn('bash ', windows)
+        self.assertLess(windows.index('uses: ./.github/actions/python27-windows'), windows.index('      - parallel:'))
         self.assertNotIn('parallel:', COMPILER)
-        self.assertNotIn('strategy:', job(STATS, 'sessionstats'))
+
+    def test_packaging_requires_windows_success_except_before_source_import(self):
+        source = job(STATS, 'source')
+        self.assertIn('fetch-depth: 0', source)
+        self.assertIn('enabled: ${{ steps.source.outputs.enabled }}', source)
+        self.assertIn('run: python3 scripts/sessionstats/source_state.py', source)
+        packaging = job(STATS, 'sessionstats')
+        self.assertIn('needs: [updates, source, sessionstats_windows]', packaging)
+        self.assertIn('if: ${{ !cancelled() }}', packaging)
+        gate = packaging.split('      - name: Require the Session Stats checks before packaging\n', 1)[1]
+        gate = gate.split('      - uses: actions/checkout@', 1)[0]
+        for variable, dependency in (('UPDATES_RESULT', 'updates.result'), ('SOURCE_RESULT', 'source.result'),
+                                     ('SOURCE_ENABLED', 'source.outputs.enabled'), ('WINDOWS_RESULT', 'sessionstats_windows.result')):
+            self.assertIn(variable + ': ${{ needs.' + dependency + ' }}', gate)
+        self.assertIn('if [[ "$UPDATES_RESULT" != success || "$SOURCE_RESULT" != success ]]; then', gate)
+        self.assertIn('case "$SOURCE_ENABLED:$WINDOWS_RESULT" in\n            true:success|false:skipped) ;;', gate)
+        self.assertEqual(gate.count('exit 1'), 2)
+        self.assertNotIn('continue-on-error', gate)
+        infrastructure = packaging.split('      - name: Test release infrastructure\n', 1)[1].split('\n      - name:', 1)[0]
+        self.assertNotIn('if:', infrastructure)
 
     def test_all_named_phases_gate_packaging_without_repeating_browser_setup(self):
         commands = re.findall(r'run: bash scripts/sessionstats/validate\.sh (\w+)', STATS)
-        self.assertEqual(commands, PHASES)
+        self.assertEqual(commands, PACKAGE_PHASES)
         self.assertNotIn('--prepare', STATS)
         self.assertEqual(VALIDATE.count('python3 -I scripts/sessionstats/browser_qa.py'), 1)
-        self.assertNotIn('continue-on-error', job(STATS, 'sessionstats'))
-        self.assertNotIn('always()', job(STATS, 'sessionstats'))
-        for phase in PHASES:
+        packaging = job(STATS, 'sessionstats')
+        self.assertNotIn('continue-on-error', packaging)
+        self.assertNotIn('always()', packaging)
+        for phase in PACKAGE_PHASES:
             command = 'run: bash scripts/sessionstats/validate.sh ' + phase
-            position = STATS.index(command)
-            step = STATS[STATS.rfind('- name:', 0, position):position]
-            self.assertIn("if: steps.source.outputs.enabled == 'true'", step)
-        self.assertLess(STATS.index('uses: ./.github/actions/python27'),
-                        STATS.index('      - parallel:'))
-        self.assertLess(STATS.index('validate.sh preview'), STATS.index('      - parallel:'))
-        self.assertLess(STATS.index('validate.sh privacy'),
-                        STATS.index('scripts/release_installers.py package pr-artifact-sessionstats'))
-        self.assertLess(STATS.index('scripts/release_installers.py package pr-artifact-sessionstats'),
-                        STATS.index('uses: actions/upload-artifact@'))
+            position = packaging.index(command)
+            step = packaging[packaging.rfind('- name:', 0, position):position]
+            self.assertIn("if: needs.source.outputs.enabled == 'true'", step)
+        self.assertLess(packaging.index('uses: ./.github/actions/python27\n'),
+                        packaging.index('validate.sh build'))
+        self.assertLess(packaging.index('validate.sh privacy'),
+                        packaging.index('scripts/release_installers.py package pr-artifact-sessionstats'))
+        self.assertLess(packaging.index('scripts/release_installers.py package pr-artifact-sessionstats'),
+                        packaging.index('uses: actions/upload-artifact@'))
 
     def test_exact_cache_identity_covers_platform_and_bootstrap_recipe(self):
         self.assertIn('actions/cache/restore@' + CACHE_PIN, COMPILER)
@@ -136,11 +168,9 @@ class CiOptimizationContracts(unittest.TestCase):
         self.assertIn('runs-on: ubuntu-24.04', build)
         self.assertIn('runs-on: ubuntu-24.04', job(STATS, 'sessionstats'))
 
-    def test_shared_contract_and_compiler_action_changes_trigger_validation(self):
+    def test_compiler_action_changes_trigger_sessionstats_validation(self):
         self.assertIn("      - '.github/actions/python27/**'", STATS)
-        for workflow in (STATS, MEDKIT):
-            self.assertIn("      - 'tests/test_ci_optimizations.py'", workflow)
-        self.assertIn("-p 'test_ci_optimizations.py' -v", STATS)
+        self.assertIn("      - '.github/actions/python27-windows/**'", STATS)
 
 
 if __name__ == '__main__':

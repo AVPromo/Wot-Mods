@@ -2,8 +2,13 @@
 """Statistics and sessions; no dependency on the World of Tanks runtime."""
 from __future__ import unicode_literals
 
+from .battle_details import clean_details, finalize_pass_points, merge_details
+from .capture_order import compare_capture_order, valid_capture_order
+from .language_defaults import LEGACY_POLISH
 from .localization import message
+from .normalize import RESULT_CURRENCIES as _CURRENCIES, RESULT_STATS as _NUMBERS, result_is_complete
 
+import bisect
 import copy
 import hashlib
 import itertools
@@ -15,7 +20,8 @@ import uuid
 from .loading import complete, items, values
 
 from . import VERSION
-from .storage import GenerationStore, StateDelta, SCHEMA_VERSION, StorageError
+from .storage import (GenerationStore, StateDelta, SCHEMA_VERSION, StorageBusyError, StorageError,
+                      UnsupportedSchemaError)
 
 try:
     text_type = unicode
@@ -25,16 +31,30 @@ except NameError:
     number_types = (int, float)
 
 _OUTCOMES = ('win', 'loss', 'draw')
-_CURRENCIES = ('credits', 'bonds', 'gold')
 _BREAKDOWN = ('repair', 'ammo', 'consumables', 'directives')
-_NUMBERS = ('damage', 'frags', 'spots', 'defense', 'xp_base', 'xp_received', 'free_xp')
+_CREDIT_METRICS = (
+    ('credits_income_base', 'income_base'), ('credits_income_received', 'income'),
+    ('credits_net_base', 'net_base'), ('credits_net_received', 'net'),
+    ('credits_costs', 'costs'),
+    # Legacy metric names have always represented the received result.
+    ('credits_gross', 'income'), ('credits_net', 'net'))
+_CREDIT_ALIASES = {'credits_gross': 'credits_income_received', 'credits_net': 'credits_net_received'}
 _UNKNOWN_MEMBERSHIP = message('core.membership')
+MAX_TIME_POINTS = 1000
 
 
 def _text(value):
     if isinstance(value, bytes) and not isinstance(value, text_type):
         return value.decode('utf-8', 'replace')
     return text_type(value)
+
+
+def _request_id(value):
+    if not isinstance(value, (text_type, bytes)):
+        return None
+    value = _text(value)
+    allowed = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-'
+    return value if 1 <= len(value) <= 64 and all(char in allowed for char in value) else None
 
 
 def _number(value, nonnegative=False):
@@ -123,13 +143,26 @@ class ExpectedTable(object):
         return expected
 
 
+def _base_credit_complete(known_count, received_count):
+    # Pending battles have no report to inspect. Completeness concerns only
+    # the results whose income and actual costs could already be recorded.
+    return 0 < known_count == received_count
+
+
 def _money(records, currency):
     money = {}
-    for key in ('income', 'costs', 'net'):
+    for key in ('income', 'costs', 'net') + (('income_base', 'net_base') if currency == 'credits' else ()):
         values = [record.get('currencies', {}).get(currency, {}).get(key) for record in records]
         known = [value for value in values if value is not None]
         money[key] = _number(sum(known)) if known else None
         money[key + '_count'] = len(known)
+        if key in ('income_base', 'net_base'):
+            # Original earnings were not stored by older versions. A subtotal
+            # from new reports must not look comparable to all received costs
+            # or earnings. Keep the known sample in the independent series.
+            money[key + '_complete'] = _base_credit_complete(len(known), len(records))
+            if not money[key + '_complete']:
+                money[key] = None
     money['breakdown'] = {}
     money['breakdown_counts'] = {}
     for key in _BREAKDOWN:
@@ -141,7 +174,7 @@ def _money(records, currency):
     return money
 
 
-def aggregate_stats(records, expected_table):
+def aggregate_stats(records, expected_table, include_currency_series=False):
     observed = [record for record in records if record.get('mode') in (None, 'random')]
     records = [record for record in observed if record.get('mode') == 'random' and record.get('outcome') in _OUTCOMES]
     table = expected_table if isinstance(expected_table, ExpectedTable) else ExpectedTable(expected_table)
@@ -155,7 +188,8 @@ def aggregate_stats(records, expected_table):
     stats['win_rate'] = stats['wins'] * 100.0 / count if count else None
     for key in ('xp_base', 'xp_received', 'free_xp'):
         stats[key] = _series([record.get(key) for record in records])
-    stats['credits_net'] = _series([record.get('currencies', {}).get('credits', {}).get('net') for record in records])
+    for metric, field in _CREDIT_METRICS:
+        stats[metric] = _series([record.get('currencies', {}).get('credits', {}).get(field) for record in records])
     actual = dict((key, 0.0) for key in ('damage', 'frags', 'spots', 'defense', 'wins'))
     reference = dict((key, 0.0) for key in actual)
     per_battle = []
@@ -176,6 +210,17 @@ def aggregate_stats(records, expected_table):
     stats['wn8'] = wn8_from_totals(actual, reference) if per_battle else None
     stats['battle_wn8'] = _series(per_battle)
     stats['currencies'] = dict((currency, _money(records, currency)) for currency in _CURRENCIES)
+    if include_currency_series:
+        # The summary selector needs distributions, not estimates from totals.
+        # Keep ordinary group/battle payloads unchanged.
+        credit_fields = dict((field, metric) for metric, field in _CREDIT_METRICS if metric not in _CREDIT_ALIASES)
+        stats['currency_series'] = {}
+        for currency in _CURRENCIES:
+            fields = ('income', 'costs', 'net') + (('income_base', 'net_base') if currency == 'credits' else ())
+            stats['currency_series'][currency] = dict((field,
+                dict(stats[credit_fields[field]]) if currency == 'credits' else
+                _series([record.get('currencies', {}).get(currency, {}).get(field) for record in records]))
+                for field in fields)
     return stats
 
 
@@ -213,7 +258,7 @@ def _clean_record(record):
             if not isinstance(incoming, dict):
                 continue
             values = {}
-            for key in ('income', 'costs', 'net'):
+            for key in ('income', 'costs', 'net') + (('income_base', 'net_base') if currency == 'credits' else ()):
                 if key in incoming:
                     # The client's after-penalty income can be negative.
                     # Costs alone must be nonnegative; do not erase a fine.
@@ -222,6 +267,9 @@ def _clean_record(record):
                 values['breakdown'] = dict((key, _number(incoming['breakdown'][key], True))
                                            for key in _BREAKDOWN if key in incoming['breakdown'])
             clean['currencies'][currency] = values
+    details = clean_details(record.get('details'))
+    if details:
+        clean['details'] = details
     return clean
 
 
@@ -233,6 +281,8 @@ def _merge_known(existing, incoming, revise=False):
             merged[key] = bool(merged.get(key)) or bool(value)
         elif key == 'warnings':
             merged[key] = list(value) if revise else sorted(set(merged.get(key, []) + value))
+        elif key == 'details':
+            merged[key] = merge_details(merged.get(key, {}), value, revise)
         elif isinstance(value, dict):
             merged[key] = _merge_known(merged.get(key, {}) or {}, value, revise)
         elif value is not None and (revise or merged.get(key) is None):
@@ -242,9 +292,100 @@ def _merge_known(existing, incoming, revise=False):
     return merged
 
 
+def _finalize_result(record):
+    # An individual report's net can reflect components that lost the merge.
+    # Derive it from the confirmed pair, keeping standalone legacy net values.
+    for currency, amounts in record.get('currencies', {}).items():
+        costs = amounts.get('costs')
+        if costs is None:
+            continue
+        fields = (('income', 'net'),)
+        if currency == 'credits':
+            fields += (('income_base', 'net_base'),)
+        for income, net in fields:
+            if amounts.get(income) is not None:
+                amounts[net] = _number(amounts[income] - costs)
+    points = record.get('details', {}).get('pass_points')
+    if points:
+        finalize_pass_points(points)
+    if result_is_complete(record):
+        record['complete'] = True
+        warnings = record.get('warnings', [])
+        finance_notices = (message('normalize.finance'), LEGACY_POLISH['normalize.finance'])
+        if any(warning in finance_notices for warning in warnings):
+            record['warnings'] = [warning for warning in warnings if warning not in finance_notices]
+
+
+def _generated_names(kind, identifier):
+    generic = 'unknown.' + kind
+    numbered = generic + '_id'
+    names = (message(generic), LEGACY_POLISH[generic])
+    if identifier is not None:
+        names += (message(numbered).format(identifier), LEGACY_POLISH[numbered].format(identifier))
+    return names
+
+
+def _metadata_gaps(record):
+    if not record.get('_result_seen'):
+        return False, False, None
+    vehicle_name = record.get('vehicle_name')
+    unknown_vehicle = not vehicle_name or vehicle_name in _generated_names('vehicle', record.get('vehicle_id'))
+    map_id, map_name = record.get('map_id') or '', record.get('map_name') or ''
+    numbered_map = map_id.startswith('arena:')
+    suffix = map_id[6:] if numbered_map else map_name.rsplit(' ', 1)[-1]
+    arena_type = int(suffix) if 0 < len(suffix) <= 10 and all(char in '0123456789' for char in suffix) else None
+    map_fallback = map_name in _generated_names('map', arena_type)
+    if not numbered_map and not map_fallback:
+        arena_type = None
+    return unknown_vehicle, numbered_map or map_id in ('', 'unknown') or not map_name or map_fallback, arena_type
+
+
+def _restrict_unverified_facts(old, incoming, arena_type_id):
+    previous_vehicle, vehicle = old.get('vehicle_id'), incoming.get('vehicle_id')
+    if previous_vehicle is not None and vehicle is not None and previous_vehicle != vehicle:
+        for field in _NUMBERS + ('vehicle_id', 'vehicle_name', 'vehicle_tier', 'vehicle_type',
+                                 'xp_bonus_applied', 'complete', 'currencies', 'details'):
+            incoming.pop(field, None)
+    previous_map, map_id = old.get('map_id'), incoming.get('map_id')
+    numbered = 'arena:{0}'.format(arena_type_id) if arena_type_id is not None else None
+    if previous_map and map_id and previous_map not in ('unknown', numbered, map_id):
+        incoming.pop('map_name', None)
+
+
+def _repair_result_metadata(old, incoming, merged, arena_type_id):
+    """Promote generated placeholders without revising confirmed results."""
+    repaired = []
+    vehicle_id = merged.get('vehicle_id')
+    name = incoming.get('vehicle_name')
+    if (vehicle_id is not None and vehicle_id == incoming.get('vehicle_id') and
+            name and name != old.get('vehicle_name')):
+        names = _generated_names('vehicle', vehicle_id)
+        if old.get('vehicle_name') in names and name not in names:
+            merged['vehicle_name'] = name
+            repaired.append('normalize.vehicle')
+
+    old_map, new_map = old.get('map_id'), incoming.get('map_id')
+    numbered_map = 'arena:{0}'.format(arena_type_id) if arena_type_id is not None else None
+    if numbered_map is not None and old_map in ('unknown', numbered_map):
+        if new_map and new_map != 'unknown' and not new_map.startswith('arena:'):
+            merged['map_id'] = new_map
+    matching_map = (not old_map or old_map == numbered_map or not old_map.startswith('arena:'))
+    name = incoming.get('map_name')
+    if (matching_map and name and name != old.get('map_name') and
+            (not old_map or new_map == old_map or merged.get('map_id') != old_map)):
+        names = _generated_names('map', arena_type_id)
+        if old.get('map_name') in names and name not in names:
+            merged['map_name'] = name
+            repaired.append('normalize.map')
+
+    if repaired and 'warnings' in merged:
+        resolved = set(value for key in repaired for value in (message(key), LEGACY_POLISH[key]))
+        merged['warnings'] = [warning for warning in merged['warnings'] if warning not in resolved]
+
+
 class StatsService(object):
     def __init__(self, data_dir, account_key, launch_id, expected_table, now=None,
-                 deferred=False, started_at=None):
+                 deferred=False, started_at=None, timeline_enabled=False):
         self.account_key = _text(account_key)
         self.launch_id = self._requested_launch = _text(launch_id)
         self._now = now or time.time
@@ -254,13 +395,37 @@ class StatsService(object):
         self.last_error = None
         self._warnings = []
         self._indexes = None
+        self._timeline_enabled = timeline_enabled
+        self._timeline_range = ('', '')
+        self._timeline_dates = (None, None)
+        self._timeline_bounds = (0, None)
+        self._filtered_timeline = None
+        self._timeline_job = None
+        self._timeline_error = None
+        self._time_point_result = None
         self._pages = {}
+        self._page_requests = {}
+        self._empty_view_revision = uuid.uuid4().hex
         self._orders = {}
+        self._order_requests = {}
+        self._order_epochs = {}
+        self._map_pages = {}
+        self._vehicle_pages = {}
+        self._history_request = {}
+        self._history_navigation_revisions = {}
+        self._battle_focus = {}
         self._receipt = None
+        self.capture_clock_domain = None
         self._intake = None
+        self._intake_open_pending = False
+        clock = getattr(time, 'clock', None) if os.name == 'nt' else None
+        self._loading_clock = getattr(time, 'perf_counter', None) or clock or time.time
+        self._load_retry_after = None
+        self._history_rebase = None
         self._received_context = {}
         self._received_records = {}
         self._pending_ids = set()
+        self._metadata_ids = []
         self._unassigned = 0
         self.loading, self.ready, self._closed = True, False, False
         self.loading_phase = 'history'
@@ -273,15 +438,26 @@ class StatsService(object):
             if deferred or os.path.isdir(os.path.join(self.store.directory, 'startup-intake')):
                 from .intake import Intake
                 self._intake = Intake(self.store.directory, self.account_key)
-                self._intake.append('open', self._requested_launch, current_time)
-                if self._intake.store.warning:
-                    self._warnings.append(self._intake.store.warning)
+                self._intake_open_pending = True
+                self._append_startup_open()
+        except StorageBusyError:
+            # Deferred callers keep loading while another process publishes.
+            pass
         except (StorageError, IOError, OSError, ValueError, TypeError) as error:
             self._fail_loading(error)
         self._loader = self._initialize_steps() if self.loading else None
         if not deferred:
             while self.loading:
                 self.advance_loading(budget=1.0)
+                if self._load_retry_after is not None:
+                    time.sleep(max(0, self._load_retry_after - self._loading_clock()))
+
+    def _append_startup_open(self):
+        if self._intake_open_pending:
+            self._intake.append('open', self._requested_launch, self._initial_time)
+            self._intake_open_pending = False
+            if self._intake.store.warning:
+                self._warnings.append(self._intake.store.warning)
 
     def _fail_loading(self, error):
         self.store.read_only = True
@@ -291,7 +467,10 @@ class StatsService(object):
     def advance_loading(self, budget=0.002, max_steps=512):
         if not self.loading or self._closed:
             return False
-        timer = getattr(time, 'perf_counter', time.time)
+        timer = self._loading_clock
+        if self._load_retry_after is not None and timer() < self._load_retry_after:
+            return True
+        self._load_retry_after = None
         deadline = timer() + max(0, budget)
         try:
             for unused in range(max(1, max_steps)):
@@ -302,7 +481,7 @@ class StatsService(object):
                     self.loading = False
                     self.ready = not self.store.read_only
                     break
-                if timer() >= deadline:
+                if self._load_retry_after is not None or timer() >= deadline:
                     break
         except Exception as error:
             self._fail_loading(error)
@@ -311,22 +490,58 @@ class StatsService(object):
 
     def cancel_loading(self):
         self._closed = True
+        self.cancel_timeline()
+        if self._history_rebase is not None:
+            self._history_rebase.close()
+            self._history_rebase = None
         if self._loader is not None:
             self._loader.close()
             self._loader = None
         self.loading = False
 
     def _initialize_steps(self):
+        generation_retries, lock_retries = 0, 0
+        while True:
+            try:
+                self._append_startup_open()
+                for step in self._initialize_generation_steps():
+                    yield step
+                return
+            except StorageBusyError:
+                if lock_retries == 50:
+                    raise
+                lock_retries += 1
+                # Release the callback between lock attempts so a peer's I/O
+                # cannot block or spin the game thread during history loading.
+                self._load_retry_after = self._loading_clock() + 0.01
+            except (StorageError, IOError, OSError) as error:
+                if (generation_retries == 3 or isinstance(error, UnsupportedSchemaError) or
+                        not self.store.changed_on_disk()):
+                    raise
+                generation_retries += 1
+            # A peer owns the lock or committed during incremental loading.
+            # Rebuild and replay only receipts beyond the durable watermarks.
+            self.store = GenerationStore(self.store.directory, self.store.schema_version,
+                                         self.store.keep_generations)
+            self._indexes = None
+            self.loading_phase = 'history'
+            yield None
+
+    def _initialize_generation_steps(self):
         output = [None]
-        for step in self.store.load_steps(output, self._validate_state_steps):
+        for step in self._load_history_steps(self.store, output):
             yield step
+        if self._intake is not None:
+            self._intake.refresh()
         existing = output[0]
         if existing is not None:
             self._state = existing
-        elif self._intake is not None and self._intake.events:
-            first = _number(self._intake.events[0].get('at'), True)
-            if first is None:
-                raise StorageError(message('core.time'))
+        else:
+            first = self._initial_time
+            if self._intake is not None and self._intake.events:
+                first = _number(self._intake.events[0].get('at'), True)
+                if first is None:
+                    raise StorageError(message('core.time'))
             self._state = self._empty_state(first)
         if self.store.warning:
             self._warnings.append(self.store.warning)
@@ -348,13 +563,28 @@ class StatsService(object):
         for step in self._rebuild_indexes_steps():
             yield step
         self.loading_phase = 'receipts'
+        if self._intake is not None:
+            self._intake.refresh()
         for step in self._drain_intake_steps():
             yield step
+        if self.store.changed_on_disk():
+            raise StorageError(message('storage.changed'))
         self.launch_id = self._requested_launch
         self._received_context.clear()
         self._received_records.clear()
         self.last_error = None
         self.loading_phase = 'ready'
+
+    def _load_history_steps(self, store, output):
+        for step in store.load_steps(output, self._validate_state_steps):
+            yield step
+        if output[0] is not None:
+            # Older generations can already contain an inconsistent net or a
+            # partial flag from before the reports were combined.
+            for record in values(output[0]['battles']):
+                if record.get('_result_seen'):
+                    _finalize_result(record)
+                yield None
 
     def _open_launch_steps(self, launch_id, current_time):
         self.launch_id = launch_id
@@ -408,23 +638,7 @@ class StatsService(object):
                             raise StorageError('Startup receipt has no launch boundary.')
                         record = dict(event['record'])
                         context = event.get('context', {})
-                        stored = self.result_context(record['arena_id'], include_received=False)
-                        candidates = context.get('candidates', [])
-                        if candidates:
-                            matching = [item for item in candidates if stored.get('vehicle_id') is not None and
-                                        item['record'].get('vehicle_id') == stored['vehicle_id']]
-                            if len(matching) == 1:
-                                record = dict(matching[0]['record'])
-                                context = dict(matching[0].get('context', {}), require_known=context.get('require_known', False))
-                            else:
-                                record['warnings'] = [message('runtime.results')]
-                        for field in context.get('fields', []):
-                            if field in stored:
-                                record[field] = stored[field]
-                        if 'started_at' in context.get('fields', []) and record.get('started_at') is not None:
-                            duration = _number(context.get('duration'), True)
-                            if duration is not None:
-                                record['ended_at'] = record['started_at'] + duration
+                        record = self._resolve_captured_result(record, context)
                         if not context.get('require_known') or record['arena_id'] in self._state['battles']:
                             self._apply(record, timestamp, event['kind'] == 'result')
                     if self.last_error:
@@ -439,21 +653,170 @@ class StatsService(object):
             self._intake.remove(event)
             yield None
 
-    def _queue_record(self, record, timestamp, is_result):
+    def _resolve_captured_result(self, record, context):
+        result = dict(record)
+        order = context.get('capture_order')
+        passive = context.get('passive_capture') is True
+        stored = self.result_context(result['arena_id'], include_received=False)
+        candidates = context.get('candidates', [])
+        if candidates:
+            matching = [item for item in candidates if stored.get('vehicle_id') is not None and
+                        item['record'].get('vehicle_id') == stored['vehicle_id']]
+            if len(matching) == 1:
+                result = dict(matching[0]['record'])
+                context = matching[0].get('context', {})
+            else:
+                result['warnings'] = [message('runtime.results')]
+        for field in context.get('fields', []):
+            if field in stored:
+                result[field] = stored[field]
+        if 'started_at' in context.get('fields', []) and result.get('started_at') is not None:
+            duration = _number(context.get('duration'), True)
+            if duration is not None:
+                result['ended_at'] = result['started_at'] + duration
+        if order is not None:
+            result['_capture_order'] = order
+        if passive:
+            result['_passive_capture'] = True
+        if context.get('passive_bonus') is True:
+            result['_passive_bonus'] = True
+        if 'arena_type_id' in context:
+            result['_arena_type_id'] = context['arena_type_id']
+        return result
+
+    @staticmethod
+    def _capture_context(record):
+        context = copy.deepcopy(record.get('_deferred_context') or {})
+        if record.get('_arena_type_id') is not None:
+            context['arena_type_id'] = record['_arena_type_id']
+        if record.get('_deferred_candidates'):
+            context['candidates'] = [{'record': _clean_record(candidate),
+                                      'context': StatsService._capture_context(candidate)}
+                                     for candidate in record['_deferred_candidates']]
+        if record.get('_require_known'):
+            context['require_known'] = True
+        if valid_capture_order(record.get('_capture_order')):
+            context['capture_order'] = record['_capture_order']
+        if record.get('_passive_capture') is True:
+            context['passive_capture'] = True
+        if record.get('_passive_bonus') is True:
+            context['passive_bonus'] = True
+        return context
+
+    def has_combat_receipt(self, receipt):
+        producer, sequence = receipt
+        return self._state.get('_startup_receipts', {}).get(producer, 0) >= sequence
+
+    @property
+    def history_reloading(self):
+        return self._history_rebase is not None
+
+    def refresh_capture_history(self, deferred=False):
+        """Rebase garage processing if another client committed first."""
+        if self.loading:
+            return True
+        if not self.ready or self._closed or self.history_reloading:
+            return False
+        try:
+            if not self.store.changed_on_disk():
+                return True
+        except (IOError, OSError) as error:
+            self.last_error = _text(error)
+            return False
+        work = self._rebase_history_steps()
+        if deferred:
+            self._history_rebase = work
+            return False
+        complete(work)
+        return self.last_error is None
+
+    def advance_history_reload(self, budget=0.002, max_steps=512):
+        work = self._history_rebase
+        if work is None or self._closed:
+            return False
+        timer = self._loading_clock
+        deadline = timer() + max(0, budget)
+        for unused in range(max(1, max_steps)):
+            try:
+                next(work)
+            except StopIteration:
+                self._history_rebase = None
+                break
+            if timer() >= deadline:
+                break
+        return self.history_reloading
+
+    def _rebase_history_steps(self):
+        try:
+            for unused in range(4):
+                store = GenerationStore(self.store.directory, self.store.schema_version,
+                                        self.store.keep_generations)
+                output = [None]
+                for step in self._load_history_steps(store, output):
+                    yield step
+                if output[0] is None:
+                    raise StorageError(message('storage.changed'))
+                # Keep the mounted history readable until the new indexes are ready.
+                candidate = copy.copy(self)
+                candidate._state = output[0]
+                for step in candidate._rebuild_indexes_steps():
+                    yield step
+                if not store.changed_on_disk():
+                    break
+                yield None
+            else:
+                raise StorageError(message('storage.changed'))
+        except (IOError, OSError, StorageError) as error:
+            self.last_error = _text(error)
+            return
+        self.store, self._state, self._indexes = store, candidate._state, candidate._indexes
+        self._pending_ids, self._metadata_ids = candidate._pending_ids, candidate._metadata_ids
+        self._unassigned = candidate._unassigned
+        self._filtered_timeline = None
+        self._timeline_error = None
+        self.cancel_timeline()
+        if self._timeline_enabled and any(self._timeline_range):
+            from .projection import ScopeIndex
+            self._timeline_job = {'index': ScopeIndex(self._timeline_period_id(), self.expected_table),
+                                  'lower': self._timeline_bounds[0], 'upper': self._timeline_bounds[1],
+                                  'cursor': None}
+        self.last_error = None
+
+    def replay_combat_capture(self, record, timestamp, launch_id, is_result, receipt):
+        """Apply a persisted capture once the ordinary history is ready."""
+        self.last_error = None
+        if self.has_combat_receipt(receipt):
+            return False
+        self._receipt = receipt
+        try:
+            timestamp = _number(timestamp, True)
+            if not self.ready or self._closed or timestamp is None:
+                raise StorageError(message('storage.readonly'))
+            if is_result:
+                record = self._resolve_captured_result(record, self._capture_context(record))
+            changed = self._apply(record, timestamp, is_result, captured_launch=launch_id)
+            if not self.last_error and not self.has_combat_receipt(receipt):
+                # An identical result still needs a durable consumption mark.
+                self._commit(self._candidate(), {})
+            return changed
+        except (StorageError, ValueError, TypeError, KeyError, OverflowError) as error:
+            self.last_error = _text(error)
+            return False
+        finally:
+            self._receipt = None
+
+    def _queue_record(self, record, timestamp, is_result, before_commit=None):
         try:
             if self._intake is None or self._closed or self.store.read_only:
                 raise StorageError(message('storage.readonly'))
-            context = copy.deepcopy(record.get('_deferred_context') or {})
-            if record.get('_deferred_candidates'):
-                context['candidates'] = [{'record': _clean_record(candidate),
-                                          'context': copy.deepcopy(candidate.get('_deferred_context', {}))}
-                                         for candidate in record['_deferred_candidates']]
-            if record.get('_require_known'):
-                context['require_known'] = True
+            self._append_startup_open()
+            context = self._capture_context(record)
             cleaned = _clean_record(record)
             key = (is_result, cleaned['arena_id'])
             if self._received_records.get(key) == (cleaned, context):
                 return False
+            if before_commit is not None:
+                before_commit()
             self._intake.append('result' if is_result else 'begin', self._requested_launch,
                                 timestamp, cleaned, context)
             self._received_records[key] = (cleaned, context)
@@ -473,14 +836,19 @@ class StatsService(object):
         self._indexes = {
             'launch': ScopeIndex(self.launch_id, self.expected_table),
             'manual': ScopeIndex(self._state['current_manual_id'], self.expected_table)}
+        if self._timeline_enabled:
+            self._indexes['timeline'] = ScopeIndex('timeline', self.expected_table)
         self._pending_ids = set()
+        self._metadata_ids = []
         self._unassigned = 0
-        members = {'launch': [], 'manual': []}
+        members = dict((name, []) for name in self._indexes)
         for record in values(self._state['battles']):
             if record.get('mode') not in (None, 'random'):
                 continue
             if self._pending(record):
                 self._pending_ids.add(record['arena_id'])
+            if any(_metadata_gaps(record)[:2]):
+                self._metadata_ids.append(record['arena_id'])
             if record.get('_manual_id') is None or record.get('_launch_id') is None:
                 self._unassigned += 1
             item = None
@@ -489,7 +857,10 @@ class StatsService(object):
                     if item is None:
                         item = contribution(record, self.expected_table)
                     members[name].append(item)
+            if self._timeline_enabled:
+                members['timeline'].append(item or contribution(record, self.expected_table))
             yield None
+        self._metadata_ids.sort()
         for name, index in self._indexes.items():
             for step in index.build_steps(members[name]):
                 yield step
@@ -501,32 +872,216 @@ class StatsService(object):
         self._pending_ids.discard(identifier)
         if self._pending(record):
             self._pending_ids.add(identifier)
+        metadata_index = bisect.bisect_left(self._metadata_ids, identifier)
+        in_metadata = metadata_index < len(self._metadata_ids) and self._metadata_ids[metadata_index] == identifier
+        needs_metadata = any(_metadata_gaps(record)[:2])
+        if needs_metadata and not in_metadata:
+            self._metadata_ids.insert(metadata_index, identifier)
+        elif in_metadata and not needs_metadata:
+            self._metadata_ids.pop(metadata_index)
         for name, field in (('launch', '_launch_id'), ('manual', '_manual_id')):
             index = self._indexes[name]
             if record.get(field) == index.identifier:
                 index.replace(record, item)
+        if self._timeline_enabled:
+            self._indexes['timeline'].replace(record, item)
+            filtered = self._filtered_timeline or (self._timeline_job or {}).get('index')
+            if filtered is not None:
+                self._update_timeline_record(filtered, record, item)
         if record.get('_manual_id') is None or record.get('_launch_id') is None:
             self._unassigned += 1
 
-    def set_page(self, scope, group, page, period_id=None):
+    def _view_index(self, scope):
+        if scope == 'timeline' and self._timeline_enabled:
+            return self._timeline_index()
+        if scope in ('launch', 'manual'):
+            return self._indexes[scope]
+        return None
+
+    def set_page(self, scope, group, page, period_id=None, request_id=None, anchor_id=None,
+                 order_epoch=None, history_anchor_id=None):
         if not self.ready or self._closed:
             return False
-        if scope not in ('launch', 'manual') or group not in ('battles', 'vehicles', 'maps', 'tiers'):
+        if group not in ('battles', 'vehicles', 'maps', 'tiers'):
             return False
-        if period_id is not None and period_id != self._indexes[scope].identifier:
+        index = self._view_index(scope)
+        if index is None:
             return False
+        if (period_id is not None and period_id != index.identifier) or not self._matches_view_epoch(scope, order_epoch):
+            return False
+        if request_id is not None:
+            request_id = _request_id(request_id)
+            if request_id is None:
+                return False
+        if anchor_id is not None:
+            if request_id is None or not isinstance(anchor_id, (text_type, bytes)):
+                return False
+            anchor_id = _text(anchor_id)
+            if not 1 <= len(anchor_id) <= 256:
+                return False
+            options = self._orders.get(scope, {}).get(group)
+            current_page = (index.battle_page(anchor_id, options) if group == 'battles' else
+                            index.group_page(group, anchor_id, options))
+            if current_page is not None:
+                page = current_page
+        if history_anchor_id is not None:
+            if group not in ('maps', 'vehicles') or anchor_id is None or not isinstance(history_anchor_id, (text_type, bytes)):
+                return False
+            battle_id = _text(history_anchor_id)
+            if not 1 <= len(battle_id) <= 256:
+                return False
+            options = self._orders.get(scope, {}).get(group)
+            detail_page = index.group_battle_page(group, anchor_id, battle_id, options)
+            if detail_page is not None:
+                opened = self._map_pages if group == 'maps' else self._vehicle_pages
+                self._remember_group_page(scope, group, anchor_id, detail_page, index.identifier, opened)
         self._pages.setdefault(scope, {})[group] = page
+        requests = self._page_requests.setdefault(scope, {})
+        if request_id is None:
+            requests.pop(group, None)
+        else:
+            requests[group] = {'period_id': index.identifier, 'request_id': request_id}
+        if group == 'battles':
+            self._battle_focus.pop(scope, None)
         return True
 
-    def set_order(self, scope, group, options, period_id):
+    def _order_epoch(self, scope):
+        return '{0}:{1}'.format(self._empty_view_revision, self._order_epochs.get(scope, 0))
+
+    def _advance_order_epoch(self, scope):
+        self._order_epochs[scope] = self._order_epochs.get(scope, 0) + 1
+
+    def _matches_view_epoch(self, scope, epoch):
+        return epoch is None or (isinstance(epoch, (text_type, bytes)) and _text(epoch) == self._order_epoch(scope))
+
+    def set_order(self, scope, group, options, period_id, request_id=None, order_epoch=None):
         from .projection import valid_order
-        if (not valid_order(options) or not self.ready or self._closed or
-                scope not in ('launch', 'manual') or group not in ('battles', 'vehicles', 'maps', 'tiers') or
-                period_id != self._indexes[scope].identifier):
+        if (not valid_order(options, group) or not self.ready or self._closed or
+                group not in ('battles', 'vehicles', 'maps', 'tiers')):
             return False
+        index = self._view_index(scope)
+        if index is None or period_id != index.identifier:
+            return False
+        if not self._matches_view_epoch(scope, order_epoch):
+            return False
+        if request_id is not None:
+            request_id = _request_id(request_id)
+            if request_id is None:
+                return False
+        previous = self._orders.get(scope, {}).get(group, {})
+        ascending = lambda order: order.get('chronology') in ('oldest', 'last_asc')
+        if group in ('vehicles', 'maps') and ascending(previous) != ascending(options):
+            opened = self._vehicle_pages if group == 'vehicles' else self._map_pages
+            current = opened.get(scope)
+            if current and current['period_id'] == period_id:
+                current['pages'] = dict((identifier, 0) for identifier in current['pages'])
+                self._advance_history_navigation(scope)
+            history = self._history_request.get(scope)
+            if history and history['kind'] == group:
+                self._history_request.pop(scope, None)
         self._orders.setdefault(scope, {})[group] = dict(options)
+        requests = self._order_requests.setdefault(scope, {})
+        if request_id is None:
+            if requests.pop(group, None) is not None:
+                self._advance_order_epoch(scope)
+        else:
+            requests[group] = {'period_id': period_id, 'request_id': request_id}
         self._pages.setdefault(scope, {})[group] = 0
+        self._page_requests.get(scope, {}).pop(group, None)
+        if group == 'battles':
+            self._battle_focus.pop(scope, None)
         return True
+
+    def set_map_battles(self, scope, map_id, page, period_id, chronology=None, order_epoch=None):
+        return self._set_group_battles(scope, 'maps', map_id, page, period_id, self._map_pages, chronology, order_epoch)
+
+    def set_vehicle_battles(self, scope, vehicle_id, page, period_id, chronology=None, order_epoch=None):
+        return self._set_group_battles(scope, 'vehicles', vehicle_id, page, period_id, self._vehicle_pages, chronology, order_epoch)
+
+    def _set_group_battles(self, scope, kind, group_id, page, period_id, opened, chronology, order_epoch):
+        if (not self.ready or self._closed or not isinstance(group_id, (text_type, bytes)) or
+                isinstance(page, bool) or not isinstance(page, int) or not 0 <= page < 10 ** 8):
+            return False
+        index = self._view_index(scope)
+        group_id = _text(group_id)
+        if (index is None or period_id != index.identifier or group_id not in index.groups[kind] or
+                not self._matches_view_epoch(scope, order_epoch)):
+            return False
+        current_order = self._orders.get(scope, {}).get(kind, {})
+        if chronology is not None and chronology != current_order.get('chronology', 'newest'):
+            return False
+        self._remember_group_page(scope, kind, group_id, page, period_id, opened)
+        return True
+
+    def _remember_group_page(self, scope, kind, group_id, page, period_id, opened):
+        current = opened.get(scope)
+        if current is None or current['period_id'] != period_id:
+            current = {'period_id': period_id, 'pages': {}}
+            opened[scope] = current
+        current['pages'][group_id] = page
+        self._history_request[scope] = {'period_id': period_id, 'kind': kind, 'id': group_id, 'page': page}
+        self._advance_history_navigation(scope)
+
+    def _advance_history_navigation(self, scope):
+        self._history_navigation_revisions[scope] = self._history_navigation_revisions.get(scope, 0) + 1
+
+    def select_battle(self, scope, identifier, period_id, request_id, order_epoch=None):
+        if (not self.ready or self._closed or
+                not isinstance(identifier, (text_type, bytes)) or
+                not isinstance(request_id, (text_type, bytes))):
+            return False
+        identifier, request_id = _text(identifier), _text(request_id)
+        if (not 1 <= len(request_id) <= 64 or any(char not in
+                'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-' for char in request_id)):
+            return False
+        index = self._view_index(scope)
+        if index is None or period_id != index.identifier or not self._matches_view_epoch(scope, order_epoch):
+            return False
+        page = index.battle_page(identifier, self._orders.get(scope, {}).get('battles'))
+        if page is None:
+            return False
+        self._pages.setdefault(scope, {})['battles'] = page
+        self._page_requests.get(scope, {}).pop('battles', None)
+        self._battle_focus[scope] = {'period_id': period_id, 'id': identifier, 'request_id': request_id,
+                                     'revision': index.data_revision}
+        return True
+
+    def _scope_snapshot(self, name, index, label, started_at, resolve_focus=True):
+        focus = self._battle_focus.get(name) if resolve_focus else None
+        orders = self._orders.get(name, {})
+        if focus and focus['period_id'] == index.identifier and focus['revision'] != index.data_revision:
+            # A new result can move the selected battle across a page boundary.
+            # Resolve its page again only when the underlying results change.
+            page = index.battle_page(focus['id'], orders.get('battles'))
+            if page is None:
+                self._battle_focus.pop(name, None)
+                focus = None
+            else:
+                self._pages[name]['battles'] = page
+                focus['revision'] = index.data_revision
+        opened = self._map_pages.get(name, {})
+        map_pages = opened.get('pages') if opened.get('period_id') == index.identifier else None
+        vehicles = self._vehicle_pages.get(name, {})
+        vehicle_pages = vehicles.get('pages') if vehicles.get('period_id') == index.identifier else None
+        scope = index.snapshot(label, started_at, self._pages.get(name), orders, map_pages, vehicle_pages)
+        scope['order_epoch'] = self._order_epoch(name)
+        scope['history_navigation_revision'] = self._history_navigation_revisions.get(name, 0)
+        history = self._history_request.get(name)
+        if history and history['period_id'] == index.identifier:
+            battle_list = index._group_battles(history['kind'], history['id'], history['page'],
+                                                self._orders.get(name, {}).get(history['kind']))
+            if battle_list is not None:
+                scope['battle_history'] = {'kind': history['kind'], 'id': history['id'], 'battle_list': battle_list}
+        for group, request in self._page_requests.get(name, {}).items():
+            if request['period_id'] == index.identifier:
+                scope['pagination'][group]['request_id'] = request['request_id']
+        for group, request in self._order_requests.get(name, {}).items():
+            if request['period_id'] == index.identifier:
+                scope['pagination'][group]['order_request_id'] = request['request_id']
+        if (focus and focus['period_id'] == index.identifier and
+                any(row['id'] == focus['id'] for row in scope['battles'])):
+            scope['battle_focus'] = dict((key, focus[key]) for key in ('id', 'request_id'))
+        return scope
 
     def _time(self):
         value = _number(self._now(), True)
@@ -584,6 +1139,23 @@ class StatsService(object):
                 or manual_periods[-1].get('ended_at') is not None
                 or any(epoch.get('ended_at') is None for epoch in manual_periods[:-1])):
             raise StorageError(message('core.current'))
+        points = state.get('time_points', {})
+        if not isinstance(points, dict) or len(points) > MAX_TIME_POINTS:
+            raise StorageError(message('core.boundaries'))
+        for identifier, at in items(points):
+            if (not isinstance(identifier, text_type) or len(identifier) != 32 or
+                    any(char not in '0123456789abcdef' for char in identifier) or
+                    identifier in period_ids['manual_sessions'] or _number(at, True) is None):
+                raise StorageError(message('core.boundaries'))
+            yield None
+        names = state.get('time_point_names', {})
+        if not isinstance(names, dict) or len(names) > len(points):
+            raise StorageError(message('core.boundaries'))
+        for identifier, name in items(names):
+            if (identifier not in points or not isinstance(name, text_type) or
+                    not name.strip() or len(name) > 80 or any(ord(char) < 32 for char in name)):
+                raise StorageError(message('core.boundaries'))
+            yield None
         receipts = state.get('_startup_receipts', {})
         if not isinstance(receipts, dict):
             raise StorageError(message('core.ledger'))
@@ -601,7 +1173,7 @@ class StatsService(object):
             clean = _clean_record(battle)
             for key in ('started_at', 'ended_at') + _NUMBERS + ('vehicle_id', 'vehicle_tier',
                     'vehicle_name', 'vehicle_type', 'map_id', 'map_name', 'mode', 'outcome',
-                    'warnings', 'currencies'):
+                    'warnings', 'currencies', 'details'):
                 if key in battle and (key not in clean or battle[key] != clean[key]):
                     raise StorageError(message('core.battle'))
             for key in ('complete', 'xp_bonus_applied', '_result_seen'):
@@ -610,6 +1182,8 @@ class StatsService(object):
             for key in ('revision', '_updated_at'):
                 if key in battle and _number(battle[key], True) is None:
                     raise StorageError(message('core.battle'))
+            if '_capture_order' in battle and not valid_capture_order(battle['_capture_order']):
+                raise StorageError(message('core.battle'))
             for key, kind in (('_manual_id', 'manual_sessions'), ('_launch_id', 'launch_sessions')):
                 if battle.get(key) is not None and (not isinstance(battle[key], text_type)
                         or battle[key] not in period_ids[kind]):
@@ -655,6 +1229,8 @@ class StatsService(object):
                                           if key not in kinds + ('battles',)), changes, periods)
             self.store.save(payload)
         except StorageError as error:
+            if self.loading and isinstance(error, StorageBusyError):
+                raise
             self.last_error = _text(error)
             return False
         self._state = candidate
@@ -665,7 +1241,7 @@ class StatsService(object):
         # Activity is observed at commit time, independently of the battle's
         # historical memberships. Both active periods protect reset boundaries.
         for epoch in (self._launch(candidate, self.launch_id), candidate['manual_sessions'][-1]):
-            if epoch is not None:
+            if epoch is not None and epoch.get('ended_at') is None:
                 epoch['last_seen_at'] = max(self._last_seen(epoch), timestamp)
 
     def _memberships(self, timestamp, current_time):
@@ -692,7 +1268,7 @@ class StatsService(object):
         return launch_id, manual_id
 
     def begin_battle(self, arena_id, started_at=None, vehicle_id=None, map_id=None, mode=None,
-                     vehicle_name=None, vehicle_tier=None, vehicle_type=None, map_name=None):
+                     vehicle_name=None, vehicle_tier=None, vehicle_type=None, map_name=None, details=None):
         if self._closed or (not self.ready and not self.loading):
             self.last_error = self.last_error or message('storage.readonly')
             return False
@@ -702,12 +1278,12 @@ class StatsService(object):
         record = {'arena_id': arena_id, 'started_at': timestamp if started_at is None else started_at,
                   'vehicle_id': vehicle_id, 'map_id': map_id, 'mode': mode, 'complete': False,
                   'vehicle_name': vehicle_name, 'vehicle_tier': vehicle_tier,
-                  'vehicle_type': vehicle_type, 'map_name': map_name}
+                  'vehicle_type': vehicle_type, 'map_name': map_name, 'details': details}
         if self.loading:
             return self._queue_record(record, timestamp, False)
         return self._apply(record, timestamp, is_result=False)
 
-    def record_result(self, record):
+    def record_result(self, record, before_commit=None):
         if self._closed or (not self.ready and not self.loading):
             self.last_error = self.last_error or message('storage.readonly')
             return False
@@ -717,8 +1293,8 @@ class StatsService(object):
         if record.get('mode') not in (None, 'random') or record.get('is_replay') or record.get('isReplay'):
             return False
         if self.loading:
-            return self._queue_record(record, self._time(), True)
-        return self._apply(record, self._time(), is_result=True)
+            return self._queue_record(record, self._time(), True, before_commit)
+        return self._apply(record, self._time(), is_result=True, before_commit=before_commit)
 
     def result_context(self, arena_id, include_received=True):
         """Known metadata for one result, including after a client restart.
@@ -732,9 +1308,51 @@ class StatsService(object):
             record.update(self._received_context.get(_text(arena_id), {}))
         fields = ('started_at', 'vehicle_id', 'vehicle_name', 'vehicle_tier',
                   'vehicle_type', 'map_id', 'map_name')
-        return dict((key, record[key]) for key in fields if record.get(key) is not None)
+        context = dict((key, record[key]) for key in fields if record.get(key) is not None)
+        details = record.get('details', {})
+        if details.get('active_crucible'):
+            context['active_crucible'] = details['active_crucible']
+        return context
 
-    def _apply(self, record, timestamp, is_result):
+    def battle_rating(self, arena_id):
+        """Read one account-local battle rating without projecting its history.
+
+        A result can have a usable WN8 while XP or financial recovery continues.
+        Only rating inputs and the bundled expected table determine readiness.
+        """
+        answer = {'account_key': self.account_key, 'arena_id': '',
+                  'status': 'unavailable', 'wn8': None}
+        if isinstance(arena_id, bool) or not isinstance(arena_id, (text_type, bytes) + number_types[:-1]):
+            return answer
+        try:
+            identifier = _text(arena_id)
+        except (ValueError, TypeError, OverflowError):
+            return answer
+        if not identifier or len(identifier) > 128:
+            return answer
+        answer['arena_id'] = identifier
+        if self._closed:
+            return answer
+        if self.loading:
+            answer['status'] = 'pending'
+            return answer
+        if not self.ready:
+            return answer
+        record = self._state['battles'].get(identifier)
+        if not record or record.get('mode') not in (None, 'random') or not self.expected_table.values:
+            return answer
+        vehicle_id = record.get('vehicle_id')
+        if vehicle_id is not None and _text(vehicle_id) not in self.expected_table.values:
+            return answer
+        from .projection import contribution
+        rating = contribution(record, self.expected_table)[1]
+        if _number(rating, True) is not None:
+            answer['status'], answer['wn8'] = 'ready', rating
+        elif not record.get('_result_seen') or not record.get('complete'):
+            answer['status'] = 'pending'
+        return answer
+
+    def _apply(self, record, timestamp, is_result, captured_launch=None, before_commit=None):
         try:
             incoming = _clean_record(record)
         except (ValueError, TypeError, OverflowError) as error:
@@ -745,11 +1363,43 @@ class StatsService(object):
         # Authority and completeness are separate: a new XP bonus can arrive
         # while a currency is unavailable. This control flag is not ledger data.
         revise = incoming.pop('reconcile', False)
+        passive = record.get('_passive_capture') is True
+        order, previous_order = record.get('_capture_order'), old.get('_capture_order')
+        if not is_result or not valid_capture_order(order):
+            order = None
+        stale = False
+        if is_result and valid_capture_order(previous_order):
+            if order is None:
+                stale = captured_launch is not None
+            elif order != previous_order:
+                stale = compare_capture_order(order, previous_order, self.capture_clock_domain) != 1
+        if stale or passive:
+            # An older receipt or another read of an existing native bundle
+            # can fill gaps without revising facts from a fresh delivery.
+            revise = False
+            if stale and old.get('xp_received') is not None:
+                incoming.pop('xp_bonus_applied', None)
+            if 'warnings' in old:
+                incoming.pop('warnings', None)
+        arena_type_id = record.get('_arena_type_id')
+        if not revise and old:
+            _restrict_unverified_facts(old, incoming, arena_type_id)
         # The raw server-result cache may predate an already applied premium XP
         # bonus even after restart. Only another bonus-aware reading can revise it.
-        if old.get('xp_bonus_applied') and not incoming.get('xp_bonus_applied'):
+        passive_bonus = passive or record.get('_passive_bonus') is True
+        if old.get('xp_bonus_applied') and (not incoming.get('xp_bonus_applied') or
+                                           (passive_bonus and old.get('xp_received') is not None)):
             incoming.pop('xp_received', None)
         merged = _merge_known(old, incoming, revise)
+        if is_result and not revise and old:
+            _repair_result_metadata(old, incoming, merged, arena_type_id)
+        # The native XP controller is specifically re-read to pick up a
+        # multiplier applied after the original battle-result delivery.
+        xp = incoming.get('xp_received')
+        changed_bonus = (passive_bonus and not stale and incoming.get('xp_bonus_applied') and xp is not None and
+                         (old.get('xp_received') is None or not old.get('xp_bonus_applied')))
+        if changed_bonus:
+            merged['xp_received'] = xp
         if merged.get('mode') not in (None, 'random'):
             return False
         if old:
@@ -769,7 +1419,12 @@ class StatsService(object):
             # begin_battle is a live observation, unlike a delayed cache result.
             # It can precede service creation (late initialization/reconnect).
             # Existing durable memberships below still take precedence.
-            launch_id = self.launch_id
+            launch_id = self.launch_id if captured_launch is None else captured_launch
+            if captured_launch is not None and self._launch(self._state, launch_id) is None:
+                # A cold start directly into combat may exit before the old
+                # launch can be opened. Keep its battle in history without
+                # attributing it to the launch that recovered it.
+                launch_id = None
             if (manual_id is None and len(self._state['manual_sessions']) == 1
                     and started_at < self._state['manual_sessions'][0]['started_at']):
                 manual_id = self._state['current_manual_id']
@@ -780,21 +1435,28 @@ class StatsService(object):
         merged['_result_seen'] = bool(old.get('_result_seen')) or is_result
         merged.setdefault('complete', False)
         merged.setdefault('warnings', [])
-        # Infer a net value only when both components are confirmed. Reconcile it
-        # when an authoritative update revises a component but does not supply net.
-        for currency, values in merged.get('currencies', {}).items():
-            update = incoming.get('currencies', {}).get(currency, {})
-            has_components = values.get('income') is not None and values.get('costs') is not None
-            if has_components and (values.get('net') is None or
-                                   (revise and update.get('net') is None and
-                                    (update.get('income') is not None or update.get('costs') is not None))):
-                values['net'] = values['income'] - values['costs']
+        if is_result:
+            _finalize_result(merged)
+        # Record the latest authoritative observation even when its values
+        # match the old row. An older conflicting receipt may still be in RAM
+        # in a different client and become visible after this observation.
+        advance_order = order is not None and (revise or changed_bonus) and order != previous_order
         if merged == old:
+            if advance_order:
+                merged['_capture_order'] = order
+                if before_commit is not None:
+                    before_commit()
+                if self._commit(self._candidate(), {arena_id: merged}):
+                    old['_capture_order'] = order
             return False
+        if advance_order:
+            merged['_capture_order'] = order
         merged['revision'] = old.get('revision', 0) + 1
-        merged['_updated_at'] = timestamp
+        merged['_updated_at'] = max(old.get('_updated_at', 0), timestamp)
         candidate = self._candidate()
         self._touch(candidate, timestamp)
+        if before_commit is not None:
+            before_commit()
         if not self._commit(candidate, {arena_id: merged}):
             return False
         # Publish the single immutable replacement only after durable commit.
@@ -807,7 +1469,7 @@ class StatsService(object):
         return True
 
     def reset_manual(self, now=None):
-        if self.loading or self._closed:
+        if self.loading or self.history_reloading or self._closed:
             self.last_error = self.last_error or message('core.loading')
             return None
         timestamp = self._time() if now is None else _number(now, True)
@@ -826,10 +1488,209 @@ class StatsService(object):
         from .projection import ScopeIndex
         self._indexes['manual'] = ScopeIndex(new_id, self.expected_table)
         self._pages.pop('manual', None)
+        self._page_requests.pop('manual', None)
+        self._order_requests.pop('manual', None)
+        self._advance_order_epoch('manual')
+        self._map_pages.pop('manual', None)
+        self._vehicle_pages.pop('manual', None)
+        self._history_request.pop('manual', None)
+        self._battle_focus.pop('manual', None)
         return new_id
+
+    def _time_points(self):
+        points = dict((epoch['id'], epoch['started_at']) for epoch in self._state['manual_sessions'][1:])
+        points.update(self._state.get('time_points', {}))
+        return points
+
+    def create_time_point(self, name=None, request_id=None):
+        response = None
+        if request_id is not None:
+            request_id = _request_id(request_id)
+            if request_id is None:
+                return False
+            response = {'request_id': request_id, 'saved': False}
+            self._time_point_result = response
+        if not self._timeline_enabled or not self.ready or self._closed or self.history_reloading:
+            return False
+        if name is not None:
+            if not isinstance(name, (text_type, bytes)):
+                return False
+            name = _text(name).strip()
+            if len(name) > 80 or any(ord(char) < 32 for char in name):
+                self.last_error = message('timeline.create_error')
+                return False
+        points = self._state.get('time_points', {})
+        timestamp = self._time()
+        if len(points) >= MAX_TIME_POINTS:
+            self.last_error = message('timeline.create_error')
+            return False
+        candidate = self._candidate()
+        candidate['time_points'] = dict(points)
+        identifier = _text(uuid.uuid4().hex)
+        candidate['time_points'][identifier] = timestamp
+        if name:
+            candidate['time_point_names'] = dict(self._state.get('time_point_names', {}))
+            candidate['time_point_names'][identifier] = name
+        saved = self._commit(candidate, {})
+        if response is not None:
+            response['saved'] = saved
+        return saved
+
+    def set_timeline_range(self, start, end, from_date=None, to_date=None):
+        if not self._timeline_enabled or not self.ready or self._closed:
+            return False
+        if not all(isinstance(value, (text_type, bytes)) for value in (start, end)):
+            return False
+        start, end = _text(start), _text(end)
+        points = self._time_points()
+        custom = '__custom__'
+        if ((start and start != custom and start not in points) or
+                (end and end != custom and end not in points)):
+            return False
+        dates = []
+        for point, supplied in ((start, from_date), (end, to_date)):
+            value = _number(supplied, True) if point == custom else None
+            if (point == custom and value is None) or (point != custom and supplied is not None):
+                return False
+            dates.append(float(value) if value is not None else None)
+        lower = dates[0] if start == custom else points.get(start, 0)
+        upper = dates[1] if end == custom else points[end] if end else None
+        now = self._time()
+        if lower > now or (upper is not None and (upper > now or lower >= upper)):
+            return False
+        selected = (start, end)
+        dates = tuple(dates)
+        if selected != self._timeline_range or dates != self._timeline_dates or self._timeline_error:
+            self.cancel_timeline()
+            self._timeline_range = selected
+            self._timeline_dates = dates
+            self._timeline_bounds = (lower, upper)
+            self._filtered_timeline = None
+            self._timeline_error = None
+            self._pages.pop('timeline', None)
+            self._page_requests.pop('timeline', None)
+            self._order_requests.pop('timeline', None)
+            self._advance_order_epoch('timeline')
+            self._map_pages.pop('timeline', None)
+            self._vehicle_pages.pop('timeline', None)
+            self._history_request.pop('timeline', None)
+            self._battle_focus.pop('timeline', None)
+            if start or end:
+                from .projection import ScopeIndex
+                self._timeline_job = {
+                    'index': ScopeIndex(self._timeline_period_id(), self.expected_table),
+                    'lower': self._timeline_bounds[0], 'upper': self._timeline_bounds[1],
+                    'cursor': None}
+        return True
+
+    def _timeline_period_id(self):
+        start, end = self._timeline_range
+        if not start and not end:
+            return 'timeline'
+        identifier = 'timeline:{0}:{1}'.format(start, end)
+        if '__custom__' in (start, end):
+            identifier += ':{0}:{1}'.format(*self._timeline_dates)
+        return identifier
+
+    @property
+    def timeline_loading(self):
+        return self._timeline_job is not None
+
+    def cancel_timeline(self):
+        self._timeline_job = None
+
+    def _update_timeline_record(self, index, record, item):
+        started_at = record.get('started_at')
+        lower, upper = self._timeline_bounds
+        member = (started_at is not None and started_at >= lower and
+                  (upper is None or started_at < upper))
+        if member:
+            previous = index.records.get(record['arena_id'])
+            # A live update can add a record before the cooperative cursor
+            # reaches it. Never remove/re-add the same immutable contribution.
+            if previous is None or previous[1] is not item:
+                index.replace(record, item)
+        else:
+            index.discard(record['arena_id'])
+
+    def advance_timeline(self, budget=0.002, max_steps=512):
+        """Build the selected projection cooperatively; never publish a prefix."""
+        if self._timeline_job is None or self._closed or not self.ready:
+            return False
+        timer = getattr(time, 'perf_counter', time.time)
+        deadline = timer() + max(0, budget)
+        job = self._timeline_job
+        full = self._indexes['timeline']
+        try:
+            for unused in range(max(1, max_steps)):
+                # Re-seek after each record rather than holding list offsets:
+                # durable corrections can move/insert records between slices.
+                position = (bisect.bisect_right(full.order, job['cursor']) if job['cursor'] is not None else
+                            bisect.bisect_left(full.order, (job['lower'], '')))
+                if position >= len(full.order) or (job['upper'] is not None and full.order[position][0] >= job['upper']):
+                    self._filtered_timeline = job['index']
+                    self._timeline_job = None
+                    break
+                key = full.order[position]
+                job['cursor'] = key
+                record, item = full.records[key[1]]
+                self._update_timeline_record(job['index'], record, item)
+                if timer() >= deadline:
+                    break
+        except Exception:
+            # A projection failure must not make the durable account read-only
+            # or expose partial totals as a completed selected range.
+            self._timeline_job = None
+            self._timeline_error = message('error.snapshot')
+        return self.timeline_loading
+
+    def _timeline_index(self):
+        start, end = self._timeline_range
+        if not start and not end:
+            return self._indexes['timeline']
+        return self._filtered_timeline
+
+    def timeline_snapshot(self):
+        if not self._timeline_enabled:
+            return None
+        from .projection import ScopeIndex
+        ready = self.ready and not self.loading
+        points = self._time_points() if ready else {}
+        start, end = self._timeline_range
+        projection = self._timeline_index() if ready else None
+        index = projection if projection is not None else ScopeIndex(self._timeline_period_id(), self.expected_table)
+        scope = self._scope_snapshot('timeline', index, message('scope.timeline'),
+                                     self._timeline_dates[0] if start == '__custom__' else points.get(start),
+                                     resolve_focus=projection is not None)
+        if not ready or self.timeline_loading or self._timeline_error:
+            scope['data_revision'] = self._empty_view_revision
+        scope['loading'] = self.timeline_loading or self.history_reloading
+        if ready and self._timeline_error:
+            scope['load_error'] = self._timeline_error
+        scope['time_points'] = sorted(points.items(), key=lambda point: (point[1], point[0]))
+        scope['time_point_names'] = dict(self._state.get('time_point_names', {})) if ready else {}
+        if self._time_point_result is not None:
+            scope['time_point_result'] = dict(self._time_point_result)
+        scope['from_point'], scope['to_point'] = start, end
+        scope['from_date'], scope['to_date'] = self._timeline_dates
+        return scope
 
     def pending_arena_ids(self):
         return [] if self.loading else sorted(self._pending_ids)
+
+    def metadata_candidates(self, after, limit):
+        if not self.ready or not self._metadata_ids:
+            return []
+        index = bisect.bisect_right(self._metadata_ids, after) if after is not None else 0
+        identifiers = self._metadata_ids[index:index + limit]
+        if len(identifiers) < limit:
+            identifiers += self._metadata_ids[:min(index, limit - len(identifiers))]
+        return identifiers
+
+    def metadata_request(self, identifier):
+        record = self._state['battles'].get(identifier, {})
+        vehicle, arena, arena_type = _metadata_gaps(record)
+        return (record.get('vehicle_id') if vehicle else None, arena_type if arena else None)
 
     @staticmethod
     def _pending(record):
@@ -837,7 +1698,7 @@ class StatsService(object):
 
     def _scope(self, key, identifier, label, started_at):
         name = 'launch' if key == '_launch_id' else 'manual'
-        return self._indexes[name].snapshot(label, started_at, self._pages.get(name), self._orders.get(name))
+        return self._scope_snapshot(name, self._indexes[name], label, started_at)
 
     def launch_records(self):
         """Independent records from this account and game process only."""
@@ -858,7 +1719,8 @@ class StatsService(object):
         """Project known records without changing their account/session ledger."""
         scope = {'label': label, 'started_at': started_at,
                  'pending': sum(1 for record in records if self._pending(record)),
-                 'summary': aggregate_stats(records, self.expected_table), 'vehicles': [], 'maps': [], 'battles': [], 'tiers': []}
+                 'summary': aggregate_stats(records, self.expected_table, include_currency_series=True),
+                 'vehicles': [], 'maps': [], 'battles': [], 'tiers': []}
         for group_type, field, name_field in (('vehicles', 'vehicle_id', 'vehicle_name'), ('maps', 'map_id', 'map_name'), ('tiers', 'vehicle_tier', 'vehicle_tier')):
             groups = {}
             for record in records:
@@ -876,13 +1738,16 @@ class StatsService(object):
                     from .projection import tier_name
                     group['tier'] = latest.get('vehicle_tier')
                     group['name'] = tier_name(group['tier'])
-                group['started_at'] = max((row.get('started_at') or 0 for row in group_records))
-                group['first_started_at'] = min((row.get('started_at') or 0 for row in group_records))
+                starts = [row['started_at'] for row in group_records
+                          if _number(row.get('started_at'), True) is not None]
+                group['started_at'] = max(starts) if starts else None
+                group['first_started_at'] = min(starts) if starts else None
                 scope[group_type].append(group)
             scope[group_type].sort(key=lambda group: (-group['stats']['battles'], group['name'].lower(), group['id']))
         for record in sorted(records, key=lambda row: (row.get('started_at') or 0, row['arena_id']), reverse=True):
             scope['battles'].append({'id': record['arena_id'], 'name': record.get('vehicle_name') or message('unknown.vehicle'),
-                                     'map': record.get('map_name') or message('unknown.map'), 'started_at': record.get('started_at'),
+                                     'map': record.get('map_name') or message('unknown.map'), 'map_id': record.get('map_id'),
+                                     'started_at': record.get('started_at'),
                                      'outcome': record.get('outcome'), 'tier': record.get('vehicle_tier'),
                                      'stats': aggregate_stats([record], self.expected_table)})
         return scope
@@ -892,6 +1757,8 @@ class StatsService(object):
             from .projection import ScopeIndex
             scopes = dict((name, ScopeIndex('', self.expected_table).snapshot(message('scope.' + name), self._initial_time))
                           for name in ('launch', 'manual'))
+            for scope in scopes.values():
+                scope['data_revision'] = self._empty_view_revision
             return {'version': VERSION, 'account_key': self.account_key, 'generated_at': self._time(),
                     'loading': self.loading, 'load_error': None if self.loading else self.last_error,
                     'expected': copy.deepcopy(self.expected_table.metadata), 'scopes': scopes,
@@ -916,8 +1783,12 @@ class StatsService(object):
         warnings = sorted(set(warnings))
         if truncated or len(warnings) > 200:
             warnings = warnings[:200] + [message('core.more_notices')]
+        scopes = {'launch': self._scope('_launch_id', self.launch_id, message('scope.launch'),
+                                       launch['started_at'] if launch else timestamp),
+                  'manual': self._scope('_manual_id', manual['id'], message('scope.manual'), manual['started_at'])}
+        if self.history_reloading:
+            for scope in scopes.values():
+                scope['loading'] = True
         return {'version': VERSION, 'account_key': self.account_key, 'generated_at': timestamp,
                 'expected': copy.deepcopy(self.expected_table.metadata), 'warnings': sorted(set(warnings)),
-                'scopes': {'launch': self._scope('_launch_id', self.launch_id, message('scope.launch'),
-                                                 launch['started_at'] if launch else timestamp),
-                           'manual': self._scope('_manual_id', manual['id'], message('scope.manual'), manual['started_at'])}}
+                'scopes': scopes}

@@ -10,10 +10,13 @@ on:
       - 'mods/staysharp/assets/openwg_gameface_1.2.2.wotmod.b85'
       - 'mods/staysharp/assets/OPENWG_LICENSE'
       - 'scripts/release_installers.py'
+      - 'scripts/release_version.py'
       - 'scripts/build_release_module.sh'
       - 'scripts/release_modules.json'
       - 'scripts/privacy_audit.py'
       - '.github/workflows/wot-updates.yml'
+      - 'scripts/wot_updates.py'
+      - 'tests/test_wot_updates.py'
       - '.github/workflows/rangefinder-ci.yml'
   workflow_dispatch:
 

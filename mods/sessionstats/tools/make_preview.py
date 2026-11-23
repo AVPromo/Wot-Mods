@@ -3,10 +3,12 @@
 
 No fixture or demo data is included in the game .wotmod. This tool is optional.
 """
+import base64
 import copy
 from datetime import datetime, timezone
 from html import escape
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -14,12 +16,27 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
-from grz_session_stats.core import StatsService, aggregate_stats
+from grz_session_stats import VERSION
+from grz_session_stats.core import StatsService
 from grz_session_stats.appearance import CONFIG_FILENAME, load_config, build_presentation
 from grz_session_stats.localization import Localizer
+from grz_session_stats.date_locale import resolve_date_settings
 
 
-def snapshots():
+def preview_snapshot(service, version, manual):
+    snapshot = service.snapshot()
+    snapshot['version'] = version
+    for name, scope in snapshot['scopes'].items():
+        token = manual if name == 'manual' else 'launch'
+        # The fixture state is fixed. Do not publish the temporary ledger's
+        # random manual period and index generation identifiers.
+        scope['period_id'] = scope['data_revision'] = scope['order_epoch'] = 'preview-' + token
+        for battle in scope['battles']:
+            battle['vehicle_id'] = service.result_context(battle['id']).get('vehicle_id')
+    return snapshot
+
+
+def snapshots(version):
     # Deliberately synthetic tank IDs and reference values, never a substitute
     # for the real WG table bundled in data/wn8exp.json.
     expected = {'header': {'version': 'example', 'source': 'synthetic'}, 'data': [
@@ -27,14 +44,16 @@ def snapshots():
         {'IDNum':202, 'expDamage':1650, 'expFrag':0.95, 'expSpot':1.2, 'expDef':0.8, 'expWinRate':51},
         {'IDNum':303, 'expDamage':1750, 'expFrag':1.0, 'expSpot':1.6, 'expDef':0.75, 'expWinRate':51}]}
     tanks = [(101, 'Leopard 1'), (202, 'E 50 M'), (303, 'Bat.-Châtillon 25 t')]
-    maps = [('malinovka','Malinovka'), ('murovanka','Murovanka'), ('prokhorovka','Prokhorovka'),
-            ('himmelsdorf','Himmelsdorf'), ('redshire','Redshire')]
+    maps = [('02_malinovka','Malinovka'), ('11_murovanka','Murovanka'), ('05_prohorovka','Prokhorovka'),
+            ('04_himmelsdorf','Himmelsdorf'), ('34_redshire','Redshire')]
     start = datetime(2026,10,20,16,10,tzinfo=timezone.utc).timestamp()
     clock = [start-86400]
     def make_record(i, offset):
         tank = tanks[(i // 3) % 3]
         map_info = maps[i % len(maps)]
         credit_income = 57680+i*1417
+        # Mix known, zero and unavailable synthetic base earnings.
+        credit_base = None if i % 7 == 0 else 0 if i == 1 else 34000+i*733
         repair, ammo, consumables = 7900+i*163, 21200+(i%4)*2280, 3000
         costs = repair+ammo+consumables
         xp_base = 346+((i*137)%907)
@@ -47,6 +66,7 @@ def snapshots():
                 'complete':True, 'warnings':[],
                 'currencies':{
                     'credits':{'income':credit_income, 'costs':costs,'net':credit_income-costs,
+                               'income_base':credit_base, 'net_base':credit_base-costs if credit_base is not None else None,
                                'breakdown':{'repair':repair,'ammo':ammo,'consumables':consumables,'directives':0}},
                     'bonds':{'income':7 if i%2==0 else 0, 'costs':6 if i%5==0 else 0,
                              'net':(7 if i%2==0 else 0)-(6 if i%5==0 else 0)},
@@ -67,21 +87,24 @@ def snapshots():
             service.begin_battle(record['arena_id'],record['started_at'],record['vehicle_id'],record['map_id'],'random')
             clock[0] += 390
             service.record_result(record)
-        result = service.snapshot()
+        result = preview_snapshot(service, version, 'manual')
         service.reset_manual()
-        reset = service.snapshot()
+        reset = preview_snapshot(service, version, 'reset')
     return result, reset
 
 
-def main():
-    output = ROOT/'preview'
-    output.mkdir(exist_ok=True)
-    normal, reset = snapshots()
+def preview_files(version):
+    normal, reset = snapshots(version)
     config = load_config(str(ROOT/CONFIG_FILENAME))
     presentation = build_presentation(config)
     localizer = Localizer(config['language'])
+    localizer.date_settings = resolve_date_settings(localizer.language, overrides=config['date_time'])
     fixtures = {'normal':normal,'reset':reset}
-    (output/'demo_snapshot.json').write_text(json.dumps(fixtures,ensure_ascii=False,indent=2)+'\n', encoding='utf-8')
+    files = {'demo_snapshot.json': json.dumps(fixtures, ensure_ascii=False, indent=2, sort_keys=True)+'\n'}
+    localized = {}
+    for language in ('en', 'pl', 'ru', 'fr', 'de', 'es', 'uk'):
+        translator = Localizer(language, date_settings=localizer.date_settings)
+        localized[language] = dict((key, translator.snapshot(copy.deepcopy(snapshot))) for key, snapshot in fixtures.items())
     # Keep regression fixtures canonical; localize the generated preview itself.
     for snapshot in fixtures.values():
         localizer.snapshot(snapshot)
@@ -89,13 +112,14 @@ def main():
     # The standalone page has an outer demo toolbar/background. Compile the
     # configured panel first, then retain that page's own host styles last.
     # Runtime appearance is separately covered by the native-model UI tests.
-    css = presentation['panel_css']
+    camo = base64.b64encode((ROOT/'ui'/'session_stats_camo.png').read_bytes()).decode('ascii')
+    css = presentation['panel_css'].replace('url("session_stats_camo.png")', 'url("data:image/png;base64,'+camo+'")')
     js = (ROOT/'ui'/'session_stats.js').read_text(encoding='utf-8')
     html = html.replace('<link rel="stylesheet" href="session_stats.css">', '<style>\n'+css+'\n</style>')
     html = re.sub(r'<script(?: type="module")? src="session_stats.js"></script>',
                   lambda m:'<script>\n'+js+'\n</script>', html)
-    controller = (output/'controller.js').read_text(encoding='utf-8')
-    demo = '<script>window.GRZ_DEMO_LANGUAGES = '+(ROOT/'data/languages.json').read_text(encoding='utf-8').replace('</','<\\/')+';window.GRZ_DEMO_FIXTURES = '+json.dumps(fixtures,ensure_ascii=False,separators=(',',':')).replace('</','<\\/')+';</script>'
+    controller = (ROOT/'preview/controller.js').read_text(encoding='utf-8')
+    demo = '<script>window.GRZ_DEMO_LANGUAGES = '+(ROOT/'data/languages.json').read_text(encoding='utf-8').replace('</','<\\/')+';window.GRZ_DEMO_FIXTURES = '+json.dumps(fixtures,ensure_ascii=False,separators=(',',':'),sort_keys=True).replace('</','<\\/')+';window.GRZ_DEMO_LOCALIZED = '+json.dumps(localized,ensure_ascii=False,separators=(',',':'),sort_keys=True).replace('</','<\\/')+';</script>'
     html = html.replace('<body>', '<body>\n<div class="demo-toolbar"><span data-i18n="preview.label">Preview · synthetic data</span><button id="demo-reopen" type="button" data-i18n="preview.open">Open panel</button><button id="demo-restart" type="button" data-i18n="preview.restore">Restore example</button></div>')
     html = html.replace('</body>',demo+'\n<script>\n'+controller+'\n</script>\n</body>')
     preview_css = '''
@@ -111,10 +135,9 @@ html { overflow:auto; }
 .demo-toolbar span{width:100%;margin-bottom:5px;} }
 '''
     html=html.replace('</head>', '<style>'+preview_css+'</style>\n</head>')
-    path = output/'PODGLAD.html'
-    path.write_text(html,encoding='utf-8')
+    files['PREVIEW.html'] = html
     # Keep the independent icon preview on the actual shipped stylesheet.
-    footer_path = output/'footer-icon.html'
+    footer_path = ROOT/'preview/footer-icon.html'
     footer_css = (ROOT/'ui'/'footer.css').read_text(encoding='utf-8')
     footer_html = footer_path.read_text(encoding='utf-8')
     footer_html = re.sub(r'<html lang="[^"]*">',
@@ -138,10 +161,20 @@ html { overflow:auto; }
             lambda m:appearance_style, footer_html, flags=re.S)
     else:
         footer_html = footer_html.replace('</head>', appearance_style+'\n</head>')
-    footer_path.write_text(footer_html, encoding='utf-8')
-    print(json.dumps({'preview':str(path),'launch_battles':normal['scopes']['launch']['summary']['battles'],
-        'manual_battles':normal['scopes']['manual']['summary']['battles'],
-        'wn8':normal['scopes']['launch']['summary']['wn8'],'bytes':path.stat().st_size},ensure_ascii=False))
+    files['footer-icon.html'] = footer_html
+    summary = normal['scopes']['launch']['summary']
+    return files, {'launch_battles':summary['battles'], 'wn8':summary['wn8'],
+                   'manual_battles':normal['scopes']['manual']['summary']['battles']}
+
+
+def main():
+    output = ROOT/'preview'
+    version = os.environ.get('SESSIONSTATS_VERSION', VERSION)
+    files, summary = preview_files(version)
+    for name, contents in files.items():
+        (output/name).write_bytes(contents.encode('utf-8'))
+    path = output/'PREVIEW.html'
+    print(json.dumps(dict(summary, preview=str(path), bytes=path.stat().st_size), ensure_ascii=False))
 
 
 if __name__=='__main__': main()

@@ -40,8 +40,10 @@ __pycache__/
 /mods/sessionstats/dist/
 /mods/sessionstats/tests/*-report.json
 /mods/sessionstats/preview/PODGLAD.html
+/mods/sessionstats/preview/PREVIEW.html
 /mods/sessionstats/preview/demo_snapshot.json
 /mods/sessionstats/node_modules/
 /Reports/
 /screenshots/
 /player_data/
+/scripts/sessionstats/ss-test-*/

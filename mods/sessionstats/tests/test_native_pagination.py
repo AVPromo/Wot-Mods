@@ -14,7 +14,7 @@ from grz_session_stats.runtime import Runtime
 from grz_session_stats.sessions import InstallationSession
 
 
-class NativePaginationTests(unittest.TestCase):
+class NativePaginationFixture(object):
     inject_module = fixtures.NativeBindingTests.__dict__['inject_module']
 
     def setUp(self):
@@ -50,6 +50,8 @@ class NativePaginationTests(unittest.TestCase):
         command.update(updates)
         return command
 
+
+class NativePaginationTests(NativePaginationFixture, unittest.TestCase):
     def test_each_scope_and_group_publishes_next_and_previous_page(self):
         for scope in ('launch', 'manual', 'instance'):
             for group in ('battles', 'vehicles', 'maps'):
@@ -73,6 +75,23 @@ class NativePaginationTests(unittest.TestCase):
             self.window._model.onAction(self.command(**updates))
         self.assertEqual(self.mod.active_service._pages, {})
         self.assertEqual(self.payload()['scopes']['manual']['pagination']['battles']['page'], 0)
+
+    def test_return_anchor_locates_group_under_current_order_or_uses_fallback(self):
+        for group in ('maps', 'vehicles'):
+            self.window._model.onAction(self.command(group=group))
+            anchor = self.payload()['scopes']['manual'][group][0]['id']
+            command = self.command(group=group, page='0', anchor_id=anchor, request_id='return-anchor')
+            self.window._model.onAction(command)
+            located = self.payload()['scopes']['manual']
+            self.assertEqual(located['pagination'][group]['page'], 1)
+            self.assertEqual(located['pagination'][group]['request_id'], 'return-anchor')
+            self.assertIn(anchor, [row['id'] for row in located[group]])
+            self.window._model.onAction(dict(command, anchor_id='synthetic-removed-group', request_id='return-fallback'))
+            fallback = self.payload()['scopes']['manual']
+            self.assertEqual(fallback['pagination'][group]['page'], 0)
+            self.assertEqual(fallback['pagination'][group]['request_id'], 'return-fallback')
+            self.window._model.onAction(dict(command, request_id=None))
+            self.assertEqual(self.payload()['scopes']['manual']['pagination'][group]['page'], 0)
 
     def test_closed_window_cannot_page_its_replacement(self):
         command, old_model = self.command(), self.window._model

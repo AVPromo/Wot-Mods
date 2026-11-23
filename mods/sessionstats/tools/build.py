@@ -21,9 +21,11 @@ VERSION = (ROOT / 'VERSION').read_text(encoding='ascii').strip()
 ZIP_DATE = (2026, 10, 21, 0, 0, 0)
 MAGIC27 = b'\x03\xf3\r\n'
 INSTALLED_PACKAGE = 'grz_sessions_stats.wotmod'
+BUNDLE_DOCS = ('USER_GUIDE.txt', 'CHANGELOG.md', 'LICENSE.txt', 'THIRD_PARTY.txt')
+PREVIEW_HTML = 'PREVIEW.html'
 # Only these release-identifying fields are stamped; historical prose is retained.
 RELEASE_GUIDES = {
-    'README_PL.txt': (r'(?m)^(Version )',),
+    'USER_GUIDE.txt': (r'(?m)^(Version )',),
     'README.md': (r'(?m)^(Version )',),
     'CONTRACT.txt': (r'(?m)^(GRZ SESSION STATS — IMPLEMENTATION CONTRACT v)',
                      r"(?m)^( version: ')"),
@@ -85,11 +87,18 @@ def check_package(path):
         assert registry[0]['id'] == 'R.mods.grz.sessionstats.views.SessionStats'
         layout = registry[0]['path'].replace('coui://', 'res/')
         assert layout in names, 'Registered layout missing'
+        assert layout.rsplit('/', 1)[0]+'/session_stats_camo.png' in names, 'Panel texture missing'
         expected = json.loads(package.read('res/grz_session_stats/wn8exp.json'))
         assert len(expected['data']) >= 300
         languages = json.loads(package.read('res/grz_session_stats/languages.json'))
         assert set(languages['languages']) == {'en', 'ru', 'fr', 'pl', 'de', 'es', 'uk'}
         assert isinstance(languages['languages']['en'].get('title'), str)
+        map_catalog = json.loads(package.read('res/grz_session_stats/map_names.json'))
+        assert map_catalog['schema_version'] == 1
+        maps = map_catalog['maps']
+        assert len(maps) >= 68 and all(set(labels) == set(languages['languages']) for labels in maps.values())
+        assert maps['59_asia_great_wall']['en'] == "Empire's Border"
+        assert 'res/scripts/client/gui/mods/grz_session_stats/map_names.pyc' in names
     return len(names)
 
 
@@ -112,14 +121,15 @@ def main():
     dist = ROOT / 'dist'
     dist.mkdir(exist_ok=True)
     package = dist / ('grz.sessionstats_'+version_tag+'.wotmod')
-    required = ['SessionStats.html', 'session_stats.css', 'session_stats.js', 'footer.js', 'footer.css']
+    required = ['SessionStats.html', 'session_stats.css', 'session_stats.js',
+                'session_stats_camo.png', 'footer.js', 'footer.css', 'postbattle.js', 'postbattle.css']
     for name in required:
         if not (ROOT/'ui'/name).is_file():
             raise RuntimeError('UI file missing: '+name)
     source_paths = sorted((ROOT/'src').rglob('*.py'))
-    expected_modules = ['core', 'storage', 'runtime', 'normalize', 'views', 'footer', 'visuals',
+    expected_modules = ['core', 'storage', 'runtime', 'normalize', 'views', 'footer', 'postbattle', 'visuals',
                         'health', 'monitor', 'diagnostics', 'appearance', 'config_path', 'config_files',
-                        'localization', 'language_defaults']
+                        'localization', 'language_defaults', 'map_names']
     for name in expected_modules:
         if not (ROOT/'src'/'grz_session_stats'/(name+'.py')).is_file():
             raise RuntimeError('Python module missing: '+name)
@@ -130,6 +140,8 @@ def main():
     subprocess.check_call([sys.executable, str(ROOT/'tools/sync_languages.py'), '--check'])
     if json.loads(config_path.read_text(encoding='utf-8')) != default_config():
         raise RuntimeError('Shipped appearance configuration must match built-in defaults')
+    from make_preview import preview_files
+    preview, _ = preview_files(version_tag)
     with tempfile.TemporaryDirectory(prefix='grz-wotmod-') as temporary:
         temporary = Path(temporary)
         compile_script = temporary/'compile27.py'
@@ -180,6 +192,8 @@ def main():
         'installed_package': INSTALLED_PACKAGE,
         'appearance_config': CONFIG_FILENAME, 'appearance_config_sha256': digest(config_path),
         'languages_resource': 'res/grz_session_stats/languages.json', 'languages_resource_sha256': digest(languages_path),
+        'map_names_resource': 'res/grz_session_stats/map_names.json',
+        'map_names_resource_sha256': digest(ROOT/'data/map_names.json'),
         'config_directory': 'mods/configs',
         'expected': json.loads((ROOT/'data'/'wn8-source.json').read_text()),
         'live_client_tested': False,
@@ -190,29 +204,34 @@ def main():
         put(z, target+INSTALLED_PACKAGE, package.read_bytes())
         put(z, 'mods/configs/'+CONFIG_FILENAME+'.example', config_path.read_bytes())
         put(z, target+'net.openwg/'+dependency.name, dependency.read_bytes())
-        for name in ['README_PL.txt', 'ZMIANY.txt', 'LICENSE.txt', 'THIRD_PARTY.txt']:
+        for name in BUNDLE_DOCS:
             put(z, name, render_guide(name, (ROOT/name).read_bytes(), version_tag, args.client_version))
         put(z, 'BUILD.json', (dist/'BUILD.json').read_bytes())
         put(z, 'SHA256SUMS.txt', inner_checksums)
-        for directory in ['src','ui','tools','tests','data','resources','third_party','preview','docs']:
+        for directory in ['src','ui','tools','tests','data','resources','third_party','docs']:
             for path in sorted((ROOT/directory).rglob('*')):
-                if not path.is_file() or '__pycache__' in path.parts or path.suffix in ('.pyc','.pyo','.wotmod','.png') or path.name.endswith('-report.json') or 'node_modules' in path.parts:
+                if (not path.is_file() or '__pycache__' in path.parts or 'node_modules' in path.parts
+                        or path.suffix in ('.pyc', '.pyo', '.wotmod') or path.name.endswith('-report.json')
+                        or (path.suffix == '.png' and (path.parent != ROOT/'ui' or path.name not in required))):
                     continue
                 content = path.read_bytes()
                 if path == ROOT/'src'/'grz_session_stats'/'__init__.py':
                     content = re.sub(rb"(?m)^VERSION = '[^']+'$", ("VERSION = '"+version_tag+"'").encode('ascii'), content)
                 relative = path.relative_to(ROOT).as_posix()
                 put(z, 'source/'+relative, render_guide(relative, content, version_tag, args.client_version))
-        for name in ['meta.xml','VERSION','README.md','CONTRACT.txt','LICENSE.txt','README_PL.txt','ZMIANY.txt','THIRD_PARTY.txt',CONFIG_FILENAME]:
+        for name in ('meta.xml', 'VERSION', 'README.md', 'CONTRACT.txt', CONFIG_FILENAME) + BUNDLE_DOCS:
             content = (ROOT/name).read_bytes()
             if name == 'meta.xml': content = metadata
             if name == 'VERSION': content = (version_tag+'\n').encode('ascii')
             put(z, 'source/'+name, render_guide(name, content, version_tag, args.client_version))
         # Dependency remains available to a source rebuild without network.
         put(z, 'source/third_party/openwg/'+dependency.name, dependency.read_bytes())
-        preview = ROOT/'preview'/'PODGLAD.html'
-        if preview.is_file():
-            put(z, 'PODGLAD.html', preview.read_bytes())
+        put(z, 'source/preview/controller.js', (ROOT/'preview/controller.js').read_bytes())
+        for name, contents in sorted(preview.items()):
+            content = contents.encode('utf-8')
+            put(z, 'source/preview/'+name, content)
+            if name == PREVIEW_HTML:
+                put(z, name, content)
     # The outer manifest covers every downloadable asset, including the bundle.
     outputs = [package, bundle, dist/dependency.name, dist/CONFIG_FILENAME, dist/'BUILD.json']
     (dist/'SHA256SUMS.txt').write_text(''.join(digest(p)+'  '+p.name+'\n' for p in outputs), encoding='ascii')
