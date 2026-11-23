@@ -81,7 +81,6 @@ DEFAULT_CONFIG = {'schema_version': 1,
             'kpi_value_text': '#e8e5d2',
             'kpi_wn8_text': '#d9dca4',
             'sort_active_background': '#252a23',
-            'sort_active_border': '#80b7cf',
             'sort_warning_text': '#ee7000',
             'sort_warning_inner_shadow': '#000',
             'sort_warning_glow': '#8d0d03',
@@ -579,7 +578,7 @@ button:disabled { opacity:{{opacity.disabled_controls}}; }
 .ss-group-meta .ss-free-xp strong { font-size:12rem; }
 .ss-group-sort-value { display:block; flex:0 1 auto; min-width:0; max-width:100%; margin:2rem 8rem 2rem 0; padding:2rem 5rem; border:1rem solid {{colors.button_border}}; border-radius:{{radii.control}}rem; background:{{colors.table_header_background_start}}; color:{{colors.session_tab_active_text}}; font-size:12rem; line-height:16rem; white-space:normal; overflow-wrap:normal; }
 /* A cool inset marks sort values. The amber outline belongs to the source action. */
-.ss-group .ss-sort-active-value { border-radius:{{radii.control}}rem; background:{{colors.sort_active_background}}; box-shadow:inset 0 0 0 1rem {{colors.sort_active_border}}; }
+.ss-group .ss-sort-active-value { border-radius:{{radii.control}}rem; background:{{colors.sort_active_background}}; box-shadow:inset 0 0 0 1rem {{colors.group_card_shadow}}; }
 .ss-summary-meta { margin:3rem 4rem; }
 .ss-summary-main .ss-summary-meta { display:block; }
 /* Explicit header/value rows keep all three totals horizontal in native flex. */
@@ -1304,6 +1303,8 @@ def validate_config(raw):
             reporter.issue(section, 'expected_object')
             continue
         for key in supplied:
+            if section == 'colors' and key == 'sort_active_border':
+                continue  # Older themes stored a separate sort outline.
             if key not in result[section]:
                 reporter.issue(section + '.' + _key_label(key), 'unknown_field')
         for key in sorted(result[section]):
