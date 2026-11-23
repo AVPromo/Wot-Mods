@@ -47,11 +47,12 @@ concurrency:
 
 jobs:
   updates:
+    name: WoT EU updates
     uses: ./.github/workflows/wot-updates.yml
     with:
       strict: false
   source:
-    name: Check Session Stats source
+    name: Detect Session Stats source import
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -108,6 +109,7 @@ jobs:
           - name: Run short Session Stats Chromium smoke
             run: python -I scripts/sessionstats/browser_qa.py --e2e build
   sessionstats:
+    name: Build Session Stats installer ZIP
     needs: [updates, source, sessionstats_windows]
     # Run the gate even when a dependency fails. A skipped packaging job
     # would otherwise appear successful as a required check.
