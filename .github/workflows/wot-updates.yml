@@ -29,7 +29,6 @@ permissions:
 
 jobs:
   check:
-    name: Client version and patch notes RSS
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     # Serialize only this short preflight, not either mod's compilation.

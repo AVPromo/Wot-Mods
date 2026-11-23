@@ -47,7 +47,7 @@ concurrency:
 
 jobs:
   updates:
-    name: WoT EU updates
+    name: WoT EU client version and patch notes RSS
     uses: ./.github/workflows/wot-updates.yml
     with:
       strict: false
