@@ -365,7 +365,7 @@ button:disabled { opacity:0.45; }
 .ss-group-meta .ss-free-xp strong { font-size:12rem; }
 .ss-group-sort-value { display:block; flex:0 1 auto; min-width:0; max-width:100%; margin:2rem 8rem 2rem 0; padding:2rem 5rem; border:1rem solid #555944; border-radius:5rem; background:#292e1f; color:#f0d392; font-size:12rem; line-height:16rem; white-space:normal; overflow-wrap:normal; }
 /* A cool inset marks sort values. The amber outline belongs to the source action. */
-.ss-group .ss-sort-active-value { border-radius:5rem; background:#252a23; box-shadow:inset 0 0 0 1rem #80b7cf; }
+.ss-group .ss-sort-active-value { border-radius:5rem; background:#252a23; box-shadow:inset 0 0 0 1rem #303722; }
 .ss-summary-meta { margin:3rem 4rem; }
 .ss-summary-main .ss-summary-meta { display:block; }
 /* Explicit header/value rows keep all three totals horizontal in native flex. */

@@ -120,7 +120,10 @@ module.exports=async({browser,nativeHost,check})=>{
       const active=statistic==='sum'?page.locator('#ss-groups .ss-money-value[data-ss-metric="'+metric+'"] .ss-cell-value.ss-sort-active-value'):
         page.locator('#ss-groups .ss-group-sort-host .ss-group-sort-value.ss-sort-active-value');
       check('Financial '+metric+'/'+statistic+' paints just the sort result and retains its permanent links',
-        await active.count()===1&&await active.evaluate(node=>getComputedStyle(node).boxShadow.includes('rgb(128, 183, 207)'))&&
+        await active.count()===1&&await active.evaluate(node=>{
+          const card=node.closest('.ss-group'), border=card.querySelector('.ss-wn8-card-border')||card;
+          return getComputedStyle(node).boxShadow.includes(getComputedStyle(border).borderTopColor);
+        })&&
         await page.locator('#ss-groups .ss-credit-extreme-actions .ss-sort-active-value').count()===0&&
         await page.locator('#ss-groups .ss-credit-extreme-actions .ss-metric-battle-link').count()===10);
     }

@@ -671,7 +671,7 @@
     function quantityClass(value) {
         return !hasNumber(value) ? ' ss-unknown' : (value > 0 ? ' ss-positive' : (value < 0 ? ' ss-negative' : ''));
     }
-    // WoT-Life's published WN8 thresholds and swatches, applied to text only.
+    // WoT-Life's published WN8 thresholds and swatches.
     function wn8Color(value) {
         if (typeof value !== 'number' || !isFinite(value) || value < 0) { return null; }
         value = Math.round(value);
@@ -733,7 +733,7 @@
         if (!color) {
             if (border && border.parentNode) { border.parentNode.removeChild(border); }
             card.removeAttribute('data-wn8-border-value');
-            return card;
+            return null;
         }
         if (!border) {
             border = append(card, element('span', 'ss-wn8-card-border'));
@@ -741,12 +741,13 @@
         }
         var rgb = parseInt(color.slice(1, 3), 16) + ',' + parseInt(color.slice(3, 5), 16) + ',' +
             parseInt(color.slice(5, 7), 16);
-        border.style.borderColor = 'rgba(' + rgb + ',0.62)';
+        var borderColor = 'rgba(' + rgb + ',0.62)';
+        border.style.borderColor = borderColor;
         // A bright close halo fades into two softer, centered shadows.
         border.style.boxShadow = '0 0 4rem rgba(' + rgb + ',0.78), ' +
             '0 0 12rem rgba(' + rgb + ',0.32), 0 0 20rem rgba(' + rgb + ',0.12)';
         card.setAttribute('data-wn8-border-value', String(Math.round(value)));
-        return card;
+        return borderColor;
     }
     function headlineStat(parent, label, value, wn8, compact, rating) {
         var holder = append(parent, element('div', compact ? 'ss-group-kpi' : 'ss-kpi'));
@@ -4052,7 +4053,7 @@
             group.setAttribute('data-layout-index', String(index));
             group.id = 'ss-card-' + state.group + '-' + (page.offset + index);
             var headlineWN8 = !battle && sorting.metric === 'battle_wn8' ? cardSortValue(item, sorting) : stats.wn8;
-            paintWN8Card(group, headlineWN8);
+            var wn8Border = paintWN8Card(group, headlineWN8);
             if (battle && state.highlightedBattle && String(item.id) === state.highlightedBattle.id && sameContext(state.highlightedBattle.context)) {
                 paintBattleTarget(group);
             }
@@ -4089,6 +4090,12 @@
             }
             details(group, stats, false, battle, item);
             highlightCardSort(group, battle ? meta : sortHost, item, sorting, battle);
+            if (wn8Border && sorting.metric !== 'off') {
+                var highlights = group.querySelectorAll('.ss-sort-active-value');
+                for (var highlightIndex = 0; highlightIndex < highlights.length; highlightIndex += 1) {
+                    highlights[highlightIndex].style.boxShadow = 'inset 0 0 0 1rem ' + wn8Border;
+                }
+            }
             if (!battle) { layoutGroupSortHost(group, item, sorting); }
             attachMetricBattleLinks(group, item, battle, false);
             if (battle) { attachBattleMore(group, header, item); }

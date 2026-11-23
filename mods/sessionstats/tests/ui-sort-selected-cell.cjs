@@ -17,9 +17,10 @@ module.exports=async({page,scale,check})=>{
       const action=button&&button.getBoundingClientRect(),arrow=cue&&cue.getBoundingClientRect(),
         figureBox=figure.getBoundingClientRect(),rowBox=row.getBoundingClientRect(),line=parseFloat(style.lineHeight);
       const contained=rect=>rect.left>=box.left-scale&&rect.right<=box.right+scale&&rect.top>=box.top-scale&&rect.bottom<=box.bottom+scale;
+      const border=getComputedStyle(card.querySelector('.ss-wn8-card-border')||card).borderTopColor;
       return {value:figure.textContent.replace(/\s/g,''),selected:marks.length===1&&marks[0]===cell&&cell.getAttribute('data-ss-sort-active')===metric,
         headerNeutral:card.querySelectorAll('.ss-metric-head [data-ss-sort-active]').length===0,
-        paint:style.boxShadow.includes('inset')&&style.boxShadow.includes('rgb(128, 183, 207)')&&style.backgroundColor==='rgb(37, 42, 35)',
+        paint:style.boxShadow.includes('inset')&&style.boxShadow.includes(border)&&style.backgroundColor==='rgb(37, 42, 35)',
         otherCellsNeutral:others.every(node=>getComputedStyle(node).boxShadow==='none'),
         geometry:Math.abs(box.width-baseline[0])<=scale&&Math.abs(box.height-baseline[1])<=scale&&
           ink.left>=box.left-scale&&ink.right<=box.right+scale&&ink.top>=box.top-scale&&ink.bottom<=box.bottom+scale,
