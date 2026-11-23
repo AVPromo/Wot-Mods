@@ -1006,7 +1006,7 @@ class Runtime(object):
             cancel_timeline = getattr(service, 'cancel_timeline', None)
             if callable(cancel_timeline):
                 cancel_timeline()
-            if getattr(service, "loading", False):
+            if getattr(service, 'loading', False) or getattr(service, 'history_reloading', False):
                 service.cancel_loading()
         for callback_id in (self._tick_id, self._bonus_callback_id, self._load_id):
             if callback_id is not None:
@@ -1081,7 +1081,7 @@ class Runtime(object):
         if self._instance_session is not None:
             services.append(self._instance_session.service)
         return [service for service in services if getattr(service, 'loading', False) or
-                getattr(service, 'timeline_loading', False)]
+                getattr(service, 'history_reloading', False) or getattr(service, 'timeline_loading', False)]
 
     def _schedule_loading(self):
         if (not self.running or self._load_id is not None or self.api.in_battle() or
@@ -1106,11 +1106,17 @@ class Runtime(object):
                 service = services[self._load_cursor % len(services)]
                 self._load_cursor += 1
                 history = service.loading
+                reload = getattr(service, 'history_reloading', False)
                 if history:
                     service.advance_loading()
+                elif reload:
+                    service.advance_history_reload()
+                    if not service.history_reloading and service is self.active_service and not service.last_error:
+                        self._refresh_pending_results(service)
                 else:
                     service.advance_timeline()
-                if not service.loading and not getattr(service, 'timeline_loading', False):
+                if (not service.loading and not getattr(service, 'history_reloading', False) and
+                        not getattr(service, 'timeline_loading', False)):
                     if history and service.ready and self._instance_session is not None:
                         for account_key, account_service in self.services.items():
                             if account_service is service:
@@ -1763,6 +1769,13 @@ class Runtime(object):
             self._repair_installation_metadata(limit=8)
         self._service_diagnostics()
 
+    def _refresh_pending_results(self, service):
+        self._refresh_posted()
+        for key in list(self.retries):
+            if key[0] == self.active_key:
+                self.retries[key] = (0, 0)
+        self._poll_one(service, self.active_key)
+
     def _repair_saved_metadata(self, service, account_key, limit=2):
         """Use bounded garage passes so complete historical results can be repaired."""
         for arena_id in service.metadata_candidates(self._metadata_cursor.get(account_key), limit):
@@ -1870,7 +1883,8 @@ class Runtime(object):
             self._schedule_tick(combat=combat)
 
     def _poll_one(self, service, account_key):
-        if getattr(service, 'loading', False) or not getattr(service, 'ready', True):
+        if (getattr(service, 'loading', False) or getattr(service, 'history_reloading', False) or
+                not getattr(service, 'ready', True)):
             return
         now = self.now()
         for key, request in list(self.inflight.items()):
@@ -2199,12 +2213,13 @@ class Runtime(object):
                 self._window_call('refresh')
         elif action == 'refresh':
             self._load_appearance()
-            self._refresh_posted()
-            if self.active_service is not None and not self.api.in_battle():
-                for key in list(self.retries):
-                    if key[0] == self.active_key:
-                        self.retries[key] = (0, 0)
-                self._poll_one(self.active_service, self.active_key)
+            service = self.active_service
+            if self._instance_tab_enabled and self._instance_session is not None:
+                self._instance_session.service.refresh_capture_history(deferred=True)
+            if service is not None and service.refresh_capture_history(deferred=True):
+                self._refresh_pending_results(service)
+            self._schedule_loading()
+            self._publish_activity()
             self._window_call('refresh')
         elif action == 'resize':
             self._window_call('resize', getter('width'), getter('height'))

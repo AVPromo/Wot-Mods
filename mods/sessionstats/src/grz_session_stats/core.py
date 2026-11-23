@@ -6,6 +6,7 @@ from .battle_details import clean_details, merge_details
 from .capture_order import compare_capture_order, valid_capture_order
 from .language_defaults import LEGACY_POLISH
 from .localization import message
+from .normalize import RESULT_CURRENCIES as _CURRENCIES, RESULT_STATS as _NUMBERS, result_is_complete
 
 import bisect
 import copy
@@ -30,7 +31,6 @@ except NameError:
     number_types = (int, float)
 
 _OUTCOMES = ('win', 'loss', 'draw')
-_CURRENCIES = ('credits', 'bonds', 'gold')
 _BREAKDOWN = ('repair', 'ammo', 'consumables', 'directives')
 _CREDIT_METRICS = (
     ('credits_income_base', 'income_base'), ('credits_income_received', 'income'),
@@ -39,7 +39,6 @@ _CREDIT_METRICS = (
     # Legacy metric names have always represented the received result.
     ('credits_gross', 'income'), ('credits_net', 'net'))
 _CREDIT_ALIASES = {'credits_gross': 'credits_income_received', 'credits_net': 'credits_net_received'}
-_NUMBERS = ('damage', 'frags', 'spots', 'defense', 'xp_base', 'xp_received', 'free_xp')
 _UNKNOWN_MEMBERSHIP = message('core.membership')
 MAX_TIME_POINTS = 1000
 
@@ -285,6 +284,27 @@ def _merge_known(existing, incoming, revise=False):
     return merged
 
 
+def _finalize_result(record):
+    # An individual report's net can reflect components that lost the merge.
+    # Derive it from the confirmed pair, keeping standalone legacy net values.
+    for currency, amounts in record.get('currencies', {}).items():
+        costs = amounts.get('costs')
+        if costs is None:
+            continue
+        fields = (('income', 'net'),)
+        if currency == 'credits':
+            fields += (('income_base', 'net_base'),)
+        for income, net in fields:
+            if amounts.get(income) is not None:
+                amounts[net] = _number(amounts[income] - costs)
+    if result_is_complete(record):
+        record['complete'] = True
+        warnings = record.get('warnings', [])
+        finance_notices = (message('normalize.finance'), LEGACY_POLISH['normalize.finance'])
+        if any(warning in finance_notices for warning in warnings):
+            record['warnings'] = [warning for warning in warnings if warning not in finance_notices]
+
+
 def _generated_names(kind, identifier):
     generic = 'unknown.' + kind
     numbered = generic + '_id'
@@ -389,6 +409,7 @@ class StatsService(object):
         clock = getattr(time, 'clock', None) if os.name == 'nt' else None
         self._loading_clock = getattr(time, 'perf_counter', None) or clock or time.time
         self._load_retry_after = None
+        self._history_rebase = None
         self._received_context = {}
         self._received_records = {}
         self._pending_ids = set()
@@ -458,6 +479,9 @@ class StatsService(object):
     def cancel_loading(self):
         self._closed = True
         self.cancel_timeline()
+        if self._history_rebase is not None:
+            self._history_rebase.close()
+            self._history_rebase = None
         if self._loader is not None:
             self._loader.close()
             self._loader = None
@@ -493,7 +517,7 @@ class StatsService(object):
 
     def _initialize_generation_steps(self):
         output = [None]
-        for step in self.store.load_steps(output, self._validate_state_steps):
+        for step in self._load_history_steps(self.store, output):
             yield step
         if self._intake is not None:
             self._intake.refresh()
@@ -538,6 +562,17 @@ class StatsService(object):
         self._received_records.clear()
         self.last_error = None
         self.loading_phase = 'ready'
+
+    def _load_history_steps(self, store, output):
+        for step in store.load_steps(output, self._validate_state_steps):
+            yield step
+        if output[0] is not None:
+            # Older generations can already contain an inconsistent net or a
+            # partial flag from before the reports were combined.
+            for record in values(output[0]['battles']):
+                if record.get('_result_seen'):
+                    _finalize_result(record)
+                yield None
 
     def _open_launch_steps(self, launch_id, current_time):
         self.launch_id = launch_id
@@ -660,26 +695,73 @@ class StatsService(object):
         producer, sequence = receipt
         return self._state.get('_startup_receipts', {}).get(producer, 0) >= sequence
 
-    def refresh_capture_history(self):
+    @property
+    def history_reloading(self):
+        return self._history_rebase is not None
+
+    def refresh_capture_history(self, deferred=False):
         """Rebase garage processing if another client committed first."""
         if self.loading:
             return True
-        if not self.ready or self._closed:
+        if not self.ready or self._closed or self.history_reloading:
             return False
         try:
             if not self.store.changed_on_disk():
                 return True
-            store = GenerationStore(self.store.directory, self.store.schema_version,
-                                    self.store.keep_generations)
-            state = store.load(self._validate_state)
-            if state is None:
+        except (IOError, OSError) as error:
+            self.last_error = _text(error)
+            return False
+        work = self._rebase_history_steps()
+        if deferred:
+            self._history_rebase = work
+            return False
+        complete(work)
+        return self.last_error is None
+
+    def advance_history_reload(self, budget=0.002, max_steps=512):
+        work = self._history_rebase
+        if work is None or self._closed:
+            return False
+        timer = self._loading_clock
+        deadline = timer() + max(0, budget)
+        for unused in range(max(1, max_steps)):
+            try:
+                next(work)
+            except StopIteration:
+                self._history_rebase = None
+                break
+            if timer() >= deadline:
+                break
+        return self.history_reloading
+
+    def _rebase_history_steps(self):
+        try:
+            for unused in range(4):
+                store = GenerationStore(self.store.directory, self.store.schema_version,
+                                        self.store.keep_generations)
+                output = [None]
+                for step in self._load_history_steps(store, output):
+                    yield step
+                if output[0] is None:
+                    raise StorageError(message('storage.changed'))
+                # Keep the mounted history readable until the new indexes are ready.
+                candidate = copy.copy(self)
+                candidate._state = output[0]
+                for step in candidate._rebuild_indexes_steps():
+                    yield step
+                if not store.changed_on_disk():
+                    break
+                yield None
+            else:
                 raise StorageError(message('storage.changed'))
         except (IOError, OSError, StorageError) as error:
             self.last_error = _text(error)
-            return False
-        self.store, self._state = store, state
-        self._rebuild_indexes()
+            return
+        self.store, self._state, self._indexes = store, candidate._state, candidate._indexes
+        self._pending_ids, self._metadata_ids = candidate._pending_ids, candidate._metadata_ids
+        self._unassigned = candidate._unassigned
         self._filtered_timeline = None
+        self._timeline_error = None
         self.cancel_timeline()
         if self._timeline_enabled and any(self._timeline_range):
             from .projection import ScopeIndex
@@ -687,7 +769,6 @@ class StatsService(object):
                                   'lower': self._timeline_bounds[0], 'upper': self._timeline_bounds[1],
                                   'cursor': None}
         self.last_error = None
-        return True
 
     def replay_combat_capture(self, record, timestamp, launch_id, is_result, receipt):
         """Apply a persisted capture once the ordinary history is ready."""
@@ -824,12 +905,14 @@ class StatsService(object):
                     'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-' for char in request_id)):
                 return False
         if anchor_id is not None:
-            if request_id is None or group == 'battles' or not isinstance(anchor_id, (text_type, bytes)):
+            if request_id is None or not isinstance(anchor_id, (text_type, bytes)):
                 return False
             anchor_id = _text(anchor_id)
             if not 1 <= len(anchor_id) <= 256:
                 return False
-            current_page = index.group_page(group, anchor_id, self._orders.get(scope, {}).get(group))
+            options = self._orders.get(scope, {}).get(group)
+            current_page = (index.battle_page(anchor_id, options) if group == 'battles' else
+                            index.group_page(group, anchor_id, options))
             if current_page is not None:
                 page = current_page
         if history_anchor_id is not None:
@@ -957,8 +1040,8 @@ class StatsService(object):
                                      'revision': index.data_revision}
         return True
 
-    def _scope_snapshot(self, name, index, label, started_at):
-        focus = self._battle_focus.get(name)
+    def _scope_snapshot(self, name, index, label, started_at, resolve_focus=True):
+        focus = self._battle_focus.get(name) if resolve_focus else None
         orders = self._orders.get(name, {})
         if focus and focus['period_id'] == index.identifier and focus['revision'] != index.data_revision:
             # A new result can move the selected battle across a page boundary.
@@ -1346,16 +1429,8 @@ class StatsService(object):
         merged['_result_seen'] = bool(old.get('_result_seen')) or is_result
         merged.setdefault('complete', False)
         merged.setdefault('warnings', [])
-        # Infer a net value only when both components are confirmed. Reconcile it
-        # when an authoritative update revises a component but does not supply net.
-        for currency, values in merged.get('currencies', {}).items():
-            update = incoming.get('currencies', {}).get(currency, {})
-            for income, net in (('income', 'net'),) + ((('income_base', 'net_base'),) if currency == 'credits' else ()):
-                has_components = values.get(income) is not None and values.get('costs') is not None
-                if has_components and (values.get(net) is None or
-                                       (revise and update.get(net) is None and
-                                        (update.get(income) is not None or update.get('costs') is not None))):
-                    values[net] = values[income] - values['costs']
+        if is_result:
+            _finalize_result(merged)
         # Record the latest authoritative observation even when its values
         # match the old row. An older conflicting receipt may still be in RAM
         # in a different client and become visible after this observation.
@@ -1388,7 +1463,7 @@ class StatsService(object):
         return True
 
     def reset_manual(self, now=None):
-        if self.loading or self._closed:
+        if self.loading or self.history_reloading or self._closed:
             self.last_error = self.last_error or message('core.loading')
             return None
         timestamp = self._time() if now is None else _number(now, True)
@@ -1422,7 +1497,7 @@ class StatsService(object):
         return points
 
     def create_time_point(self, name=None):
-        if not self._timeline_enabled or not self.ready or self._closed:
+        if not self._timeline_enabled or not self.ready or self._closed or self.history_reloading:
             return False
         if name is not None:
             if not isinstance(name, (text_type, bytes)):
@@ -1566,15 +1641,14 @@ class StatsService(object):
         ready = self.ready and not self.loading
         points = self._time_points() if ready else {}
         start, end = self._timeline_range
-        index = self._timeline_index() if ready else None
-        if index is None:
-            identifier = self._timeline_period_id()
-            index = ScopeIndex(identifier, self.expected_table)
+        projection = self._timeline_index() if ready else None
+        index = projection if projection is not None else ScopeIndex(self._timeline_period_id(), self.expected_table)
         scope = self._scope_snapshot('timeline', index, message('scope.timeline'),
-                                     self._timeline_dates[0] if start == '__custom__' else points.get(start))
+                                     self._timeline_dates[0] if start == '__custom__' else points.get(start),
+                                     resolve_focus=projection is not None)
         if not ready or self.timeline_loading or self._timeline_error:
             scope['data_revision'] = self._empty_view_revision
-        scope['loading'] = self.timeline_loading
+        scope['loading'] = self.timeline_loading or self.history_reloading
         if ready and self._timeline_error:
             scope['load_error'] = self._timeline_error
         scope['time_points'] = sorted(points.items(), key=lambda point: (point[1], point[0]))
@@ -1691,8 +1765,12 @@ class StatsService(object):
         warnings = sorted(set(warnings))
         if truncated or len(warnings) > 200:
             warnings = warnings[:200] + [message('core.more_notices')]
+        scopes = {'launch': self._scope('_launch_id', self.launch_id, message('scope.launch'),
+                                       launch['started_at'] if launch else timestamp),
+                  'manual': self._scope('_manual_id', manual['id'], message('scope.manual'), manual['started_at'])}
+        if self.history_reloading:
+            for scope in scopes.values():
+                scope['loading'] = True
         return {'version': VERSION, 'account_key': self.account_key, 'generated_at': timestamp,
                 'expected': copy.deepcopy(self.expected_table.metadata), 'warnings': sorted(set(warnings)),
-                'scopes': {'launch': self._scope('_launch_id', self.launch_id, message('scope.launch'),
-                                                 launch['started_at'] if launch else timestamp),
-                           'manual': self._scope('_manual_id', manual['id'], message('scope.manual'), manual['started_at'])}}
+                'scopes': scopes}

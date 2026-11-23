@@ -481,6 +481,25 @@ class InstallationAliasMigrationTests(unittest.TestCase):
         self.assertEqual(second_battle['damage'], 2000)
         self.assertEqual([row['_launch_id'] for row in (first_battle, second_battle)], ['direct', 'direct'])
 
+    def test_alias_merge_persists_net_from_the_final_credit_components(self):
+        primary = self.open(self.game, 'direct')
+        first = core_fixtures.result(complete=False, free_xp=None)
+        first['currencies']['credits'].update(income=90000, costs=None)
+        self.assertTrue(primary.result('EU:7', first, allow_new=True))
+        legacy = self.old_session()
+        second = core_fixtures.result(complete=False, damage=None)
+        second['currencies']['credits'].update(income=75000, costs=43000)
+        self.assertTrue(legacy.result('EU:7', second, allow_new=True))
+
+        self.clock.value = 200
+        with changed(sessions, '_installation_keys', lambda root: (self.key, self.old_key)):
+            migrated = self.open(self.alias, 'merge-credits')
+        self.assertTrue(migrated.service.ready, migrated.service.last_error)
+        saved = migrated.service.store.load()
+        row = saved['battles'][migrated.battle_key('EU:7', '1')]
+        self.assertEqual(row['currencies']['credits']['net'], 47000)
+        self.assertTrue(row['complete'])
+
     @unittest.skipUnless(os.name == 'nt', 'Requires an NTFS directory junction')
     def test_observed_windows_junction_and_physical_path_share_saved_history(self):
         with io.open(os.path.join(self.game, 'paths.xml'), 'wb') as handle:

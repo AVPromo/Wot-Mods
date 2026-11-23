@@ -18,6 +18,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 from grz_session_stats import VERSION, combat_intake, runtime, views, footer
 from grz_session_stats.core import StatsService
+from grz_session_stats.normalize import normalize_result
 from test_normalize import raw_result, ARENA_ID, START
 
 
@@ -630,6 +631,38 @@ class RuntimeTests(unittest.TestCase):
         self.mod.on_action(None)
         self.mod.on_action({'action': '__import__'})
         self.assertEqual(self.summary()['battles'], 0)
+
+    def test_refresh_loads_peer_history_and_schedules_the_current_timeline(self):
+        self.garage()
+        service = self.mod.active_service
+        self.clock.value = START + 10
+        self.assertTrue(service.set_timeline_range('__custom__', '', START - 5))
+        while service.timeline_loading:
+            service.advance_timeline()
+        period = service.timeline_snapshot()['period_id']
+        peer = StatsService(self.directory, self.mod.active_key, 'peer-launch', EXPECTED, self.clock,
+                            timeline_enabled=True)
+        self.assertTrue(peer.record_result(normalize_result(raw_result())))
+        self.assertEqual(self.summary('manual')['battles'], 0)
+
+        self.mod.on_action({'action': 'refresh'})
+        self.assertTrue(service.history_reloading)
+        self.assertTrue(service.snapshot()['scopes']['manual']['loading'])
+        service.advance_history_reload(max_steps=1)
+        self.assertEqual(self.summary('manual')['battles'], 0)
+        self.assertTrue(peer.create_time_point('During refresh'))
+        self.assertIsNotNone(self.mod._load_id)
+        while self.mod._load_id is not None:
+            self.api.fire(self.mod._load_id)
+        self.assertEqual(self.summary('manual')['battles'], 1)
+        timeline = self.mod.snapshot()['scopes']['timeline']
+        self.assertEqual((timeline['period_id'], timeline['summary']['battles']), (period, 1))
+        self.assertIn('During refresh', timeline['time_point_names'].values())
+        self.assertFalse(self.api.pending_callbacks)
+
+        self.mod.on_action({'action': 'time_point', 'account_key': self.mod.active_key, 'name': 'After refresh'})
+        self.assertIsNone(service.last_error)
+        self.assertIn('After refresh', service.timeline_snapshot()['time_point_names'].values())
 
     def test_stop_removes_every_subscription_callback_and_footer_handle(self):
         removed = []

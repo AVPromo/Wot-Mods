@@ -127,7 +127,7 @@ class InstallationSession(object):
         snapshot = self.service.snapshot()
         scope = snapshot['scopes']['manual']
         scope['label'] = message('scope.instance')
-        scope['loading'] = snapshot.get('loading', False)
+        scope['loading'] = snapshot.get('loading', False) or scope.get('loading', False)
         scope['load_error'] = snapshot.get('load_error')
         records = dict((row['id'], self.service.result_context(row['id'])) for row in scope['battles'])
         return scope, records, snapshot['warnings']

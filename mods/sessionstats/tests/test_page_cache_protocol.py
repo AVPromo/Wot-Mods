@@ -7,7 +7,8 @@ import unittest
 
 import test_history_navigation as history
 from test_native_pagination import NativePaginationFixture
-from test_core import result
+from test_core import EXPECTED, result
+from grz_session_stats.core import StatsService
 from grz_session_stats.projection import DEFAULT_ORDER
 
 
@@ -19,6 +20,45 @@ class PageCacheProtocolTests(unittest.TestCase):
 
     def scope(self):
         return self.service.snapshot()['scopes']['manual']
+
+    def test_page_request_resolves_a_battle_that_moved_across_the_boundary(self):
+        before = self.scope()
+        period = before['period_id']
+        anchor = before['battles'][-1]['id']
+        self.assertTrue(self.service.record_result(result('newest', 1000)))
+        self.assertNotIn(anchor, [row['id'] for row in self.scope()['battles']])
+
+        self.assertTrue(self.service.set_page('manual', 'battles', 0, period, 'refresh', anchor, before['order_epoch']))
+        scope = self.scope()
+        self.assertEqual(scope['pagination']['battles']['page'], 1)
+        self.assertEqual(scope['pagination']['battles']['request_id'], 'refresh')
+        self.assertEqual(scope['battles'][0]['id'], anchor)
+        self.assertNotIn('battle_focus', scope)
+
+        self.assertTrue(self.service.set_page('manual', 'battles', 0, period, 'fallback', 'missing'))
+        self.assertEqual(self.scope()['pagination']['battles']['page'], 0)
+
+    def test_loading_a_new_timeline_projection_preserves_the_selected_battle(self):
+        service = StatsService(self.directory, 'EU:8', 'first', EXPECTED, self.clock,
+                               started_at=100, timeline_enabled=True)
+        for index in range(40):
+            self.assertTrue(service.record_result(result('battle-%02d' % index, 110 + index)))
+        self.assertTrue(service.set_timeline_range('__custom__', '', 105))
+        while service.timeline_loading:
+            service.advance_timeline()
+        period = service.timeline_snapshot()['period_id']
+        self.assertTrue(service.select_battle('timeline', 'battle-00', period, 'selected'))
+
+        peer = StatsService(self.directory, 'EU:8', 'second', EXPECTED, self.clock)
+        self.assertTrue(peer.record_result(result('newest', 1000)))
+        self.assertTrue(service.refresh_capture_history())
+        self.assertTrue(service.timeline_snapshot()['loading'])
+        while service.timeline_loading:
+            service.advance_timeline()
+
+        scope = service.timeline_snapshot()
+        self.assertEqual(scope['battle_focus'], {'id': 'battle-00', 'request_id': 'selected'})
+        self.assertEqual(scope['pagination']['battles']['page'], 1)
 
     def test_revision_is_stable_across_navigation_sort_and_drilldown_without_history_writes(self):
         before = self.scope()

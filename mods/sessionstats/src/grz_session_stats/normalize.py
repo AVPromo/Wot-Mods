@@ -60,6 +60,15 @@ def _text(value, fallback=''):
 
 
 _COST_WIDTHS = {'autoLoadCost': 2, 'autoEquipCost': 3, 'autoEquipBoostersCost': 3}
+RESULT_STATS = ('damage', 'frags', 'spots', 'defense', 'xp_base', 'xp_received', 'free_xp')
+RESULT_CURRENCIES = ('credits', 'bonds', 'gold')
+
+
+def result_is_complete(record):
+    currencies = record.get('currencies', {})
+    return (record.get('outcome') in ('win', 'loss', 'draw') and
+            all(record.get(key) is not None for key in RESULT_STATS) and
+            all(currencies.get(key, {}).get('net') is not None for key in RESULT_CURRENCIES))
 
 
 def _tuple_cost(data, name, index):
@@ -312,7 +321,5 @@ def normalize_result(results, context=None, random_bonus_type=1,
         result['_deferred_context'] = {'fields': fields, 'duration': duration}
         if arena_type_id is not None:
             result['_deferred_context']['arena_type_id'] = arena_type_id
-    required = ('damage', 'frags', 'spots', 'defense', 'xp_base', 'xp_received', 'free_xp')
-    result['complete'] = bool(outcome and all(result[key] is not None for key in required)
-                              and all(value['net'] is not None for value in result['currencies'].values()))
+    result['complete'] = result_is_complete(result)
     return result

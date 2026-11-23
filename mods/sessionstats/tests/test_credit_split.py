@@ -84,6 +84,32 @@ class CreditNormalizationTests(unittest.TestCase):
             self.assertEqual(money['net_base'], wanted - 43000 if wanted is not None else None)
             self.assertEqual(money['income'], 75000)
 
+    def test_stale_costs_fill_a_gap_without_using_net_from_the_stale_income(self):
+        directory = tempfile.mkdtemp(prefix='grz-credit-split-')
+        try:
+            clock = Clock(120)
+            service = StatsService(directory, 'synthetic-account', 'launch', EXPECTED, clock, started_at=100)
+            raw = raw_result()
+            older = normalize_result(raw)
+            raw['personal'][1].update(credits=90000, originalCredits=50000)
+            del raw['personal'][1]['autoRepairCost']
+            newer = normalize_result(raw)
+            for row, sequence in ((newer, 2), (older, 1)):
+                row.update(started_at=110, _capture_order=[120, None, 0, 'a' * 32, sequence])
+                self.assertTrue(service.record_result(row))
+            self.assertTrue(service.record_result(credit_result('closest', 40000, 40000, 0)))
+
+            reloaded = StatsService(directory, 'synthetic-account', 'launch', EXPECTED, clock, started_at=100)
+            self.assertTrue(reloaded.set_order('launch', 'battles',
+                                               dict(DEFAULT_ORDER, metric='credits_net_received'), reloaded.launch_id))
+            scope = reloaded.snapshot()['scopes']['launch']
+            self.assertEqual([row['id'] for row in scope['battles']], [newer['arena_id'], 'closest'])
+            credits = scope['battles'][0]['stats']['currencies']['credits']
+            self.assertEqual((credits['income'], credits['costs'], credits['net'], credits['net_base']),
+                             (90000, 43000, 47000, 7000))
+        finally:
+            shutil.rmtree(directory)
+
     def test_cleaning_and_durable_reopen_preserve_new_values_without_inventing_old_base(self):
         directory = tempfile.mkdtemp(prefix='grz-credit-split-')
         try:

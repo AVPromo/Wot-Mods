@@ -255,8 +255,62 @@ function assertBidirectionalSource(source=shipped()){
 }
 
 const frames=page=>page.evaluate(()=>new Promise(resolve=>{let left=10;function next(){if(--left)requestAnimationFrame(next);else resolve();}requestAnimationFrame(next);}));
+
+async function checkBattleMovingToTheNextPage(browser,nativeHost,check) {
+  const viewport={width:645,height:750,scale:1};
+  const page=await nativeHost(browser,{viewport,initialViewport:viewport});
+  try {
+    await page.evaluate(()=>{
+      const payload=JSON.parse(model.payload),scope=payload.scopes.launch,sample=scope.battles[0];
+      payload.window_size=[625,730];
+      payload.appearance={...payload.appearance,window_settings:{maximized:false,restored_width:625,restored_height:730}};
+      scope.data_revision='moving-battle:1';
+      scope.battles=Array.from({length:40},(_,index)=>({...sample,id:'moving-battle-'+index,details:null}));
+      const anchor=scope.battles[39];
+      anchor.details={missions:Array.from({length:40},(_,index)=>({id:'mission-'+index,kind:'daily',status:'completed',
+        name:'Practice mission '+index,description:'Complete the objective to collect the reward.'}))};
+      window.__movingBattle=anchor;
+      scope.pagination.battles={page:0,pages:2,page_size:40,total:79};
+      model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+      document.getElementById('ss-group-battles').click();
+      document.querySelector('[data-group-id="moving-battle-39"] .ss-more-button').click();
+    });
+    await frames(page);
+    const battle=page.locator('#ss-groups [data-group-id="moving-battle-39"]');
+    await battle.evaluate(node=>{
+      const scroll=document.getElementById('ss-scroll'),filter=document.getElementById('ss-filter-panel');
+      scroll.scrollTop+=node.getBoundingClientRect().top-scroll.getBoundingClientRect().top-filter.getBoundingClientRect().height+80;
+    });
+    await frames(page);
+    const offset=()=>battle.evaluate(node=>node.getBoundingClientRect().top-document.getElementById('ss-scroll').getBoundingClientRect().top);
+    const before=await offset();
+    await page.evaluate(()=>{
+      const payload=JSON.parse(model.payload),scope=payload.scopes.launch;
+      scope.battles.unshift({...scope.battles[0],id:'latest-battle'});scope.battles.pop();
+      scope.data_revision='moving-battle:2';scope.pagination.battles.total=80;
+      model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+    });
+    await frames(page);
+    const request=await page.evaluate(()=>__grzCommands.find(command=>command.anchor_id==='moving-battle-39'));
+    check('A live result holds the viewed battle on screen while requesting its new page by ID',
+      request&&request.page==='0'&&await battle.count()===1);
+
+    await page.evaluate(request=>{
+      const payload=JSON.parse(model.payload),scope=payload.scopes.launch;
+      scope.battles=[__movingBattle,...scope.battles.slice(1,40).map(row=>({...row,id:'older-'+row.id}))];
+      Object.assign(scope.pagination.battles,{page:1,request_id:request.request_id});
+      model.payload=JSON.stringify(payload);__grzEvents['viewEnv.onDataChanged']();
+    },request);
+    await frames(page);
+    check('The battle stays expanded at its previous offset after its page changes',
+      await battle.evaluate(node=>node.closest('[data-page-index]').getAttribute('data-page-index')==='1')&&
+      await battle.locator('.ss-more-button').getAttribute('aria-expanded')==='true'&&Math.abs(await offset()-before)<=2);
+  } finally { await page.close(); }
+}
+
 module.exports=async({browser,nativeHost,check})=>{
   assertBidirectionalSource();check('Actual-source midfeed paging, anchor, Retry and Top-race regressions pass',true);
+  await checkBattleMovingToTheNextPage(browser,nativeHost,check);
   for(const scale of [1,2]){
     const page=await nativeHost(browser,{initialViewport:{width:2400,height:1800},viewport:{width:2400,height:1800,scale}});
     const label=' at '+(scale*100)+'%',requests=()=>page.evaluate(()=>__grzCommands.filter(item=>item.action==='page'));

@@ -10,7 +10,8 @@ import os
 import re
 
 from .capture_order import compare_capture_order, valid_capture_order
-from .core import StatsService, _merge_known, _metadata_gaps, _repair_result_metadata, _restrict_unverified_facts, _text
+from .core import (StatsService, _finalize_result, _merge_known, _metadata_gaps, _repair_result_metadata,
+                   _restrict_unverified_facts, _text)
 from .intake import Intake
 from .loading import items
 from .localization import message
@@ -77,6 +78,8 @@ def _merged_battle(primary, legacy):
     merged['_result_seen'] = bool(primary.get('_result_seen') or legacy.get('_result_seen'))
     merged['_updated_at'] = max(primary.get('_updated_at', 0), legacy.get('_updated_at', 0))
     merged['revision'] = max(primary.get('revision', 0), legacy.get('revision', 0))
+    if merged['_result_seen']:
+        _finalize_result(merged)
     return merged
 
 

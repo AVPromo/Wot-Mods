@@ -67,6 +67,12 @@ module.exports=async ({browser,nativeHost,check})=>{
       await page.keyboard.press('End');
       const end=await menuState(page,'ss-options-metric',true);
       check('End focuses the displayed last choice without moving the result list',end.focus&&end.focusedValue==='battles'&&end.outer===opened.outer);
+      await page.evaluate(()=>__grzEvents['viewEnv.onDataChanged']());
+      await settle(page);
+      const refreshed=await menuState(page,'ss-options-metric',true);
+      check('Refreshing the results keeps the sort menu and focused choice open',
+        refreshed.focus&&refreshed.focusedValue===end.focusedValue&&refreshed.outer===end.outer&&
+        await trigger.getAttribute('aria-expanded')==='true');
       if(!empty) {
         const bounds=await page.locator('#ss-options-metric').boundingBox();
         await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
@@ -97,5 +103,15 @@ module.exports=async ({browser,nativeHost,check})=>{
     await page.keyboard.press('Home');
     const start=await menuState(page,'ss-options-timeline-from',false);
     check('Home makes the first time-range option visible again',start.focus&&start.focusedValue===''&&start.outer===end.outer);
+    await page.keyboard.press('Escape');
+    await page.locator('#ss-sort-metric .ss-select-trigger').click();
+    await page.evaluate(()=>{
+      const data=JSON.parse(model.payload);
+      data.scopes.timeline.time_points.push(['peer-time-point',Math.floor(Date.now()/1000)-60]);
+      model.payload=JSON.stringify(data);__grzEvents['viewEnv.onDataChanged']();
+    });
+    await settle(page);
+    check('A time point arriving from another client keeps timeline sort choices open',
+      (await menuState(page,'ss-options-metric',true)).focus);
   }finally{await page.close();}
 };
