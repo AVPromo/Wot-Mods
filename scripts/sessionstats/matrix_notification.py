@@ -69,9 +69,9 @@ def publish(phase, env, api=github_api):
     repository_url = f'{env["GITHUB_SERVER_URL"].rstrip("/")}/{repo}'
     run_url = f"{repository_url}/actions/runs/{run}"
     command_url = f"{repository_url}/pull/{pr}#issuecomment-{command}"
-    marker = f"<!-- sessionstats-matrix-run:{run}:{command} -->"
+    marker = f"<!-- sessionstats-matrix-run:{run}:{command}:{attempt} -->"
     comments = f"{prefix}/issues/{pr}/comments"
-    links = [f"[Actions run]({run_url})"]
+    links = [f"[Actions run]({run_url}/attempts/{attempt})"]
     if phase == "complete":
         status = RESULTS.get(env["REPORT_RESULT"], "Failed")
         links.extend(result_links(api, prefix, run, attempt, run_url, env.get("ARTIFACT_ID")))
@@ -81,10 +81,12 @@ def publish(phase, env, api=github_api):
                          f"Commit `{sha[:12]}`, attempt {attempt}, from [this command]({command_url}).",
                          " · ".join(links)))
 
-    comment_id = env.get("STATUS_COMMENT_ID")
+    # The start and running steps share one job. On a failed-jobs-only
+    # retry, the completion job can run without a new announcement.
+    comment_id = env.get("STATUS_COMMENT_ID") if phase == "running" else None
     if comment_id and not positive_id(comment_id):
         raise ValueError("Invalid status comment ID.")
-    if not comment_id and (phase != "started" or attempt != "1"):
+    if not comment_id and phase != "started":
         comment_id = find_comment(api, comments, marker)
     if comment_id:
         response = api(f"{prefix}/issues/comments/{comment_id}", "--method", "PATCH", "-f", f"body={body}")
