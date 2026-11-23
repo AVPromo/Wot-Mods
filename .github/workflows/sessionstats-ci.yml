@@ -25,7 +25,6 @@ on:
       - 'tests/test_hangar_release_installers.py'
       - 'tests/test_release_pipeline.py'
       - 'tests/test_release_snapshot.py'
-      - 'tests/test_pr_ci_scoping.py'
       - 'tests/test_release_coordinator.py'
       - 'tests/test_release_ruleset.py'
       - 'tests/test_unified_release_workflow.py'
@@ -33,7 +32,6 @@ on:
       - '.github/workflows/sessionstats-matrix-command.yml'
       - '.github/actions/python27/**'
       - '.github/actions/python27-windows/**'
-      - 'tests/test_ci_optimizations.py'
       - '.github/workflows/wotmods-release.yml'
   workflow_dispatch:
 
@@ -145,8 +143,6 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sessionstats_*.py' -v
           python3 -m unittest discover -s tests -p 'test_release_*.py' -v
           python3 -m unittest discover -s tests -p 'test_hangar_release_installers.py' -v
-          python3 -m unittest discover -s tests -p 'test_pr_ci_scoping.py' -v
-          python3 -m unittest discover -s tests -p 'test_ci_optimizations.py' -v
       - name: Restore or compile verified CPython 2.7.18 for packaging
         if: needs.source.outputs.enabled == 'true'
         uses: ./.github/actions/python27

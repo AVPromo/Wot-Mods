@@ -1,14 +1,18 @@
 """Keep CI optimizations fail-closed and inside their existing trust boundary."""
 from pathlib import Path
 import re
+import sys
 import unittest
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tests'))
 from test_unified_release_workflow import condition_matches
 
 
-ROOT = Path(__file__).resolve().parents[1]
 STATS = (ROOT / '.github/workflows/sessionstats-ci.yml').read_text()
 MEDKIT = (ROOT / '.github/workflows/ci.yml').read_text()
+AIMTIMER = (ROOT / '.github/workflows/aimtimer-ci.yml').read_text()
+RANGEFINDER = (ROOT / '.github/workflows/rangefinder-ci.yml').read_text()
 RELEASE = (ROOT / '.github/workflows/wotmods-release.yml').read_text()
 COMPILER = (ROOT / '.github/actions/python27/action.yml').read_text()
 VALIDATE = (ROOT / 'scripts/sessionstats/validate.sh').read_text()
@@ -28,7 +32,7 @@ class CiOptimizationContracts(unittest.TestCase):
     def test_only_new_commits_on_the_same_pr_supersede_validation(self):
         group = ('${{ github.workflow }}-${{ github.event_name }}-'
                  '${{ github.event.pull_request.number || github.run_id }}')
-        for text in (STATS, MEDKIT):
+        for text in (STATS, MEDKIT, AIMTIMER, RANGEFINDER):
             with self.subTest(workflow=text.splitlines()[0]):
                 concurrency = text.split('\nconcurrency:\n', 1)[1].split('\njobs:', 1)[0]
                 self.assertIn('  group: ' + group, concurrency)
@@ -164,12 +168,9 @@ class CiOptimizationContracts(unittest.TestCase):
         self.assertIn('runs-on: ubuntu-24.04', build)
         self.assertIn('runs-on: ubuntu-24.04', job(STATS, 'sessionstats'))
 
-    def test_shared_contract_and_compiler_action_changes_trigger_validation(self):
+    def test_compiler_action_changes_trigger_sessionstats_validation(self):
         self.assertIn("      - '.github/actions/python27/**'", STATS)
         self.assertIn("      - '.github/actions/python27-windows/**'", STATS)
-        for workflow in (STATS, MEDKIT):
-            self.assertIn("      - 'tests/test_ci_optimizations.py'", workflow)
-        self.assertIn("-p 'test_ci_optimizations.py' -v", STATS)
 
 
 if __name__ == '__main__':

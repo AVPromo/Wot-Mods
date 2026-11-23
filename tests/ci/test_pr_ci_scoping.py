@@ -1,15 +1,19 @@
 """PR branch changes select only the affected mod's build and download."""
 from pathlib import Path
+import json
 import re
 import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = {
+    'aimtimer': ROOT / '.github/workflows/aimtimer-ci.yml',
     'medkit': ROOT / '.github/workflows/ci.yml',
+    'rangefinder': ROOT / '.github/workflows/rangefinder-ci.yml',
     'sessionstats': ROOT / '.github/workflows/sessionstats-ci.yml',
 }
+SHARED_CI = ROOT / '.github/workflows/pr-ci-contracts.yml'
 
 
 def path_filters(workflow):
@@ -58,7 +62,7 @@ class PrBuildScopingTests(unittest.TestCase):
                      'mods/sessionstats/ui/app.js', 'mods/sessionstats/VERSION',
                      'mods/sessionstats/config/grz.sessionstats.json',
                      'mods/sessionstats/languages/pl.json',
-                     'mods/sessionstats/tools/build.py', 'scripts/sessionstats/python27.sh',
+                     'mods/sessionstats/tools/build.py',
                      'scripts/sessionstats/source_state.py',
                      'tests/test_sessionstats_pipeline.py',
                      '.github/actions/python27-windows/action.yml',
@@ -69,9 +73,21 @@ class PrBuildScopingTests(unittest.TestCase):
 
     def test_mixed_changes_build_both_mods(self):
         self.assertEqual(selected(['assets/voices/pl.wav.b85',
-                                   'mods/sessionstats/ui/app.js']), set(WORKFLOWS))
+                                   'mods/sessionstats/ui/app.js']), {'medkit', 'sessionstats'})
 
-    def test_third_mod_selects_itself_without_changing_existing_filters(self):
+    def test_reticle_mods_select_their_own_code_and_shared_dependencies(self):
+        for path, expected in (
+                ('mods/aimtimer/VERSION', {'aimtimer'}),
+                ('mods/rangefinder/VERSION', {'rangefinder'}),
+                ('.github/workflows/aimtimer-ci.yml', {'aimtimer'}),
+                ('.github/workflows/rangefinder-ci.yml', {'rangefinder'}),
+                ('scripts/reticles/build_wotmod.py', {'aimtimer', 'rangefinder'}),
+                ('scripts/sessionstats/python27.sh', {'aimtimer', 'rangefinder', 'sessionstats'}),
+                ('mods/staysharp/assets/OPENWG_LICENSE', {'aimtimer', 'rangefinder', 'medkit'})):
+            with self.subTest(path=path):
+                self.assertEqual(selected([path]), expected)
+
+    def test_additional_mod_selects_itself_without_changing_existing_filters(self):
         original = {name: path.read_bytes() for name, path in WORKFLOWS.items()}
         with tempfile.TemporaryDirectory() as temporary:
             third = Path(temporary) / 'third-mod-ci.yml'
@@ -97,20 +113,30 @@ class PrBuildScopingTests(unittest.TestCase):
         self.assertEqual({name: path.read_bytes() for name, path in WORKFLOWS.items()},
                          original)
 
-    def test_shared_inputs_validate_both_mods(self):
-        for path in ('scripts/release_installers.py', 'tests/test_hangar_release_installers.py',
-                     'scripts/release_snapshot.sh',
-                     'scripts/release_version.py', 'scripts/privacy_audit.py',
+    def test_shared_build_inputs_validate_every_mod(self):
+        registry = json.loads((ROOT / 'scripts/release_modules.json').read_text())
+        for path in [*registry['shared_build_paths'], 'tests/test_wot_updates.py']:
+            with self.subTest(path=path):
+                self.assertEqual(selected([path]), set(WORKFLOWS))
+
+    def test_shared_ci_contracts_have_one_validation_without_mod_builds(self):
+        workflows = dict(WORKFLOWS, shared=SHARED_CI)
+        for path in ('tests/ci/test_ci_optimizations.py', 'tests/ci/test_pr_ci_scoping.py'):
+            with self.subTest(path=path):
+                self.assertEqual(selected([path], workflows), {'shared'})
+        self.assertIn('python3 -B -m unittest discover -s tests/ci -v', SHARED_CI.read_text())
+
+    def test_release_infrastructure_selects_workflows_that_validate_it(self):
+        for path in ('tests/test_hangar_release_installers.py', 'scripts/release_snapshot.sh',
                      'scripts/release_coordinator.py', 'scripts/release_ruleset.py',
-                     'scripts/release_modules.json',
-                     'scripts/build_release_module.sh', '.github/workflows/wotmods-release.yml',
+                     '.github/workflows/wotmods-release.yml',
                      '.github/workflows/wot-update-watch.yml',
                      'tests/test_release_coordinator.py', 'tests/test_release_ruleset.py',
                      'tests/test_unified_release_workflow.py',
                      'tests/test_release_installers.py', 'tests/test_release_pipeline.py',
-                     'tests/test_release_snapshot.py', 'tests/test_pr_ci_scoping.py'):
+                     'tests/test_release_snapshot.py'):
             with self.subTest(path=path):
-                self.assertEqual(selected([path]), set(WORKFLOWS))
+                self.assertEqual(selected([path]), {'medkit', 'sessionstats'})
 
     def test_unrelated_docs_and_empty_diff_start_no_build(self):
         self.assertEqual(selected([]), set())
@@ -123,7 +149,7 @@ class PrBuildScopingTests(unittest.TestCase):
         text = WORKFLOWS['sessionstats'].read_text()
         step = text.split('      - name: Test release infrastructure\n', 1)[1]
         step = step.split('\n      - ', 1)[0]
-        for pattern in ('test_sessionstats_*.py', 'test_release_*.py', 'test_pr_ci_scoping.py'):
+        for pattern in ('test_sessionstats_*.py', 'test_release_*.py'):
             self.assertIn("-p '" + pattern + "'", step)
         self.assertNotIn('discover -s tests -v', step)
         self.assertNotIn('build_wotmod.py', text)
@@ -176,14 +202,14 @@ class PrBranchDiffTests(unittest.TestCase):
             self.assertEqual(selected(changes()), {'medkit'})
 
             commit('mods/sessionstats/ui/app.js', '// new change on the PR branch\n')
-            self.assertEqual(selected(changes()), set(WORKFLOWS))
+            self.assertEqual(selected(changes()), {'medkit', 'sessionstats'})
             commit('README.md', 'Latest commit changes docs only\n')
-            self.assertEqual(selected(changes()), set(WORKFLOWS))
+            self.assertEqual(selected(changes()), {'medkit', 'sessionstats'})
 
             git('rm', '-q', 'mods/sessionstats/src/storage.py')
             git('commit', '-qm', 'Remove a Session Stats source')
             self.assertIn('mods/sessionstats/src/storage.py', changes())
-            self.assertEqual(selected(changes()), set(WORKFLOWS))
+            self.assertEqual(selected(changes()), {'medkit', 'sessionstats'})
 
 
 if __name__ == '__main__':
