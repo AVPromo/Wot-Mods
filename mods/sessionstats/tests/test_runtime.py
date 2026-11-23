@@ -660,9 +660,18 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn('During refresh', timeline['time_point_names'].values())
         self.assertFalse(self.api.pending_callbacks)
 
-        self.mod.on_action({'action': 'time_point', 'account_key': self.mod.active_key, 'name': 'After refresh'})
+        self.assertNotIn('time_point_result', timeline)
+        command = {'action': 'time_point', 'account_key': self.mod.active_key,
+                   'name': 'After refresh', 'request_id': 'point-local'}
+        self.mod.on_action(command)
         self.assertIsNone(service.last_error)
-        self.assertIn('After refresh', service.timeline_snapshot()['time_point_names'].values())
+        timeline = self.mod.snapshot()['scopes']['timeline']
+        self.assertIn('After refresh', timeline['time_point_names'].values())
+        self.assertEqual(timeline['time_point_result'], {'request_id': 'point-local', 'saved': True})
+        self.mod.on_action(dict(command, name='x' * 81, request_id='point-rejected'))
+        failed = self.mod.snapshot()['scopes']['timeline']
+        self.assertEqual(failed['time_point_result'], {'request_id': 'point-rejected', 'saved': False})
+        self.assertEqual(failed['time_points'], timeline['time_points'])
 
     def test_stop_removes_every_subscription_callback_and_footer_handle(self):
         removed = []

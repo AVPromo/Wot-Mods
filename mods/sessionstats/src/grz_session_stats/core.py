@@ -2,7 +2,7 @@
 """Statistics and sessions; no dependency on the World of Tanks runtime."""
 from __future__ import unicode_literals
 
-from .battle_details import clean_details, merge_details
+from .battle_details import clean_details, finalize_pass_points, merge_details
 from .capture_order import compare_capture_order, valid_capture_order
 from .language_defaults import LEGACY_POLISH
 from .localization import message
@@ -47,6 +47,14 @@ def _text(value):
     if isinstance(value, bytes) and not isinstance(value, text_type):
         return value.decode('utf-8', 'replace')
     return text_type(value)
+
+
+def _request_id(value):
+    if not isinstance(value, (text_type, bytes)):
+        return None
+    value = _text(value)
+    allowed = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-'
+    return value if 1 <= len(value) <= 64 and all(char in allowed for char in value) else None
 
 
 def _number(value, nonnegative=False):
@@ -297,6 +305,9 @@ def _finalize_result(record):
         for income, net in fields:
             if amounts.get(income) is not None:
                 amounts[net] = _number(amounts[income] - costs)
+    points = record.get('details', {}).get('pass_points')
+    if points:
+        finalize_pass_points(points)
     if result_is_complete(record):
         record['complete'] = True
         warnings = record.get('warnings', [])
@@ -391,6 +402,7 @@ class StatsService(object):
         self._filtered_timeline = None
         self._timeline_job = None
         self._timeline_error = None
+        self._time_point_result = None
         self._pages = {}
         self._page_requests = {}
         self._empty_view_revision = uuid.uuid4().hex
@@ -898,11 +910,8 @@ class StatsService(object):
         if (period_id is not None and period_id != index.identifier) or not self._matches_view_epoch(scope, order_epoch):
             return False
         if request_id is not None:
-            if not isinstance(request_id, (text_type, bytes)):
-                return False
-            request_id = _text(request_id)
-            if (not 1 <= len(request_id) <= 64 or any(char not in
-                    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-' for char in request_id)):
+            request_id = _request_id(request_id)
+            if request_id is None:
                 return False
         if anchor_id is not None:
             if request_id is None or not isinstance(anchor_id, (text_type, bytes)):
@@ -956,11 +965,8 @@ class StatsService(object):
         if not self._matches_view_epoch(scope, order_epoch):
             return False
         if request_id is not None:
-            if not isinstance(request_id, (text_type, bytes)):
-                return False
-            request_id = _text(request_id)
-            if (not 1 <= len(request_id) <= 64 or any(char not in
-                    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-' for char in request_id)):
+            request_id = _request_id(request_id)
+            if request_id is None:
                 return False
         previous = self._orders.get(scope, {}).get(group, {})
         ascending = lambda order: order.get('chronology') in ('oldest', 'last_asc')
@@ -1496,7 +1502,14 @@ class StatsService(object):
         points.update(self._state.get('time_points', {}))
         return points
 
-    def create_time_point(self, name=None):
+    def create_time_point(self, name=None, request_id=None):
+        response = None
+        if request_id is not None:
+            request_id = _request_id(request_id)
+            if request_id is None:
+                return False
+            response = {'request_id': request_id, 'saved': False}
+            self._time_point_result = response
         if not self._timeline_enabled or not self.ready or self._closed or self.history_reloading:
             return False
         if name is not None:
@@ -1518,7 +1531,10 @@ class StatsService(object):
         if name:
             candidate['time_point_names'] = dict(self._state.get('time_point_names', {}))
             candidate['time_point_names'][identifier] = name
-        return self._commit(candidate, {})
+        saved = self._commit(candidate, {})
+        if response is not None:
+            response['saved'] = saved
+        return saved
 
     def set_timeline_range(self, start, end, from_date=None, to_date=None):
         if not self._timeline_enabled or not self.ready or self._closed:
@@ -1653,6 +1669,8 @@ class StatsService(object):
             scope['load_error'] = self._timeline_error
         scope['time_points'] = sorted(points.items(), key=lambda point: (point[1], point[0]))
         scope['time_point_names'] = dict(self._state.get('time_point_names', {})) if ready else {}
+        if self._time_point_result is not None:
+            scope['time_point_result'] = dict(self._time_point_result)
         scope['from_point'], scope['to_point'] = start, end
         scope['from_date'], scope['to_date'] = self._timeline_dates
         return scope

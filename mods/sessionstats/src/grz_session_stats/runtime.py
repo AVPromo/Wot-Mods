@@ -341,6 +341,7 @@ class Runtime(object):
         self._load_id = None
         self._load_callback = None
         self._load_cursor = 0
+        self._refresh_after_reload = None
         self.data_dir = data_dir
         self.expected_table = expected_table
         self.now = now or time.time
@@ -387,6 +388,7 @@ class Runtime(object):
         self._recovery_states = {}
         self._instance_tab_enabled = False
         self._instance_session = None
+        self._pending_installation_backfill = set()
         self._installation_dir = installation_dir
         self._combat_intake = None
         self._combat_beginnings = {}
@@ -1001,6 +1003,8 @@ class Runtime(object):
         self._hotkey_held = False
         self._processing.clear()
         self._bonus_account_key = None
+        self._refresh_after_reload = None
+        self._pending_installation_backfill.clear()
         self._publish_activity()
         for service in list(self.services.values()) + ([self._instance_session.service] if self._instance_session else []):
             cancel_timeline = getattr(service, 'cancel_timeline', None)
@@ -1083,6 +1087,13 @@ class Runtime(object):
         return [service for service in services if getattr(service, 'loading', False) or
                 getattr(service, 'history_reloading', False) or getattr(service, 'timeline_loading', False)]
 
+    def _ensure_current_history(self, service):
+        if service.refresh_capture_history(deferred=True):
+            return True
+        if service.history_reloading:
+            self._schedule_loading()
+        return False
+
     def _schedule_loading(self):
         if (not self.running or self._load_id is not None or self.api.in_battle() or
                 not self._loading_services()):
@@ -1110,9 +1121,8 @@ class Runtime(object):
                 if history:
                     service.advance_loading()
                 elif reload:
-                    service.advance_history_reload()
-                    if not service.history_reloading and service is self.active_service and not service.last_error:
-                        self._refresh_pending_results(service)
+                    if not service.advance_history_reload():
+                        self._finish_history_reload(service)
                 else:
                     service.advance_timeline()
                 if (not service.loading and not getattr(service, 'history_reloading', False) and
@@ -1127,6 +1137,17 @@ class Runtime(object):
                     self._service_diagnostics()
         finally:
             self._schedule_loading()
+
+    def _finish_history_reload(self, service):
+        if not service.last_error:
+            if self._instance_session is not None and service is self._instance_session.service:
+                for account_key in list(self._pending_installation_backfill):
+                    self._backfill_installation(account_key, self.services[account_key])
+            self._drain_combat_intake()
+        if self._refresh_after_reload is service and not service.history_reloading:
+            self._refresh_after_reload = None
+            if service is self.active_service and not service.last_error:
+                self._refresh_pending_results(service)
 
     def _ensure_installation_session(self):
         if self._instance_session is not None:
@@ -1164,10 +1185,15 @@ class Runtime(object):
     def _backfill_installation(self, account_key, service):
         # Loading services expose durable live beginnings immediately. Retry
         # once they become ready to include results received before discovery.
+        self._pending_installation_backfill.discard(account_key)
+        target = self._instance_session.service
         for record in service.launch_records():
             self._record_installation(account_key, record)
-            if record.get('_result_seen'):
+            if record.get('_result_seen') and not target.history_reloading:
                 self._record_installation(account_key, record, is_result=True)
+            if target.history_reloading:
+                self._pending_installation_backfill.add(account_key)
+                break
 
     def _record_installation(self, account_key, record, is_result=False, before_commit=None):
         """Return None for a failed attempt, including a lost write race."""
@@ -1175,7 +1201,9 @@ class Runtime(object):
         if session is None:
             return None if self._combat_installation is not None else False
         try:
-            if not session.service.refresh_capture_history():
+            if not self._ensure_current_history(session.service):
+                if session.service.history_reloading:
+                    return None
                 raise StorageError(message('installation.save'))
             session.service.last_error = None
             if is_result:
@@ -1325,9 +1353,13 @@ class Runtime(object):
             if not service.ready:
                 continue
             with intake.account_transaction(account_key) as locked:
-                if not locked or not intake.has_published(account_key) or not service.refresh_capture_history():
+                if not locked or not intake.has_published(account_key):
                     continue
-                loaded.add(intake.account_folder(account_key))
+                current = self._ensure_current_history(service)
+                if current or service.history_reloading:
+                    loaded.add(intake.account_folder(account_key))
+                if not current:
+                    continue
                 self._drain_account_captures(intake, account_key, service)
                 self._drain_installation_captures(intake, account_key, service)
         if self._instance_session is not None and self._instance_session.service.ready:
@@ -1378,7 +1410,7 @@ class Runtime(object):
         folder = intake.account_folder(account_key) if folder is None else folder
         installation = self._instance_session
         target = installation.service if installation is not None and installation.service.ready else None
-        if target is not None and not target.refresh_capture_history():
+        if target is not None and not self._ensure_current_history(target):
             return
         eligible, blocked, pending_beginnings = {}, set(), set()
         legacy_account = [account_key] if account_key is not None else []
@@ -1432,7 +1464,7 @@ class Runtime(object):
         for receipt, kind, capture in intake.pending_in_folder(folder, limit=2, skip=already_installed, accept=can_finish):
             identity, identifier = eligible[receipt]
             if identifier is not None:
-                if not target.refresh_capture_history():
+                if not self._ensure_current_history(target):
                     break
                 target.last_error = None
                 changed = installation.replay_capture(identifier, kind, capture, identity)
@@ -1515,7 +1547,7 @@ class Runtime(object):
         if intake is None:
             return self._process_garage_result(results, account_key, service, reusable, source, arena_id, order)
         with intake.account_transaction(account_key, create=True) as locked:
-            if (not locked or not service.refresh_capture_history() or
+            if (not locked or not self._ensure_current_history(service) or
                     self._combat_backlog(account_key, service, arena_id)):
                 return self._process_result(results, account_key, service, reusable, source, arena_id, order, stage=True)
             return self._process_garage_result(results, account_key, service, reusable, source, arena_id, order)
@@ -1826,7 +1858,7 @@ class Runtime(object):
                 self._save_garage_result(account_key, service, record, False, 'metadata')
             return
         with intake.account_transaction(account_key, create=True) as locked:
-            if (locked and service.refresh_capture_history() and
+            if (locked and self._ensure_current_history(service) and
                     not self._combat_backlog(account_key, service, arena_id)):
                 record = self._locally_resolved_metadata(service, arena_id)
                 if record is not None:
@@ -1837,7 +1869,7 @@ class Runtime(object):
         if installation is None:
             return
         service = installation.service
-        if not service.ready or not service.metadata_candidates(None, 1) or not service.refresh_capture_history():
+        if not service.ready or not service.metadata_candidates(None, 1) or not self._ensure_current_history(service):
             return
         key = service.account_key
         changed = False
@@ -2083,7 +2115,7 @@ class Runtime(object):
             if getter('account_key') != self.active_key:
                 return
             if action == 'time_point':
-                self.active_service.create_time_point(getter('name'))
+                self.active_service.create_time_point(getter('name'), getter('request_id'))
             else:
                 dates = []
                 for field in ('from_date', 'to_date'):
@@ -2215,9 +2247,12 @@ class Runtime(object):
             self._load_appearance()
             service = self.active_service
             if self._instance_tab_enabled and self._instance_session is not None:
-                self._instance_session.service.refresh_capture_history(deferred=True)
-            if service is not None and service.refresh_capture_history(deferred=True):
-                self._refresh_pending_results(service)
+                self._ensure_current_history(self._instance_session.service)
+            if service is not None:
+                if self._ensure_current_history(service):
+                    self._refresh_pending_results(service)
+                elif service.history_reloading:
+                    self._refresh_after_reload = service
             self._schedule_loading()
             self._publish_activity()
             self._window_call('refresh')

@@ -240,13 +240,22 @@ def merge_details(existing, incoming, revise):
     return display_details(merged)
 
 
+def finalize_pass_points(points):
+    amounts = [points.get(key) for key in POINT_FIELDS]
+    if any(amount is None for amount in amounts):
+        return False
+    # Chapter and unallocated deltas describe where these same points went.
+    credited = _bounded_number(sum(amounts))
+    if credited is None:
+        points.pop('credited', None)
+    else:
+        points['credited'] = credited
+    return True
+
+
 def _pass_points(avatar):
     points = dict((name, _bounded_number(avatar.get(field))) for name, field in POINT_FIELDS.items())
-    if all(amount is not None for amount in points.values()):
-        # These are the three native earning categories. Chapter and unallocated
-        # deltas describe where the same points went, and must not be added here.
-        points['credited'] = sum(points.values())
-    else:
+    if not finalize_pass_points(points):
         unallocated = _bounded_number(avatar.get('bpNonChapterPointsDiff'))
         chapters = _mapping(avatar.get('bpChaptersInfo'))
         deltas = []

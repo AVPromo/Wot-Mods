@@ -384,7 +384,7 @@ class Backend:
             if not self._timeline(action.get('from_point', ''), action.get('to_point', ''), *dates):
                 return None
         elif kind == 'time_point':
-            if not self.service.create_time_point(action.get('name')):
+            if not self.service.create_time_point(action.get('name'), action.get('request_id')):
                 return None
             self.timeline_cache.clear()
         elif kind == 'reset':

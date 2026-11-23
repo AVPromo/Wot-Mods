@@ -19,6 +19,7 @@ from test_normalize import normalize_result, raw_result, START, ARENA_ID
 from test_runtime import FakeAPI, FakeWindow, Obj, wait_for_combat_capture
 from grz_session_stats import capture_order, config_path, runtime
 from grz_session_stats.combat_intake import CombatIntake
+from grz_session_stats.core import StatsService
 from grz_session_stats.localization import message
 from grz_session_stats.sessions import InstallationSession
 
@@ -114,6 +115,58 @@ class LateInstallationLoadingTests(unittest.TestCase):
         self.assertTrue(self.mod.active_service.ready, self.mod.active_service.last_error)
         if self.mod._instance_session is not None:
             self.assertTrue(self.mod._instance_session.service.ready)
+
+    def test_automatic_result_rebases_both_ledgers_cooperatively_and_replays_the_receipt(self):
+        self.discover()
+        self.finish()
+        account = self.mod.active_key
+        service = self.mod.active_service
+        installation = self.mod._instance_session
+        self.clock.value = START + 400
+        peer = StatsService(self.directory, account, 'peer', EXPECTED, self.clock)
+        peer_installation = InstallationSession(self.directory, self.directory, 'peer', EXPECTED, self.clock)
+        peer_id = str(int(ARENA_ID) + (1 << 32))
+        peer_result = normalize_result(raw_result(arena_id=peer_id))
+        self.assertTrue(peer.record_result(peer_result))
+        self.assertTrue(peer_installation.result(account, peer_result, allow_new=True))
+
+        self.api.events.onBattleResultsReceived(True, raw_result())
+        self.assertTrue(service.history_reloading)
+        self.assertIsNotNone(self.mod._load_id)
+        self.assertFalse(service._state['battles'])
+        self.assertFalse(installation.service._state['battles'])
+        wait_for_combat_capture(self.mod)
+        self.assertEqual(len(self.mod._combat_intake.pending(account)), 1)
+
+        self.load_history()
+        self.assertEqual(set(service._state['battles']), {ARENA_ID, peer_id})
+        self.assertEqual(set(installation.service._state['battles']),
+                         {installation.battle_key(account, arena) for arena in (ARENA_ID, peer_id)})
+        self.assertEqual(self.mod._combat_intake.pending(account), [])
+
+    def test_automatic_result_keeps_its_receipt_while_only_the_installation_reloads(self):
+        self.discover()
+        self.finish()
+        account = self.mod.active_key
+        service = self.mod.active_service
+        installation = self.mod._instance_session
+        self.clock.value = START + 400
+        peer = InstallationSession(self.directory, self.directory, 'peer', EXPECTED, self.clock)
+        peer_id = str(int(ARENA_ID) + (1 << 32))
+        peer_result = normalize_result(raw_result(arena_id=peer_id))
+        self.assertTrue(peer.result('EU:8', peer_result, allow_new=True))
+
+        self.api.events.onBattleResultsReceived(True, raw_result())
+        self.assertIn(ARENA_ID, service._state['battles'])
+        self.assertTrue(installation.service.history_reloading)
+        self.assertFalse(installation.service._state['battles'])
+        self.assertEqual(len(self.mod._combat_intake.pending(account)), 1)
+
+        self.load_history()
+        self.assertEqual(set(service._state['battles']), {ARENA_ID})
+        self.assertEqual(set(installation.service._state['battles']),
+                         {installation.battle_key(account, ARENA_ID), installation.battle_key('EU:8', peer_id)})
+        self.assertEqual(self.mod._combat_intake.pending(account), [])
 
     def discover_after_failed_binding(self):
         self.begin()
