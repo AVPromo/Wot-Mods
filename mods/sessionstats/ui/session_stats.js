@@ -4783,7 +4783,7 @@
         // Keep the mounted selection even if that reply has a different revision.
         if (following && feed && feed.key === key && (meta.request_id || focus) && focusedPage === null) { return feed; }
         if (feed && feed.key === key && feed.refreshing && feed !== old && (feed.pending || feed.refreshInput) &&
-                feed.start < meta.pages && focusedPage === null) {
+                meta.total > 0 && feed.start < meta.pages && focusedPage === null) {
             // The in-flight request is still for the visible page. Later
             // revisions must not keep retiring and reissuing that request.
             if (feed.revision !== revision) { feed.cache = {}; feed.signatures = {}; }
@@ -4796,8 +4796,8 @@
             var navigationDeadline = ownedJump ? ownedJump.deadline : feed && feed.navigationDeadline;
             var topRequested = feed && feed.collectionKey === collectionKey && feed.topRequested;
             var returning = state.battleReturn;
-            var refreshing = state.feedForceStart === null && focusedPage === null && !hasNumber(navigation) && !topRequested &&
-                !state.battleJump && !returning && old && old.collectionKey === collectionKey;
+            var refreshing = meta.total > 0 && state.feedForceStart === null && focusedPage === null && !hasNumber(navigation) &&
+                !topRequested && !state.battleJump && !returning && old && old.collectionKey === collectionKey;
             retireFeed();
             var start = state.feedForceStart !== null ? state.feedForceStart : focusedPage !== null ? focusedPage :
                 hasNumber(navigation) ? navigation : topRequested ? 0 : refreshing ? visibleRefreshPage(old) : meta.page;
